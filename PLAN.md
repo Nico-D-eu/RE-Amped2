@@ -11,14 +11,14 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
-**Current status (2026-09-29, early morning):** Phase 2 in progress. A
-plain double-click opens the window, shows the title splash, skips the
-intro movie, and reaches the **title screen, rendered correctly** ("PRESS
-START TO BEGIN" plus the legal text; see `diag/title_screen_2026-09-29.png`).
-The toolkit's pushbuffer executor now runs NV2A vertex programs and blends
-properly. **Blocker: input.** The emulated USB pad enumerates through
-SET_CONFIGURATION, but XAPI's XID class driver never binds, so START can't
-be pressed yet. Details in `CHANGELOG.md`.
+**Current status (2026-09-29, 02:00):** Phase 2, well along. A plain
+double-click opens the window, shows the splash, skips the intro movie and
+reaches the **title screen** (rendered correctly). **Input works**: the
+emulated USB pad, fed by a PC controller or the keyboard (Enter = START), is
+read by the title. Pressing START walks the front end to the **career event
+select** (`diag/menu_event_select_2026-09-29.png`), and the title starts
+loading level ML1. Menu rendering still has artefacts (doubled text, grey
+streaks). Details in `CHANGELOG.md`.
 
 ---
 
@@ -112,18 +112,23 @@ Work items, in order of likelihood:
   vertex colour. The title screen renders cleanly. Still missing:
   fixed-function T&L (some batches run in mode 0x4), per-vertex (Gouraud)
   colour, multi-texture, register combiners, depth.
-- **Input (current blocker):** USB is wired in `main.c` and the pad
-  enumerates (through SET_CONFIGURATION, after the toolkit's bus-address
-  fix), but the XID class driver never sends its descriptor request or
-  queues interrupt-IN reports. Trace XAPI after the SET_CONFIGURATION
-  completion. Fallback: replace `XInputGetState` and friends natively once
-  they're identified.
+- ~~**Input:**~~ Done 2026-09-29: USB wired in `main.c`, the toolkit's
+  bus-address fix, and seeds for the XPP class-driver and report routines
+  (`0x003306DF`, `0x0032FC8B`). START is read; the menus navigate.
+- **Menu rendering artefacts (next):** doubled text and grey/white
+  streaks in the event-select menu. Check whether the title renders to
+  offscreen surfaces or render-to-texture (surface offsets other than the
+  framebuffer), clear handling, and per-vertex colour / fixed-function
+  batches.
 
 **Exit criteria**
 
 - [ ] Legal → splash → title → main menu with no manual steps
+      (2026-09-29: splash → title automatic; START reaches the menus;
+      rendering artefacts remain)
 - [ ] All top-level menus open and close with a pad
 - [ ] No unresolved indirect calls reached in the frontend
+      (2026-09-29: only `0x002C8DAD`, XNET, deliberately left unseeded)
 
 ### Phase 3: In-game (M3)
 

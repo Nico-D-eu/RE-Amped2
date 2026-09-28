@@ -341,13 +341,26 @@ vertex-program interpreter for the pushbuffer executor
 × vertex colour. The front end now shows the copyright text, "PRESS START
 TO BEGIN" and the ESRB notice correctly (`diag/title_screen_2026-09-29.png`).
 
-**Input (open).** `main.c` now calls `xbox_OhciInit()` and routes OHCI
+**Input (works).** `main.c` calls `xbox_OhciInit()` and routes OHCI
 register faults, which nothing did before. With the toolkit's bus-address
 fix in `src/usb/ohci.c`, the pad enumerates: GET_DESCRIPTOR, SET_ADDRESS,
-GET_DESCRIPTOR(config), SET_CONFIGURATION. The XID class driver then never
-asks for its XID descriptor and never polls endpoint 1, so START isn't seen
-yet. `RECOMP_USB_TRACE=1` shows the register and descriptor traffic;
-`RECOMP_PAD_PRESS=0x10` pulses START for unattended tests.
+GET_DESCRIPTOR(config), SET_CONFIGURATION. Seeding the XPP class-driver
+step `0x003306DF` and the report routine `0x0032FC8B` completes the XID
+handshake (`C1 06`, `A1 01`) and the endpoint-1 polling. A PC controller,
+or the keyboard with the game window focused (Enter = START, arrows = d-pad,
+Z X A S = A B X Y, Backspace = BACK), is player 1. `RECOMP_PAD_PRESS=0x10`
+pulses START for unattended runs, and `RECOMP_USB_TRACE=1` shows the USB
+traffic.
+
+**Menus (2026-09-29).** Pressing START walks the front end to the career
+event select (`diag/menu_event_select_2026-09-29.png`: Millicent 1,
+Breckenridge, Bear Mtn., Mt. Hood, Laax, Challenges To Do). The title
+starts loading `LEVELS\ML1\ML1.gfx`. Rendering artefacts remain (doubled
+text, grey streaks).
+
+**Do not seed `0x002C8DAD`** (XNET). Making it callable enables the network
+card's deferred-interrupt path, which crashes with no NIC. The seeder will
+suggest it again from any log.
 
 Default runtime switches now set in `main.c`: `RECOMP_AC97_READY`,
 `RECOMP_DSP_ACK`, `RECOMP_FORCE_RETURN`, `RECOMP_VBLANK`, `RECOMP_PB_EXEC`,
