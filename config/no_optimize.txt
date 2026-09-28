@@ -1,0 +1,10 @@
+# Generated functions compiled with optimisation off (#pragma optimize).
+#
+# One name per line. tools\regen.ps1 wraps each one in its chunk after
+# generation. Only for functions whose optimised build time is pathological
+# and whose speed does not matter -- check with MSVC's /d2cgsummary.
+
+# One-shot render-state table setup: 13.5 KB of straight-line stores and
+# rep movsd, 52,034 instructions. 2,121 s of the 2,133 s code generation of
+# its whole chunk at /O2 (so ~30 min of every full rebuild); it runs once.
+sub_00148D80
