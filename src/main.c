@@ -237,6 +237,16 @@ extern bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
 #define APU_TRAP_BASE 0xFE800000u
 #define APU_TRAP_END  0xFE880000u
 
+/* The emulated USB host controllers (src/usb/ohci.h), which is how the
+ * title's statically linked XAPI finds its gamepad. Same arrangement as the
+ * APU: xbox_OhciInit makes the two register blocks fault, and the VEH below
+ * hands those faults to the model. Nothing in the runtime calls the init, so
+ * without these the title sees no controller and cannot leave "PRESS START".
+ * Declared rather than included, like the APU entry points. */
+extern void xbox_OhciInit(void);
+extern int  xbox_OhciOwnsAddress(uint32_t xbox_va);
+extern int  xbox_OhciHandleMmio(void *ctx, uint32_t xbox_va);
+
 static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
 {
     if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
@@ -263,6 +273,11 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
         {
             uint32_t xbox_va =
                 (uint32_t)(fault_addr - (uintptr_t)g_xbox_mem_offset);
+
+            /* USB host controller registers -> the OHCI model. */
+            if (xbox_OhciOwnsAddress(xbox_va)
+                    && xbox_OhciHandleMmio(ep->ContextRecord, xbox_va))
+                return EXCEPTION_CONTINUE_EXECUTION;
 
             if (xbox_va >= APU_TRAP_BASE && xbox_va < APU_TRAP_END
                     && apu_hook_handle_mmio(
@@ -363,6 +378,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         _putenv("RECOMP_PB_EXEC=1");
     if (!getenv("RECOMP_FB_WINDOW"))
         _putenv("RECOMP_FB_WINDOW=1");
+    /* Input: the emulated USB gamepad, fed by a real XInput pad on the PC or,
+     * with the game window focused, the keyboard (Enter = START, arrows =
+     * d-pad, Z X A S = A B X Y, Backspace = BACK; see
+     * src/input/xinput_device.c). */
+    if (!getenv("RECOMP_USB"))
+        _putenv("RECOMP_USB=1");
+    if (!getenv("RECOMP_KEYBOARD"))
+        _putenv("RECOMP_KEYBOARD=1");
 
     /* FMV is skipped until the APU's stream clock drives XMV (PLAN.md
      * Phase 4); see sub_00150E80 in lua_probe.c. */
@@ -447,6 +470,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         fprintf(stderr, "[BOOT] emulated APU %s\n",
                 g_apu_state ? "up" : "FAILED to initialise");
     }
+
+    /* USB: the controllers the gamepad hangs off. After the memory layout,
+     * because it protects the register blocks inside the mapped aperture. */
+    xbox_OhciInit();
 
     /* Step 3: Initialize Xbox kernel */
     printf("Initializing Xbox kernel replacement...\n");

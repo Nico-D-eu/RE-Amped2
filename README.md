@@ -334,9 +334,24 @@ continuous rendering. The UI is drawn **wrong**: squashed into the top-left
 ~320×256, textures sampled at a constant v, most triangles off-surface. That
 is the next thing to fix, in the pushbuffer executor's vertex/viewport path.
 
+**Title screen (2026-09-29).** Four toolkit changes made it render: a
+vertex-program interpreter for the pushbuffer executor
+(`src/kernel/nv2a_vp.c`), the viewport scale/offset constants
+(`XFCTX_VPSCL`/`VPOFF` = c[58]/c[59]), general blend factors, and texture
+× vertex colour. The front end now shows the copyright text, "PRESS START
+TO BEGIN" and the ESRB notice correctly (`diag/title_screen_2026-09-29.png`).
+
+**Input (open).** `main.c` now calls `xbox_OhciInit()` and routes OHCI
+register faults, which nothing did before. With the toolkit's bus-address
+fix in `src/usb/ohci.c`, the pad enumerates: GET_DESCRIPTOR, SET_ADDRESS,
+GET_DESCRIPTOR(config), SET_CONFIGURATION. The XID class driver then never
+asks for its XID descriptor and never polls endpoint 1, so START isn't seen
+yet. `RECOMP_USB_TRACE=1` shows the register and descriptor traffic;
+`RECOMP_PAD_PRESS=0x10` pulses START for unattended tests.
+
 Default runtime switches now set in `main.c`: `RECOMP_AC97_READY`,
 `RECOMP_DSP_ACK`, `RECOMP_FORCE_RETURN`, `RECOMP_VBLANK`, `RECOMP_PB_EXEC`,
-`RECOMP_FB_WINDOW`. A variable that is already set in the environment wins.
+`RECOMP_FB_WINDOW`, `RECOMP_USB`, `RECOMP_KEYBOARD`. A variable that is already set in the environment wins.
 
 **Build time:** `sub_00148D80`, a one-shot render-state table setup, took
 2,121 s of `recomp_0020.c`'s 2,133 s code generation (MSVC `/d2cgsummary`).

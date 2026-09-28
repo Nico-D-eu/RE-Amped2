@@ -11,13 +11,14 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
-**Current status (2026-09-29, early morning):** Phase 1 done except the
-host-flip item; Phase 2 started. A plain double-click opens the window,
-shows the **title splash**, skips the intro movie, and reaches the **front
-end** (150 disc files, 6 threads, thousands of pushbuffer submits, no
-crash). The front-end UI is **drawn wrong** (squashed into the top-left,
-textures stretched), which is the next thing to fix: the pushbuffer
-executor's vertex and viewport handling. Details in `CHANGELOG.md`.
+**Current status (2026-09-29, early morning):** Phase 2 in progress. A
+plain double-click opens the window, shows the title splash, skips the
+intro movie, and reaches the **title screen, rendered correctly** ("PRESS
+START TO BEGIN" plus the legal text; see `diag/title_screen_2026-09-29.png`).
+The toolkit's pushbuffer executor now runs NV2A vertex programs and blends
+properly. **Blocker: input.** The emulated USB pad enumerates through
+SET_CONFIGURATION, but XAPI's XID class driver never binds, so START can't
+be pressed yet. Details in `CHANGELOG.md`.
 
 ---
 
@@ -105,10 +106,18 @@ Work items, in order of likelihood:
   Skipping is acceptable for M2. *(2026-09-29: skipped by default,
   `AMPED2_PLAY_MOVIES=1` to play. XMV waits on an audio clock the APU
   doesn't advance.)*
-- **Front-end rendering (first blocker):** the executor draws the UI into
-  the top-left ~320×256 with constant-v texture sampling, and most
-  triangles fall off-surface (x −356..−1). Look at the vertex-shader and
-  viewport transform in `nv2a_pb_exec.c`.
+- ~~**Front-end rendering:** the executor drew the UI squashed into the
+  top-left.~~ Done 2026-09-29: vertex-program interpreter
+  (`src/kernel/nv2a_vp.c`), viewport constants, general blending, texture ×
+  vertex colour. The title screen renders cleanly. Still missing:
+  fixed-function T&L (some batches run in mode 0x4), per-vertex (Gouraud)
+  colour, multi-texture, register combiners, depth.
+- **Input (current blocker):** USB is wired in `main.c` and the pad
+  enumerates (through SET_CONFIGURATION, after the toolkit's bus-address
+  fix), but the XID class driver never sends its descriptor request or
+  queues interrupt-IN reports. Trace XAPI after the SET_CONFIGURATION
+  completion. Fallback: replace `XInputGetState` and friends natively once
+  they're identified.
 
 **Exit criteria**
 
