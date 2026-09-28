@@ -347,6 +347,30 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      *   the block moved: read ebx from a RECOMP_WATCHDOG_SECS dump there. */
     if (!getenv("RECOMP_AC97_READY"))
         _putenv("RECOMP_AC97_READY=1");
+    /* RECOMP_FORCE_RETURN: arms the forced return values the build was
+     *   generated with (config/force_return.txt), such as XNet reporting "no
+     *   network" instead of pending forever. */
+    if (!getenv("RECOMP_FORCE_RETURN"))
+        _putenv("RECOMP_FORCE_RETURN=1");
+    /* Display. D3D8LTCG runs recompiled and drives the NV2A pushbuffer
+     * itself, so the pushbuffer executor is the rendering path and the
+     * framebuffer window is where it shows up; vblank paces the title's
+     * frames. Without these three a run draws nothing and opens no window --
+     * which is what "no window opens" was. */
+    if (!getenv("RECOMP_VBLANK"))
+        _putenv("RECOMP_VBLANK=1");
+    if (!getenv("RECOMP_PB_EXEC"))
+        _putenv("RECOMP_PB_EXEC=1");
+    if (!getenv("RECOMP_FB_WINDOW"))
+        _putenv("RECOMP_FB_WINDOW=1");
+
+    /* FMV is skipped until the APU's stream clock drives XMV (PLAN.md
+     * Phase 4); see sub_00150E80 in lua_probe.c. */
+    {
+        extern int g_amped2_skip_movies;
+        const char *play = getenv("AMPED2_PLAY_MOVIES");
+        g_amped2_skip_movies = !(play && *play && *play != '0');
+    }
     if (!getenv("RECOMP_DSP_ACK"))
         _putenv("RECOMP_DSP_ACK=0x8105C810");
 

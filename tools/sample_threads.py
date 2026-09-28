@@ -132,6 +132,80 @@ def guest_label(path, line):
     return "?"
 
 
+class ADDRESS64(ctypes.Structure):
+    _fields_ = [("Offset", ctypes.c_uint64), ("Segment", wt.WORD), ("Mode", wt.DWORD)]
+
+
+class KDHELP64(ctypes.Structure):
+    _fields_ = [("Thread", ctypes.c_uint64), ("ThCallbackStack", wt.DWORD),
+                ("ThCallbackBStore", wt.DWORD), ("NextCallback", wt.DWORD),
+                ("FramePointer", wt.DWORD), ("KiCallUserMode", ctypes.c_uint64),
+                ("KeUserCallbackDispatcher", ctypes.c_uint64),
+                ("SystemRangeStart", ctypes.c_uint64),
+                ("KiUserExceptionDispatcher", ctypes.c_uint64),
+                ("StackBase", ctypes.c_uint64), ("StackLimit", ctypes.c_uint64),
+                ("BuildVersion", wt.DWORD), ("RetpolineStubFunctionTableSize", wt.DWORD),
+                ("RetpolineStubFunctionTable", ctypes.c_uint64),
+                ("RetpolineStubOffset", wt.DWORD), ("RetpolineStubSize", wt.DWORD),
+                ("Reserved0", ctypes.c_uint64 * 2)]
+
+
+class STACKFRAME64(ctypes.Structure):
+    _fields_ = [("AddrPC", ADDRESS64), ("AddrReturn", ADDRESS64),
+                ("AddrFrame", ADDRESS64), ("AddrStack", ADDRESS64),
+                ("AddrBStore", ADDRESS64), ("FuncTableEntry", ctypes.c_void_p),
+                ("Params", ctypes.c_uint64 * 4), ("Far", wt.BOOL),
+                ("Virtual", wt.BOOL), ("Reserved", ctypes.c_uint64 * 3),
+                ("KdHelp", KDHELP64)]
+
+
+CONTEXT_FULL = 0x0010000B
+CTX_RBP_OFF = 0xA0
+
+
+def native_stack(hproc, tid, depth=40):
+    """Native call stack of a thread (suspended while walked), as addresses.
+
+    Recompiled guest functions are ordinary native frames, so the walk names
+    the guest call chain that led into a host wait -- which the RIP alone,
+    sitting in ntdll, cannot."""
+    h = k32.OpenThread(THREAD_ALL, False, tid)
+    if not h:
+        return []
+    raw = ctypes.create_string_buffer(CTX_SIZE + 16)
+    base = (ctypes.addressof(raw) + 15) & ~15
+    ctypes.c_uint32.from_address(base + CTX_FLAGS_OFF).value = CONTEXT_FULL
+    pcs = []
+    if k32.SuspendThread(h) == 0xFFFFFFFF:
+        k32.CloseHandle(h)
+        return []
+    try:
+        if not k32.GetThreadContext(h, ctypes.c_void_p(base)):
+            return []
+        sf = STACKFRAME64()
+        sf.AddrPC.Offset = ctypes.c_uint64.from_address(base + CTX_RIP_OFF).value
+        sf.AddrStack.Offset = ctypes.c_uint64.from_address(base + CTX_RSP_OFF).value
+        sf.AddrFrame.Offset = ctypes.c_uint64.from_address(base + CTX_RBP_OFF).value
+        sf.AddrPC.Mode = sf.AddrStack.Mode = sf.AddrFrame.Mode = 3  # AddrModeFlat
+        fta = ctypes.cast(dbg.SymFunctionTableAccess64, ctypes.c_void_p)
+        gmb = ctypes.cast(dbg.SymGetModuleBase64, ctypes.c_void_p)
+        dbg.StackWalk64.argtypes = [wt.DWORD, wt.HANDLE, wt.HANDLE,
+                                    ctypes.POINTER(STACKFRAME64), ctypes.c_void_p,
+                                    ctypes.c_void_p, ctypes.c_void_p,
+                                    ctypes.c_void_p, ctypes.c_void_p]
+        for _ in range(depth):
+            if not dbg.StackWalk64(0x8664, hproc, h, ctypes.byref(sf),
+                                   ctypes.c_void_p(base), None, fta, gmb, None):
+                break
+            if not sf.AddrPC.Offset:
+                break
+            pcs.append(sf.AddrPC.Offset)
+    finally:
+        k32.ResumeThread(h)
+        k32.CloseHandle(h)
+    return pcs
+
+
 def symbolize(hproc, addr):
     sym = SYMBOL_INFO()
     sym.SizeOfStruct = 88   # sizeof(SYMBOL_INFO) with a 1-char Name, per dbghelp
@@ -162,6 +236,9 @@ def main():
     ap.add_argument("--interval", type=float, default=0.05)
     ap.add_argument("--log", default=os.path.join(ROOT, "diag", "sample_threads.txt"),
                     help="stderr of a started exe goes here")
+    ap.add_argument("--stacks", action="store_true",
+                    help="also print each thread's native call stack once, "
+                         "keeping the frames in recompiled or runtime code")
     args = ap.parse_args()
 
     proc = None
@@ -187,6 +264,22 @@ def main():
     dbg.SymSetOptions(0x2 | 0x10)  # UNDNAME | LOAD_LINES
     if not dbg.SymInitialize(hproc, os.path.dirname(EXE).encode(), True):
         sys.exit("SymInitialize failed: %d" % ctypes.get_last_error())
+
+    if args.stacks:
+        dbg.SymFunctionTableAccess64.restype = ctypes.c_void_p
+        dbg.SymGetModuleBase64.restype = ctypes.c_uint64
+        for tid in threads_of(pid):
+            frames = native_stack(hproc, tid)
+            named = []
+            for pc in frames:
+                name, where, label = symbolize(hproc, pc)
+                if where or name.startswith(("sub_", "xbox_", "bridge_", "recomp_")):
+                    named.append("%s%s" % (name.split("+")[0],
+                                           (" [guest %s]" % label) if label and label != "?" else ""))
+            if named:
+                print("\nthread %d native stack (own code only):" % tid)
+                for n in named[:24]:
+                    print("    " + n)
 
     hits = collections.defaultdict(collections.Counter)
     for _ in range(args.samples):

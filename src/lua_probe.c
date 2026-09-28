@@ -20,6 +20,41 @@
 extern void amped2_report_lua_error(uint32_t L, uint32_t status);
 #define report_lua_error amped2_report_lua_error
 
+/* 0x00150E80: the movie player's "next frame" call. It wraps
+ * XMVDecoder_GetNextFrame (sub_002CDE60), with ecx = &result, edx = decoder,
+ * one stack arg = target surface. The loop in sub_00150FF0 presents frames
+ * until result is 2 (end of file) or 3 (failure).
+ *
+ * XMV paces video by its audio stream's play position, and this runtime's APU
+ * does not advance that clock yet. So the decoder answers "no frame yet"
+ * (0) forever: the MGS logo movie never ends and boot stops on a black
+ * screen with the main loop turning. Until FMV works (PLAN.md, Phase 4),
+ * movies are skipped: the decode still runs, then the result reads as end of
+ * file. AMPED2_PLAY_MOVIES=1 (checked in main.c) plays them instead. */
+extern int g_amped2_skip_movies;
+
+void sub_00150E80(void)
+{
+    uint32_t result_ptr = ecx;                    /* probe: not in the original */
+    int _flags = 0; /* fallback flag var */
+    uint32_t _fa = 0, _fb = 0;
+    int32_t _fas = 0, _fbs = 0;
+    (void)_fa; (void)_fb; (void)_fas; (void)_fbs; (void)_flags;
+
+loc_00150E80: ;
+    PUSH32(esp, eax);
+    eax = MEM32(esp + 8);
+    PUSH32(esp, ecx);
+    PUSH32(esp, edx);
+    PUSH32(esp, eax);
+    PUSH32(esp, 0x00150E8Du); RECOMP_ABI_CALL(0x002CDE60u, sub_002CDE60); /* call 0x002CDE60 */
+
+loc_00150E8D: ;
+    if (g_amped2_skip_movies && result_ptr)       /* probe: not in the original */
+        MEM32(result_ptr) = 2;                    /* XMV_ENDOFFILE */
+    esp += 8; return; /* ret 4 */
+}
+
 /* 0x000F24C0: luaD_throw(L = eax, errcode = edx). Stores errcode in
  * L->errorJmp->status (+0x54 -> +0x44) and longjmps to it; with no handler it
  * calls the panic function and aborts. Probe: the error object at the moment

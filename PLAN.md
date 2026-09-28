@@ -11,14 +11,13 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
-**Current status (2026-09-29, overnight):** Phase 1, almost done. With
-`RECOMP_VBLANK/PB_EXEC/FB_WINDOW` the title draws its **title splash** into
-the framebuffer window. No crashes and no Lua errors; 4 threads, 119 disc
-files. It reaches the main loop (`app->Run()`), then stalls after that one
-frame: no flip is logged and the image never changes. Fixed on the way:
-contiguous `free`, TLS layout, `lahf`/FPU-compare lifting (toolkit);
-`Boom.xbe` hand-offs traced to audio init and a Lua NaN error; build time
-down to ~7.5 min. Details in `CHANGELOG.md`.
+**Current status (2026-09-29, early morning):** Phase 1 done except the
+host-flip item; Phase 2 started. A plain double-click opens the window,
+shows the **title splash**, skips the intro movie, and reaches the **front
+end** (150 disc files, 6 threads, thousands of pushbuffer submits, no
+crash). The front-end UI is **drawn wrong** (squashed into the top-left,
+textures stretched), which is the next thing to fix: the pushbuffer
+executor's vertex and viewport handling. Details in `CHANGELOG.md`.
 
 ---
 
@@ -100,8 +99,16 @@ Work items, in order of likelihood:
   `ERROR_PATH_NOT_FOUND` open.
 - **Online:** stub the Xbox Live paths (XONLINE, XNET, XVOICE) so the
   menus don't wait on a network sign-in. Force-return where needed.
+  *(2026-09-29: `XNetGetTitleXnAddr` now reports NONE via
+  `config/force_return.txt`, which removed the post-splash deadlock.)*
 - **FMV:** decide whether XMV plays (`tools.xmv`) or is skipped for now.
-  Skipping is acceptable for M2.
+  Skipping is acceptable for M2. *(2026-09-29: skipped by default,
+  `AMPED2_PLAY_MOVIES=1` to play. XMV waits on an audio clock the APU
+  doesn't advance.)*
+- **Front-end rendering (first blocker):** the executor draws the UI into
+  the top-left ~320×256 with constant-v texture sampling, and most
+  triangles fall off-surface (x −356..−1). Look at the vertex-shader and
+  viewport transform in `nv2a_pb_exec.c`.
 
 **Exit criteria**
 

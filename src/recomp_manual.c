@@ -117,6 +117,11 @@ static void dump_guest_backtrace(const char *why, uint32_t max_dwords)
 extern void sub_0002B6C0_gen(void);
 extern void sub_000F37E0(void);   /* src/lua_probe.c */
 extern void sub_000F24C0(void);   /* src/lua_probe.c */
+extern void sub_00150E80(void);   /* src/lua_probe.c */
+
+/* Skip FMV (see sub_00150E80 in lua_probe.c). main.c clears it when
+ * AMPED2_PLAY_MOVIES is set. */
+int g_amped2_skip_movies = 1;
 
 void sub_0002B6C0(void)
 {
@@ -306,6 +311,7 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     /* Hand copies in src/lua_probe.c (config/manual_functions.json). */
     if (xbox_va == 0x000F37E0) return sub_000F37E0;  /* lua_pcall-shaped */
     if (xbox_va == 0x000F24C0) return sub_000F24C0;  /* luaD_throw */
+    if (xbox_va == 0x00150E80) return sub_00150E80;  /* movie next-frame */
 
     return (recomp_func_t)0;
 }

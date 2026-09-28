@@ -104,6 +104,12 @@ try {
         $manualArgs = @()
         $manualJson = Join-Path $Project 'config\manual_functions.json'
         if (Test-Path $manualJson) { $manualArgs = @('--manual-functions', $manualJson) }
+        # Forced return values (config\force_return.txt, ADDR=VALUE per line).
+        $forceFile = Join-Path $Project 'config\force_return.txt'
+        if (Test-Path $forceFile) {
+            Get-Content $forceFile | ForEach-Object { ($_ -split '#')[0].Trim() } |
+                Where-Object { $_ } | ForEach-Object { $manualArgs += @('--force-return', $_) }
+        }
         py -3 -m tools.recomp $Xbe --all --split 250 --game-name 'Amped 2' `
             --gen-dir $GenDir `
             --exclude-manual (Join-Path $Project 'src\recomp_manual.c') `

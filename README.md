@@ -314,6 +314,30 @@ then sits in `app->Run()`: `[0x003ACD2C]` vtable slot 1, called from
 problem is why the loop stalls after one frame. An XNet worker
 (`sub_002BEE4D`) spins polling link status at raised IRQL; there is no NIC.
 
+**After the splash**, three more blockers, all fixed:
+
+1. **Deadlock on the global lock `0x0038C890`.** Network startup
+   `sub_001BE680` holds it while looping on `XNetGetTitleXnAddr` until an
+   address arrives. With no NIC that never happens. Fixed by forcing
+   `sub_002BEE4D` to return `XNET_GET_XNADDR_NONE` (1),
+   `config/force_return.txt`.
+2. **Ke\* waits on inline-initialised events.** A toolkit fix in
+   `kernel_bridge.c` (`ke_dispatcher_handle`, event-state mirroring).
+   Before it, the movie worker and D3D's vblank wait spun through tens of
+   millions of failed or instantly-satisfied waits.
+3. **The intro movie never ends,** because XMV is paced by an audio clock
+   the APU doesn't advance. Movies are skipped (`sub_00150E80` hand copy)
+   unless `AMPED2_PLAY_MOVIES=1`.
+
+The title then reaches its **front end**: 150 disc files, 6 threads,
+continuous rendering. The UI is drawn **wrong**: squashed into the top-left
+~320×256, textures sampled at a constant v, most triangles off-surface. That
+is the next thing to fix, in the pushbuffer executor's vertex/viewport path.
+
+Default runtime switches now set in `main.c`: `RECOMP_AC97_READY`,
+`RECOMP_DSP_ACK`, `RECOMP_FORCE_RETURN`, `RECOMP_VBLANK`, `RECOMP_PB_EXEC`,
+`RECOMP_FB_WINDOW`. A variable that is already set in the environment wins.
+
 **Build time:** `sub_00148D80`, a one-shot render-state table setup, took
 2,121 s of `recomp_0020.c`'s 2,133 s code generation (MSVC `/d2cgsummary`).
 It is now compiled with `#pragma optimize("", off)`: `config/no_optimize.txt`,

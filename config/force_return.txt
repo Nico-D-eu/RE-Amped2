@@ -1,0 +1,15 @@
+# Functions whose return value is forced (tools.recomp --force-return).
+#
+# One ADDR=VALUE per line, applied by tools\regen.ps1. The function body
+# still runs; only the value it hands its caller changes, and only while
+# RECOMP_FORCE_RETURN is set (main.c sets it by default).
+
+# XNetGetTitleXnAddr's flag builder (reached through sub_002BB66E ->
+# sub_002BB570). There is no emulated NIC, so the stack's "initialised" bit
+# at [xnet+0xA70] is never set and it answers XNET_GET_XNADDR_PENDING (0)
+# forever. Network startup, sub_001BE680, loops on that while holding the
+# title's global lock 0x0038C890, which deadlocked the main thread right
+# after the title splash. 1 = XNET_GET_XNADDR_NONE, what the XDK itself
+# returns with no XNet object (sub_002BB570) and a console reports with no
+# cable.
+0x002BEE4D=1
