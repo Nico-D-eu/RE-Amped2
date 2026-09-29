@@ -492,7 +492,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * Xbox physical RAM to find voice buffers, so it gets the guest RAM
      * base. */
     if (getenv("RECOMP_AC97_READY")) {
-        g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
+        /* The APU addresses physical memory: the voice descriptors and
+         * sample buffers DirectSound hands it are MmAllocateContiguousMemory
+         * blocks, which live in the contiguous window at 0x80000000 -- here
+         * separate storage, not an alias of low RAM. Giving it the base of
+         * low RAM made it play whatever sat at those offsets there: a
+         * clipping 750 Hz buzz (diag/audio_frontend.wav). */
+        extern ptrdiff_t xbox_GetMemoryOffset(void);
+        g_apu_state = mcpx_apu_init_standalone(
+            (uint8_t *)(xbox_GetMemoryOffset() + (ptrdiff_t)0x80000000u));
         fprintf(stderr, "[BOOT] emulated APU %s\n",
                 g_apu_state ? "up" : "FAILED to initialise");
     }
