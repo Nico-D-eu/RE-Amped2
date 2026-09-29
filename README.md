@@ -407,6 +407,65 @@ Other things seen in those runs, not yet looked at:
   (not supported) while the title checks a partition. The title carried on.
 - One file open failed with `ERROR_PATH_NOT_FOUND` (`0xC000003A`).
 
+### 3D rendering and the menu camera (2026-09-29)
+
+**Executor:** the toolkit's software rasteriser (`nv2a_pb_exec.c`) now has
+a host-side depth buffer per zeta offset, Gouraud colour, colour and UVs
+that are perspective-correct through 1/w, and alpha test. Vertex-program
+vertices carry `oPos.z/w` and `oD0` through the near clip. In the menus
+none of this changes the picture, because every menu batch runs vertex
+program mode `0x6` with **depth test off** and SRC_ALPHA/INV_SRC_ALPHA
+blending (see `RECOMP_BATCH_TRACE`).
+
+**USB:** the OHCI thread gave up after 30 s if the driver had not yet
+started the controller. Amped 2 starts it at 28–33 s, so the pad was
+missing on roughly half of all runs. It now waits indefinitely.
+
+**Why the menus stack:** the menu sprites' composite matrix `c[96..99]`
+has an x row of (0,0,s,0). Every vertex lands on screen x = 320.5 and
+most get w < 0, so the near clip drops them. Tracing it back:
+
+- The heap holds the matrix stack at `0x015D9CF0`: world, **view**
+  (`0x015D9D30`), projection (RH, x scale 1.9445, y scale 2.5927, zn 0.5),
+  then the composites.
+- The view is written by `sub_0002DFFA` (LookAtRH: eye in edi, at and up
+  on the stack, out in esi), called from the camera method `sub_00247DE0`
+  and that from `sub_000B5030` (camera update). Three GUI cameras run
+  every frame:
+  - `0x017CF790`: identity node
+  - `0x01861350`: correct; eye (0.5,−0.5,623.25), at (0.5,−0.5,0)
+  - `0x017D17A0`: at (1,−1,623.25), a view along (1,−1,0)
+- Camera 3's local target is (0.0143,−0.0143,0) = world (0.5,−0.5,0)/35.
+  `sub_000B4F50` (camera init from script: reads `target`, inverts the
+  node matrix built by `sub_000BE610`, transforms the target) ran while
+  the node's translation at `this+0x44` was still 0.
+- The translation (z = 623.252 at `this+0x4C`) is written later by
+  `0x000BDFDB` from the scene-graph animation pass (`0x002FCD65`,
+  recursive `0x000BD6C9`), after a 747-byte ZIP member is read.
+- Checked and correct: the lifted inverse `sub_0002D884` (against a
+  double-precision reference, including this exact matrix), LookAt,
+  cross product `sub_0002D4D3` (computes ecx × eax), normalize
+  `sub_0002D68C`, subtract `sub_0002D51C`, TransformCoord `sub_0002D6FC`
+  and `SetVertexShaderConstant` `sub_00323C40`.
+
+So the remaining bug is ordering in title logic: the animation pass runs
+after the camera init. It still has to be found why that order differs
+from hardware.
+
+**Tools used** (all opt-in):
+
+- `RECOMP_BATCH_TRACE=<n>[,<from>[,<stride>]]` prints per-batch state and
+  `c[96..99]`.
+- `RECOMP_FIND_FLOAT=<v>` (with `RECOMP_FIND_FLOAT_CTX=<rows>`) finds
+  matrices in guest RAM by value.
+- `RECOMP_WATCH=<va>` (toolkit, page-protection) gives the writer's guest
+  call chain.
+- `amped2_diag()` in `recomp_manual.c` is a stderr printf for probes
+  pasted temporarily into generated code, which cannot include
+  `stdio.h`.
+- `tools/check_lifted_inverse.py` runs a lifted function over a copy of
+  the XBE and compares it against a reference.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes

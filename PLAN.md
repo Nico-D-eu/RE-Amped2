@@ -20,6 +20,18 @@ select** (`diag/menu_event_select_2026-09-29.png`), and the title starts
 loading level ML1. Menu rendering still has artefacts (doubled text, grey
 streaks). Details in `CHANGELOG.md`.
 
+**Update (2026-09-29, morning):** the executor now has a depth buffer,
+Gouraud colour, perspective-correct attributes and alpha test, and the
+USB pad enumerates on every run (unattended walks are no longer
+timing-dependent). The menu stacking turned out **not** to be missing 3D.
+Most menu sprites are drawn through one of three GUI cameras whose
+LookAt target is converted to local space before the camera node's
+animated position has been applied. The view looks sideways along
+(1,−1,0), so the panels are culled behind the eye and old frames show
+through. That's a title-logic ordering problem. Tracing where the order
+differs from hardware is the next step (README, "3D rendering and the
+menu camera").
+
 ---
 
 ## Milestones
@@ -115,7 +127,22 @@ Work items, in order of likelihood:
 - ~~**Input:**~~ Done 2026-09-29: USB wired in `main.c`, the toolkit's
   bus-address fix, and seeds for the XPP class-driver and report routines
   (`0x003306DF`, `0x0032FC8B`). START is read; the menus navigate.
-- **Menu rendering (next): 3D in the executor.** The streaks are fixed
+- **Menu camera (next).** GUI camera `0x017D17A0` (one of three that
+  write the D3D view each frame) runs its target setup, `sub_000B4F50`,
+  while its node's translation (`this+0x44`) is still zero. The
+  translation is written afterwards by the scene-graph animation pass
+  (`0x002FCD65` → `0x000BDFDB`), after a 747-byte `.res` member is read.
+  So the target lands at (0.5,−0.5,0)/35 instead of (0,0,−17.8), and
+  every sprite that camera draws is behind the eye. The matrix maths
+  (inverse `sub_0002D884`, LookAt `sub_0002DFFA` and its vector helpers)
+  was checked against a reference and is lifted correctly. Next: find
+  why the animation pass runs after the camera init here. Candidates are
+  synchronous file I/O completing sooner than on hardware, or the
+  skipped intro movie changing script order.
+- ~~**Depth, Gouraud, perspective, alpha test in the executor.**~~ Done
+  2026-09-29 (toolkit `963ef99`). Fixed-function T&L (mode `0x4`) and
+  register combiners are still open.
+- **Menu rendering: 3D in the executor.** The streaks are fixed
   (near-plane clipping). The remaining problem is menus stacking over one
   another. The title clears colour only a few times a run and relies on a
   3D background to cover each frame. It needs, in order: a depth buffer

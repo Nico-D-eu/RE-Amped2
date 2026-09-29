@@ -57,6 +57,18 @@ typedef void (*recomp_func_t)(void);
 
 /* ── Diagnostics ───────────────────────────────────────────── */
 
+/* printf to stderr for a probe pasted into generated code, which cannot
+ * include stdio.h (the Ghidra-named declarations collide with the CRT's). */
+#include <stdarg.h>
+void amped2_diag(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+    fflush(stderr);
+}
+
 /*
  * Deep guest backtrace: every stack dword from esp up that is a real return
  * address, meaning the guest code bytes just before it are a call instruction.
