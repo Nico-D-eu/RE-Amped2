@@ -466,6 +466,46 @@ from hardware.
 - `tools/check_lifted_inverse.py` runs a lifted function over a copy of
   the XBE and compares it against a reference.
 
+### Menus fixed, level-load crash fixed, in game (2026-09-29, midday)
+
+**Menu camera: a lifter bug, not ordering.** `ucomiss x, 0; lahf; test
+ah, 44h; jp` ("is this float non-zero") lifted `lahf` to a comment,
+because the comiss branch of the lifter's condition table had no `js`.
+`sub_000BD8E0` (scene-graph node transform) uses the idiom for
+position, rotation and scale, so camera `0x017D17A0` randomly lost its
+translation. Fixed in toolkit `392a0a2`; 60 of 61 sites are lifted now.
+
+**Level-load crash: page 0.**
+- XAPI's USB driver keeps its device extensions in physical page 0,
+  with no allocation. Its private pool, `sub_0033195B`, returns
+  `0x80001000` minus what it has used. The KDPC was at `0x80000D04`.
+- The toolkit's contiguous allocator started at physical 0, so the
+  title's first 14 MB pool began on that page.
+- Loading ML1, the title draws a depth-only pass with colour offset 0
+  and colour mask 0, which the executor rasterised anyway into page 0.
+- The results: a DPC routine pointer of `0x00200020` (UTF-16 spaces), a
+  CString crash inside the USB DPC, `XInputGetState` reading garbage,
+  and OHCI giving up.
+- Fixed by reserving the bottom 64 KB of the window (`d41338a`) and by
+  honouring `SET_COLOR_MASK` (`e4bd3bf`). Both allocators are locked
+  now too.
+- Because every contiguous block moved up by 0x10000, the DSP mailbox
+  default in `main.c` is now `0x8106C810`.
+
+**How it was found:** a raw stack dump in the crash handler, the current
+DPC routine (`g_xbox_current_dpc`), `RECOMP_DPC_TRACE`, `RECOMP_WATCH` on
+the KDPC's routine field (which now names a host writer by exe offset),
+dbghelp on that offset (`put_pixel`), `RECOMP_CONTIG_TRACE`, and
+disassembling the driver's pool routine.
+
+**Seeds:** `0x00103840` and `0x00014760` (level load). `0x001C8C20` is
+still unresolved in game.
+
+**Unattended walks:** `tools\diag.ps1 -FreshSave` moves the saved
+profiles (`game\UDATA\4d530041\<id>`) aside, so a walk creates a player
+instead of looping on "That player already exists. Overwrite?"
+(default No).
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes

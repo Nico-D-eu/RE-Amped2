@@ -11,26 +11,22 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
-**Current status (2026-09-29, 02:00):** Phase 2, well along. A plain
-double-click opens the window, shows the splash, skips the intro movie and
-reaches the **title screen** (rendered correctly). **Input works**: the
-emulated USB pad, fed by a PC controller or the keyboard (Enter = START), is
-read by the title. Pressing START walks the front end to the **career event
-select** (`diag/menu_event_select_2026-09-29.png`), and the title starts
-loading level ML1. Menu rendering still has artefacts (doubled text, grey
-streaks). Details in `CHANGELOG.md`.
+**Current status (2026-09-29, midday):** Phase 3 started. **The game is
+in a level.** An unattended walk (START+A pulses, fresh save) goes from
+the title through the front end, which renders correctly with no stacking,
+to career save, RIDE!, the LOADING screen, and into **level ML1**. There
+the 3D world renders: trees, lift towers, mountains, the in-game
+CHALLENGES panel and the score HUD (`diag/ingame1_sheet.png`). It runs
+10 minutes with no crash. What's still wrong in-game: the snow terrain
+draws black, there are depth/alpha glitches, and one function
+(`0x001C8C20`) is still unresolved. Details in `CHANGELOG.md`.
 
-**Update (2026-09-29, morning):** the executor now has a depth buffer,
-Gouraud colour, perspective-correct attributes and alpha test, and the
-USB pad enumerates on every run (unattended walks are no longer
-timing-dependent). The menu stacking turned out **not** to be missing 3D.
-Most menu sprites are drawn through one of three GUI cameras whose
-LookAt target is converted to local space before the camera node's
-animated position has been applied. The view looks sideways along
-(1,−1,0), so the panels are culled behind the eye and old frames show
-through. That's a title-logic ordering problem. Tracing where the order
-differs from hardware is the next step (README, "3D rendering and the
-menu camera").
+The three fixes that got here:
+- the lifter's `lahf` after `ucomiss` (the menu camera),
+- contiguous memory kept off physical page 0, where XAPI's USB driver
+  lives,
+- the executor honouring `SET_COLOR_MASK`, so a depth-only pass no
+  longer paints page 0.
 
 ---
 
@@ -127,18 +123,16 @@ Work items, in order of likelihood:
 - ~~**Input:**~~ Done 2026-09-29: USB wired in `main.c`, the toolkit's
   bus-address fix, and seeds for the XPP class-driver and report routines
   (`0x003306DF`, `0x0032FC8B`). START is read; the menus navigate.
-- **Menu camera (next).** GUI camera `0x017D17A0` (one of three that
-  write the D3D view each frame) runs its target setup, `sub_000B4F50`,
-  while its node's translation (`this+0x44`) is still zero. The
-  translation is written afterwards by the scene-graph animation pass
-  (`0x002FCD65` → `0x000BDFDB`), after a 747-byte `.res` member is read.
-  So the target lands at (0.5,−0.5,0)/35 instead of (0,0,−17.8), and
-  every sprite that camera draws is behind the eye. The matrix maths
-  (inverse `sub_0002D884`, LookAt `sub_0002DFFA` and its vector helpers)
-  was checked against a reference and is lifted correctly. Next: find
-  why the animation pass runs after the camera init here. Candidates are
-  synchronous file I/O completing sooner than on hardware, or the
-  skipped intro movie changing script order.
+- ~~**Menu camera.**~~ Done 2026-09-29 (toolkit `392a0a2`). It wasn't an
+  ordering problem: `lahf` after `ucomiss` was never lifted, so
+  `sub_000BD8E0` decided at random whether a node's position was set.
+- ~~**Level-load crash.**~~ Done 2026-09-29 (toolkit `d41338a`,
+  `e4bd3bf`). A depth-only pass painted physical page 0, where XAPI's
+  USB driver keeps its structures.
+- **In-game rendering (next):** the snow terrain is black. Look at its
+  batches' combiner/texture-stage state (the register combiners at
+  `0x0A60`… and `TEXTURE_CONTROL0` are unmodelled), fixed-function
+  mode `0x4` batches, and multi-texture (stage 1+). Seed `0x001C8C20`.
 - ~~**Depth, Gouraud, perspective, alpha test in the executor.**~~ Done
   2026-09-29 (toolkit `963ef99`). Fixed-function T&L (mode `0x4`) and
   register combiners are still open.
@@ -156,9 +150,9 @@ Work items, in order of likelihood:
 
 **Exit criteria**
 
-- [ ] Legal → splash → title → main menu with no manual steps
-      (2026-09-29: splash → title automatic; START reaches the menus;
-      rendering artefacts remain)
+- [x] Legal → splash → title → main menu with no manual steps
+      (2026-09-29: splash → title automatic; START reaches the menus,
+      which render correctly since the lahf fix)
 - [ ] All top-level menus open and close with a pad
 - [ ] No unresolved indirect calls reached in the frontend
       (2026-09-29: only `0x002C8DAD`, XNET, deliberately left unseeded)
@@ -179,6 +173,8 @@ Work items, in order of likelihood:
 **Exit criteria**
 
 - [ ] One level (the first career level) loads and renders
+      (2026-09-29: ML1 loads and runs; geometry, trees, lifts and HUD
+      render; the snow terrain is black and depth/alpha glitches remain)
 - [ ] The rider can be controlled, tricks register, the score works
 - [ ] The run can be finished and exited back to the menu
 

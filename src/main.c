@@ -300,6 +300,27 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
             (uint32_t)(fault_addr - (uintptr_t)g_xbox_mem_offset));
         print_guest_context((void *)ep->ContextRecord->Rip);
 
+        /* The raw frame too. The filtered chain above drops everything
+         * that is not a code address, and on a short stack -- a DPC or ISR
+         * running on a worker slice -- the 0 return address the runtime
+         * pushed for the deferred routine is exactly the thing that says
+         * where the chain starts. */
+        {
+            extern __declspec(thread) uint32_t g_xbox_current_dpc;
+            if (g_xbox_current_dpc)
+                fprintf(stderr, "  inside DPC routine 0x%08X\n",
+                        g_xbox_current_dpc);
+        }
+        if (g_xbox_mem_offset && g_esp) {
+            const uint32_t *sp =
+                (const uint32_t *)((uintptr_t)g_xbox_mem_offset + g_esp);
+            int i;
+            fprintf(stderr, "  raw guest stack from esp:");
+            for (i = 0; i < 40; i++)
+                fprintf(stderr, "%s%08X", (i % 8) ? " " : "\n    ", sp[i]);
+            fprintf(stderr, "\n");
+        }
+
         /*
          * TODO: Add game-specific diagnostics here. Examples:
          *
@@ -395,7 +416,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         g_amped2_skip_movies = !(play && *play && *play != '0');
     }
     if (!getenv("RECOMP_DSP_ACK"))
-        _putenv("RECOMP_DSP_ACK=0x8105C810");
+        _putenv("RECOMP_DSP_ACK=0x8106C810");
 
     printf("=== Amped 2 - Static Recompilation ===\n");
     printf("Loading XBE...\n");

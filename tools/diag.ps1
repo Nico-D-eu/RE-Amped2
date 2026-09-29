@@ -11,13 +11,20 @@
     The watchdog (RECOMP_WATCHDOG_SECS) calls _exit(3) after its dump, so a run
     with it set ending on its own is expected.
 
+    -FreshSave moves the title's saved profiles (game\UDATA\4d530041\<id>
+    directories) into diag\saves_moved\<timestamp>\ before the run, so an
+    unattended walk creates a new player instead of stopping at "That player
+    already exists. Overwrite?" (default No, which loops back to name
+    entry). Moved, never deleted: copy a directory back to restore it.
+
 .EXAMPLE
     .\tools\diag.ps1 vblank @{ RECOMP_VBLANK = '1'; RECOMP_WATCHDOG_SECS = '20' }
 #>
 param(
     [Parameter(Mandatory)] [string]$Name,
     [hashtable]$Env = @{},
-    [int]$Seconds = 30
+    [int]$Seconds = 30,
+    [switch]$FreshSave
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,6 +34,17 @@ $OutDir  = Join-Path $Project 'diag'
 $Log     = Join-Path $OutDir "$Name.txt"
 $Stdout  = Join-Path $OutDir "$Name.stdout.txt"
 New-Item -ItemType Directory -Force $OutDir | Out-Null
+
+if ($FreshSave) {
+    $udata = Join-Path $Project 'game\UDATA\4d530041'
+    $profiles = @(Get-ChildItem -Path $udata -Directory -ErrorAction SilentlyContinue)
+    if ($profiles.Count) {
+        $dest = Join-Path $OutDir ("saves_moved\" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+        New-Item -ItemType Directory -Force $dest | Out-Null
+        foreach ($d in $profiles) { Move-Item -LiteralPath $d.FullName -Destination $dest }
+        Write-Host "  moved $($profiles.Count) saved profile(s) to $dest"
+    }
+}
 
 $saved = @{}
 foreach ($k in $Env.Keys) {

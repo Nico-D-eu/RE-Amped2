@@ -50,5 +50,13 @@
  {
   "start": "0x0032FC8B",
   "note": "XPP (USB input) report routine, indirect-call target observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x00103840",
+  "note": "Indirect-call target observed at runtime while loading level ML1 (walk_long, 2026-09-29); decodes as a function body."
+ },
+ {
+  "start": "0x00014760",
+  "note": "Indirect-call target observed at runtime in level ML1, called ~4200 times (cmask1, 2026-09-29); decodes as a function body."
  }
 ]
