@@ -358,6 +358,14 @@ Breckenridge, Bear Mtn., Mt. Hood, Laax, Challenges To Do). The title
 starts loading `LEVELS\ML1\ML1.gfx`. Rendering artefacts remain (doubled
 text, grey streaks).
 
+**Menu rendering status.** Near-plane clipping in the toolkit removed the
+streaks from background layers rotating past the camera, and boarder
+creation renders cleanly (`diag/menu_create_boarder_2026-09-29.png`). The
+menus still stack over earlier screens: the title redraws a 3D background
+each frame instead of clearing colour, and the executor has no depth
+buffer or fixed-function T&L to draw it. That's the next rendering work
+(see PLAN.md, Phase 2).
+
 **Do not seed `0x002C8DAD`** (XNET). Making it callable enables the network
 card's deferred-interrupt path, which crashes with no NIC. The seeder will
 suggest it again from any log.

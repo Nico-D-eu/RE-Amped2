@@ -115,11 +115,17 @@ Work items, in order of likelihood:
 - ~~**Input:**~~ Done 2026-09-29: USB wired in `main.c`, the toolkit's
   bus-address fix, and seeds for the XPP class-driver and report routines
   (`0x003306DF`, `0x0032FC8B`). START is read; the menus navigate.
-- **Menu rendering artefacts (next):** doubled text and grey/white
-  streaks in the event-select menu. Check whether the title renders to
-  offscreen surfaces or render-to-texture (surface offsets other than the
-  framebuffer), clear handling, and per-vertex colour / fixed-function
-  batches.
+- **Menu rendering (next): 3D in the executor.** The streaks are fixed
+  (near-plane clipping). The remaining problem is menus stacking over one
+  another. The title clears colour only a few times a run and relies on a
+  3D background to cover each frame. It needs, in order: a depth buffer
+  (NV097 zeta surface, depth test/func, Z clears), fixed-function T&L for
+  execution mode `0x4` batches (composite matrix, `0x0680`), per-vertex
+  (Gouraud) colour and perspective-correct UVs, then register combiners
+  (`0x0A60`…) and multi-texture. The alternative is bringing up the
+  toolkit's D3D11 PGRAPH translator (`src/nv2a/nv2a_pgraph_d3d11.c`) and
+  feeding it the vertex-program interpreter's output. That's bigger, but
+  it's the path to in-game rendering at speed.
 
 **Exit criteria**
 
