@@ -24,12 +24,15 @@ param(
     [Parameter(Mandatory)] [string]$Name,
     [hashtable]$Env = @{},
     [int]$Seconds = 30,
-    [switch]$FreshSave
+    [switch]$FreshSave,
+    # Another build of the exe in build\Release, e.g. a copy taken so a rebuild
+    # can relink amped2_recomp.exe while this run is going.
+    [string]$ExeName = 'amped2_recomp.exe'
 )
 
 $ErrorActionPreference = 'Stop'
 $Project = Split-Path -Parent $PSScriptRoot
-$Exe     = Join-Path $Project 'build\Release\amped2_recomp.exe'
+$Exe     = Join-Path $Project "build\Release\$ExeName"
 $OutDir  = Join-Path $Project 'diag'
 $Log     = Join-Path $OutDir "$Name.txt"
 $Stdout  = Join-Path $OutDir "$Name.stdout.txt"

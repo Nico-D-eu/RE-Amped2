@@ -58,5 +58,9 @@
  {
   "start": "0x00014760",
   "note": "Indirect-call target observed at runtime in level ML1, called ~4200 times (cmask1, 2026-09-29); decodes as a function body."
+ },
+ {
+  "start": "0x001C8C20",
+  "note": "Indirect-call target observed at runtime in game on level ML1 (ingame1, 2026-09-29); decodes as a function body."
  }
 ]

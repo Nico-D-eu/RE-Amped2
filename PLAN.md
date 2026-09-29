@@ -11,7 +11,16 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
-**Current status (2026-09-29, midday):** Phase 3 started. **The game is
+**Update (2026-09-29, afternoon):** with register combiners and four
+texture stages in the executor (toolkit `c5300e9`), **the front end and
+level ML1 render like the game**: the logo and snow backdrop, the rider
+portraits, and in game the snowy slopes, forest, lifts, sky, HUD and
+CHALLENGES panel (`diag/comb_menu_sheet.png`,
+`diag/comb_game_sheet.png`). Still open: the rider model draws black,
+sky-strip tearing, fog, shadows (the depth-only pass isn't sampled yet),
+and speed (software rasteriser).
+
+**Status (2026-09-29, midday):** Phase 3 started. **The game is
 in a level.** An unattended walk (START+A pulses, fresh save) goes from
 the title through the front end, which renders correctly with no stacking,
 to career save, RIDE!, the LOADING screen, and into **level ML1**. There
@@ -129,10 +138,16 @@ Work items, in order of likelihood:
 - ~~**Level-load crash.**~~ Done 2026-09-29 (toolkit `d41338a`,
   `e4bd3bf`). A depth-only pass painted physical page 0, where XAPI's
   USB driver keeps its structures.
-- **In-game rendering (next):** the snow terrain is black. Look at its
-  batches' combiner/texture-stage state (the register combiners at
-  `0x0A60`… and `TEXTURE_CONTROL0` are unmodelled), fixed-function
-  mode `0x4` batches, and multi-texture (stage 1+). Seed `0x001C8C20`.
+- ~~**In-game rendering: black terrain.**~~ Done 2026-09-29 (toolkit
+  `c5300e9`): register combiners and texture stages 0–3. `0x001C8C20`
+  seeded.
+- **In-game rendering (next):**
+  - the rider draws black: check its combiner inputs, likely lighting
+    in V0/V1 or a stage mode that isn't modelled;
+  - fog (the FOG register is taken as factor 1);
+  - shadows (the depth-only pass as a texture: shadow compare);
+  - fixed-function mode `0x4` batches (the shadow pass);
+  - speed.
 - ~~**Depth, Gouraud, perspective, alpha test in the executor.**~~ Done
   2026-09-29 (toolkit `963ef99`). Fixed-function T&L (mode `0x4`) and
   register combiners are still open.
@@ -173,8 +188,8 @@ Work items, in order of likelihood:
 **Exit criteria**
 
 - [ ] One level (the first career level) loads and renders
-      (2026-09-29: ML1 loads and runs; geometry, trees, lifts and HUD
-      render; the snow terrain is black and depth/alpha glitches remain)
+      (2026-09-29: ML1 loads, runs and renders with combiners; the rider
+      model is black; no fog or shadows)
 - [ ] The rider can be controlled, tricks register, the score works
 - [ ] The run can be finished and exited back to the menu
 

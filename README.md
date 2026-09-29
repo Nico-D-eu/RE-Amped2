@@ -506,6 +506,21 @@ profiles (`game\UDATA\4d530041\<id>`) aside, so a walk creates a player
 instead of looping on "That player already exists. Overwrite?"
 (default No).
 
+### Register combiners (2026-09-29, afternoon)
+
+The black terrain was the executor's pixel model. It did texture 0 ×
+diffuse, and ML1's terrain has a 2048×2048 lightmap in stage 0 (found by
+dumping textures with `RECOMP_TEX_DUMP`), with its snow detail in another
+stage. `RECOMP_TEX_STATE` showed all four stages enabled, and the top
+unhandled methods had been the combiner registers all along.
+
+Toolkit `c5300e9` adds a software register combiner
+(`src/kernel/nv2a_combiner.c`, using Xbox D3D's `PS_*` encodings),
+per-stage texture state, and oD1 plus oT0–oT3 carried per vertex. The
+menus now match the game, including the rider portraits that used to be
+dark, and ML1 renders snow, forest, lifts, sky and the HUD.
+`RECOMP_NO_COMBINERS=1` switches back to the old path.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
