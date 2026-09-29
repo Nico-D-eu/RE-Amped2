@@ -600,6 +600,19 @@ buffers) were never executed. It now follows jumps out of the ring until
 one lands back in it, plus one level of call/return: about 23,500 per
 140 s run. The rider renders whole (`diag/fb_jmp1.bmp`).
 
+### Render thread and pacing (2026-09-29, night)
+
+D3D11 calls run on a render thread (toolkit `05d62ed`). The executor queues
+packets, and the display paces at 60 Hz with up to
+`RECOMP_GPU_FRAMES_AHEAD` (2) frames queued. ML1 runs at about 50–55 fps
+paced and about 70 unpaced (`RECOMP_FLIP_NOWAIT=1`).
+
+**Open: sound-heap out-of-memory after about 3 minutes in game.** It is on
+the main thread, in heap `0x011B89D0`: a 0x48-byte allocation from
+`0x0001304D`, called through `0x0031005C` from the sound code at
+`0x000E3064`. Suspected cause: the APU never reports voices finished, so
+sound instances are never freed.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
