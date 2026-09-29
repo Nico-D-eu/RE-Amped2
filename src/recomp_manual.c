@@ -210,6 +210,30 @@ extern void sub_00150E80(void);   /* src/lua_probe.c */
  * AMPED2_PLAY_MOVIES is set. */
 int g_amped2_skip_movies = 1;
 
+/*
+ * 0x0031C4B0: D3DDevice_Swap. It writes FLIP_INCREMENT_WRITE + FLIP_STALL
+ * through sub_0031C050 or sub_0031C1D0, and the title calls it once per
+ * presented frame (FLIP_STALL alone also comes from sub_0031A180, several
+ * times a frame). Wrapped to pace the frame on the title's thread -- see
+ * xbox_PresentPace in the toolkit's nv2a_pb_exec.c -- then do what it
+ * always did.
+ */
+extern void sub_0031C4B0_gen(void);
+extern void xbox_PresentPace(void);
+
+void sub_0031C4B0(void)
+{
+    /* Opt-in (RECOMP_PACE_PRESENT=1). Measured in ML1: pacing here, before
+     * the swap, 48 fps; after it, 23-43 (it collides with D3D's own wait at
+     * the next swap); the executor's FLIP_STALL pacing, the default, 51. */
+    static int on = -1;
+    if (on < 0)
+        on = getenv("RECOMP_PACE_PRESENT") != NULL;
+    if (on)
+        xbox_PresentPace();
+    sub_0031C4B0_gen();
+}
+
 void sub_0002B6C0(void)
 {
     uint32_t obj = g_edi;

@@ -326,6 +326,61 @@ Built from existing parts first, then new assets.
 
 ---
 
+## Part C: Input and other platforms (options, after a stable M4)
+
+Not on the critical path. Written down so the options stay open once the
+Windows build is stable. The generated game code is plain C and doesn't
+care what it runs on. What ties it to Windows is the toolkit runtime:
+- guest memory mapped at fixed addresses (a file mapping, plus the
+  contiguous window at `0x80000000`);
+- **device registers emulated by page faults**, a vectored exception
+  handler that decodes the faulting *x86-64* host instruction (APU, OHCI,
+  AC'97);
+- Win32 threads and events;
+- the D3D11 renderer, XAudio2 or waveOut, the GDI window, and XInput.
+
+### Phase 10: Input
+
+- **Remappable keyboard → controller.** Today the keyboard mapping is
+  fixed in `xboxrecomp/src/input` (Enter = START, arrows = d-pad,
+  Z X A S = A B X Y, Backspace = BACK), with no analog sticks or triggers.
+  Add a `config/input.ini` with per-key bindings, keys for stick
+  directions (with a modifier for half-tilt), the triggers, and Black and
+  White. **Effort: low.**
+- **Any controller, including Bluetooth.** XInput covers Xbox pads, wired
+  or Bluetooth. An SDL3 gamepad backend (HIDAPI) adds DualShock 4,
+  DualSense, Switch Pro, 8BitDo and generic pads, with hot-plug. It maps
+  to the emulated USB Duke pad the game already reads, analog buttons
+  included. **Effort: low to medium.**
+- **Rumble:** route the pad's USB output report (motor speeds) to
+  XInput or SDL rumble. **Effort: low.**
+- **Two to four players** for split-screen modes: one emulated USB pad
+  per host controller, on the OHCI root-hub ports. **Effort: medium**; it
+  needs the OHCI model to expose more than one port.
+
+### Phase 11: Other platforms
+
+| Target | What changes | Effort |
+|---|---|---|
+| **UWP: Windows Store, and Xbox One/Series in Dev Mode** | Still Windows and D3D11, so the renderer and audio carry over. Swap GDI for CoreWindow and a swap chain (Phase 7 needs one anyway), file mappings for `CreateFileMappingFromApp`/`MapViewOfFile3FromApp`, and XInput for `Windows.Gaming.Input`. Game data goes in app-local storage. Check that fixed-address mapping and a vectored exception handler are allowed inside the app container. On Xbox Dev Mode, a "Game" app gets enough memory (the game needs ~64 MB guest plus the host). | **Medium.** The most realistic port. |
+| **Android (ARM64)** | The generated C compiles for ARM64 once the lifter's SSE helpers (`XMM_*`) have scalar or NEON versions. Device emulation needs a SIGSEGV handler that decodes *ARM64* loads and stores (or MMIO calls emitted by the lifter, which would be cleaner everywhere). Also needed: a Vulkan (or GLES) backend next to D3D11, AAudio audio, Android input, `mmap` for memory, and pthreads for the kernel's threads. | **High.** |
+| **Nintendo Switch** | Same ARM64 work as Android, on either homebrew (libnx, deko3d or Mesa OpenGL) or the official SDK (licensed developers only, under NDA). There are 4 GB of RAM and tight virtual-memory control, so the fixed-address guest mapping needs checking first. | **Highest**, with distribution and legal constraints on top. |
+
+What they'd share, in the order to do it:
+1. A renderer interface under the executor, with D3D11 as one backend and
+   Vulkan as the second (it covers Android, Linux and Steam Deck).
+2. MMIO accesses emitted by the lifter as calls instead of trapped page
+   faults. That removes the host-instruction decoder, the least portable
+   piece.
+3. An audio sink interface.
+4. SDL3 for the window, input and audio on everything except UWP and
+   Switch.
+
+The same rule as Part B applies: none of this starts before M4, and no
+game data ships with any build.
+
+---
+
 ## Risks
 
 | Risk | Impact | Mitigation |
