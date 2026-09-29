@@ -607,7 +607,12 @@ packets, and the display paces at 60 Hz with up to
 `RECOMP_GPU_FRAMES_AHEAD` (2) frames queued. ML1 runs at about 50–55 fps
 paced and about 70 unpaced (`RECOMP_FLIP_NOWAIT=1`).
 
-**Fixed (toolkit `38bb728`): sound-heap out-of-memory after about 3 minutes in game.** The APU interrupt (vector 5) was never delivered, so DirectSound never saw voices end. Original notes: It is on
+**Still open: sound-heap out-of-memory after 1.5–4 min in game.** The APU
+interrupt fix (toolkit `38bb728`) was necessary but not enough. XACT's sound
+instances, allocated via `sub_0002CFD0`/`0x0001304D` from XACTENG
+`0x0031005C` (reached from the sound code at `0x000E3064`), are never
+released: 4,041 allocations and 554 KB at the failure (`diag/leak1`).
+Earlier notes: The APU interrupt (vector 5) was never delivered, so DirectSound never saw voices end. Original notes: It is on
 the main thread, in heap `0x011B89D0`: a 0x48-byte allocation from
 `0x0001304D`, called through `0x0031005C` from the sound code at
 `0x000E3064`. Suspected cause: the APU never reports voices finished, so
