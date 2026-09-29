@@ -70,6 +70,25 @@ void amped2_diag(const char *fmt, ...)
     fflush(stderr);
 }
 
+/* Timestamped event, for probes pasted into generated code: milliseconds
+ * since the first event, the host thread, a tag and three values. */
+__declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
+__declspec(dllimport) int __stdcall QueryPerformanceCounter(long long *);
+__declspec(dllimport) int __stdcall QueryPerformanceFrequency(long long *);
+void amped2_race(const char *tag, uint32_t a, uint32_t b, uint32_t c)
+{
+    static long long f, t0;
+    long long now;
+    if (!f) {
+        QueryPerformanceFrequency(&f);
+        QueryPerformanceCounter(&t0);
+    }
+    QueryPerformanceCounter(&now);
+    fprintf(stderr, "[RACE] %9.3f ms t%-6lu %s %08X %08X %08X\n",
+            (double)(now - t0) * 1000.0 / (double)f, GetCurrentThreadId(), tag, a, b, c);
+    fflush(stderr);
+}
+
 /* Allocation probe, for a call pasted into the generated allocators
  * (sub_000DC0F0 at loc_000DC1B8, sub_000DC1E0 at loc_000DC2AD -- see README
  * "Bring-up notes"): who allocates from which heap object, by caller and
@@ -77,7 +96,6 @@ void amped2_diag(const char *fmt, ...)
  * logs every 20th allocation into that one heap. Nothing calls it unless
  * the generated code has been edited to. */
 #define PROBE_SLOTS 4096
-__declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
 static struct { uint32_t heap, ret, count, bytes, fails; unsigned long tid; } s_ap[PROBE_SLOTS];
 void amped2_alloc_probe(uint32_t heap, uint32_t size, uint32_t result, uint32_t ret)
 {

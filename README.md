@@ -544,30 +544,30 @@ which is D3D's CPU/GPU sync point. So frame time is roughly game time plus
 executor time. Per frame in ML1: about 800 draws, 2.9 MB of vertex copies,
 3.3 MB of texture hashing, and 5 ms inside `nv2a_d3d11_draw`.
 
-**Level-load race (open).** With the GPU backend, the ML1 load fails about
-half the time, and in 3/3 runs with `RECOMP_DVD_SPEED=6000`. The title's
-out-of-memory handler (`0x0002B6C0`, reached from the allocator at
-`0x000DC1D6`) launches `d:\Boom.xbe`. The failing heap is the boarder's
-41,000-byte `"SkeletonData"` sub-heap, created at `0x0017C83A`
-(`sub_000DBE50(parent, 0xA028, 1, 0)`). A `RECOMP_WATCH` on its name field
-(`diag/w1.txt`) shows the sequence:
-1. The loader thread (worker `0x00259939`) creates the heap and writes its
-   name.
-2. The main thread's front-end teardown (`0x0017BFE0` → sub-heap destructor
-   `0x000DD79D` → `0x000DBFFB`) frees it.
+**Level-load race (fixed, toolkit `e8ca4b3`).** With the GPU backend the ML1
+load failed about half the time, and every time at disc speed. The title's
+out-of-memory handler (`0x0002B6C0`, reached from `0x000DC1D6`) launched
+`d:\Boom.xbe` when the boarder's 41,000-byte `"SkeletonData"` sub-heap
+(created at `0x0017C83A` by `sub_000DBE50(parent, 0xA028, 1, 0)`) ran out.
 
-The loader then builds the rider skeleton (`0x0015CC26`, `0x0015CEE6`,
-recursive from `0x0015D799`) into freed memory and runs out. The software
-rasteriser hid this by keeping the main thread waiting on the GPU.
+Timestamped probes (`amped2_race`, pasted into the generated code) showed
+the order. The loader thread starts loading the front-end preview boarder
+(`sub_0017C780`), creates its heaps, and is still loading 11 s later. By
+then leaving the menu has run the teardown (`sub_0017BF20` at
+`0x0017BFAD`, called from `0x0017BFE0`), which destroys those heaps under
+it. The native profile of the loader explained the 11 s: 71% `WriteFile`.
+`bridge_NtReadFile` printed and flushed a `[READ]` line per read, and the
+skeleton loader (`0x0015D710`, recursive) reads a node at a time. The
+software rasteriser's slow menus had always left the load enough time.
+With the per-read trace opt-in (`RECOMP_READ_TRACE=1`), 4/4 loads reach the
+level, disc speed included (`diag/fx1`–`fx4`).
 
-These did not fix it:
-- flips at 30 fps;
-- all guest threads on one CPU with Windows priority boosts off;
-- disc-speed reads (made it worse).
-
-Found on the way: new threads were copying the main thread's live TLS
-block, current-heap stack included. They now copy a snapshot taken at load
-(toolkit `2fcc6f4`).
+Ruled out on the way: flips at 30 fps, one guest CPU
+(`RECOMP_GUEST_CPU`, which also hangs), and priority boosts. Found on the
+way: new threads copied the main thread's live TLS block (current-heap
+stack included). They now copy a snapshot taken at load (`2fcc6f4`).
+**Lesson:** per-call logging on the file path changes the title's timing
+enough to lose its races. Keep hot-path traces opt-in.
 
 To trace allocations again, paste
 `amped2_alloc_probe(edi, MEM32(esp + 0x28), eax, MEM32(esp + 0x24))` into
