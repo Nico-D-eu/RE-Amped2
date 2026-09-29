@@ -247,6 +247,8 @@ extern void xbox_OhciInit(void);
 extern int  xbox_OhciOwnsAddress(uint32_t xbox_va);
 extern int  xbox_OhciHandleMmio(void *ctx, uint32_t xbox_va);
 
+void amped2_stderr_drain(void);
+
 static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
 {
     if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
@@ -344,12 +346,85 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
             }
         }
         fflush(stderr);
+        amped2_stderr_drain();   /* the process is about to die */
     }
 
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
 /* ── WinMain ───────────────────────────────────────────────── */
+
+/* Stderr through a pipe that a writer thread drains.
+ *
+ * Every fprintf(stderr) cost 12-15 ms under tools/diag.ps1 (Start-Process
+ * redirecting to a file), and the runtime prints from its hot threads: the
+ * 10 s GPU report took 430 ms on the executor thread, and a ~100 ms hitch
+ * followed every kernel-call summary -- together about 5 of the 60 frames a
+ * second in ML1. A pipe write costs microseconds; the slow file write moves
+ * to a thread nothing waits on. RECOMP_SYNC_STDERR=1 keeps the old,
+ * synchronous stderr (when a crash must not lose its last lines). */
+#include <io.h>
+#include <fcntl.h>
+static HANDLE s_err_file, s_err_pipe_r, s_err_pump;
+static DWORD WINAPI stderr_pump(LPVOID unused)
+{
+    char buf[65536];
+    DWORD n, w;
+    (void)unused;
+    while (ReadFile(s_err_pipe_r, buf, sizeof buf, &n, NULL) && n)
+        WriteFile(s_err_file, buf, n, &w, NULL);
+    return 0;
+}
+
+static void stderr_drain(void)
+{
+    DWORD avail = 0, t0 = GetTickCount();
+    fflush(stderr);
+    /* Wait (a little) for the pump to write what is queued. */
+    while (PeekNamedPipe(s_err_pipe_r, NULL, 0, NULL, &avail, NULL) && avail
+           && GetTickCount() - t0 < 2000)
+        Sleep(1);
+    Sleep(5);
+}
+
+static void stderr_async(void)
+{
+    HANDLE w;
+    int fd;
+    if (getenv("RECOMP_SYNC_STDERR"))
+        return;
+    {
+        /* A handle of our own: _dup2 below closes the one behind fd 2. */
+        HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+        if (!h || h == INVALID_HANDLE_VALUE || GetFileType(h) == FILE_TYPE_UNKNOWN
+                || !DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(),
+                                    &s_err_file, 0, FALSE, DUPLICATE_SAME_ACCESS))
+            return;
+    }
+    if (!CreatePipe(&s_err_pipe_r, &w, NULL, 1u << 20))
+        return;
+    fd = _open_osfhandle((intptr_t)w, _O_WRONLY | _O_BINARY);
+    if (fd < 0)
+        return;
+    fflush(stderr);
+    if (_dup2(fd, _fileno(stderr)) != 0)
+        return;
+    SetStdHandle(STD_ERROR_HANDLE, (HANDLE)_get_osfhandle(_fileno(stderr)));
+    s_err_pump = CreateThread(NULL, 0, stderr_pump, NULL, 0, NULL);
+    atexit(stderr_drain);
+    {
+        extern void (*g_xbox_flush_logs)(void);
+        g_xbox_flush_logs = stderr_drain;
+    }
+}
+
+/* For exit paths that skip atexit (_exit after a watchdog dump, crash
+ * handlers): let the queued lines reach the file first. */
+void amped2_stderr_drain(void)
+{
+    if (s_err_pump)
+        stderr_drain();
+}
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow)
@@ -365,6 +440,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Unbuffered output for immediate visibility during debugging */
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
+    stderr_async();
 
     /* Runtime switches Amped 2 cannot boot without, as defaults. They must be
      * set before xbox_MemoryLayoutInit, which reads them. Anything already in

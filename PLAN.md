@@ -11,6 +11,19 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-09-30, night): sound works and ML1 holds 60 fps.**
+- **Sound.** The sound-heap out-of-memory was a lifter flag-join bug in
+  XACT (toolkit `a5335eb`). The freeze that followed was the APU spinning
+  on a dry stream voice (`db6b76c`). The APU now reads the right memory by
+  default, and in-game sound plays throughout. Front-end music (WMA) is
+  still silent: the game never opens a song after its jukebox scan.
+- **Frame rate.** Paced ML1 is a locked 60.0 fps, 600 flips in 10.00 s,
+  even with a cold shader cache (`0e5554b`, and async stderr in `main.c`).
+  The hitches came from logging on hot threads and from compiling shaders
+  on the render thread.
+- **Soak.** 15 minutes in ML1 with no crash, no out-of-memory and no freeze
+  (`soak4`).
+
 **Update (2026-09-29, evening): the D3D11 GPU backend is in** (toolkit
 `bb4b030`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
 and register combiners are compiled to HLSL; textures, render targets and
@@ -230,7 +243,8 @@ Work items, in order of likelihood:
 
 - A full career playthrough with no crash and no soft-lock.
 - A frame-pacing target of a locked 30 or 60 fps (as on Xbox) with no
-  stutter on the RTX 2070 laptop.
+  stutter on the RTX 2070 laptop. (2026-09-30: ML1 is locked at 60 after
+  loading. Level loads still hitch, and other levels are unmeasured.)
 - Faster builds: hot-rebuild a single chunk, and `/MP` tuning.
 - Fix the lifter's unmasked immediate shift count (C4293) upstream if any
   real code turns out to hit it.

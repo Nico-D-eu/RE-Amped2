@@ -653,6 +653,38 @@ Now the default: the APU reads the contiguous window (`AMPED2_APU_PHYS=0`
 restores the old silent base). In-game audio plays throughout
 (`diag/audio_fixed.wav`). `soak4` ran 15 min in ML1 at about 51 fps.
 
+### Locked 60 fps in ML1 (2026-09-30, night)
+
+Paced ML1 ran at 53–55 fps, though the game can do 80 unpaced
+(`RECOMP_FLIP_NOWAIT=1`). A deeper frame queue (`RECOMP_GPU_FRAMES_AHEAD`
+3 or 4) made no difference. `RECOMP_PACE_TRACE=1` shows the cause: steady
+state was fine, with the render thread waiting about 12 ms per flip, and
+the rate was lost in hitches.
+
+- **Every 2 s, about 100 ms:** the kernel-call summary. It is now opt-in
+  with `RECOMP_KERNEL_SUMMARY`.
+- **Every 10 s, about 430 ms:** the GPU report on the executor thread. Each
+  `fprintf(stderr)` cost 12–15 ms with stderr redirected to a file by
+  `diag.ps1`. `main.c` now sends stderr through a 1 MB pipe drained by a
+  writer thread. `RECOMP_SYNC_STDERR=1` restores the synchronous stderr;
+  the pipe is drained at exit, in the crash reporter, and through the
+  toolkit's `g_xbox_flush_logs` before ExitProcess and `_exit`.
+- **80–300 ms whenever a vertex program is seen for the first time:**
+  `D3DCompile` of the generated HLSL (500+ lines) on the render thread.
+  Even with optimization skipped it takes about 110 ms. The game keeps
+  meeting new programs for minutes into a level, as it builds them from
+  material and light state. Shaders now compile on a worker thread, and the
+  draws that need one are skipped for the frame or two until it's ready
+  (`RECOMP_GPU_ASYNC_SHADERS=0` restores blocking). They're also cached on
+  disk in `shader_cache/` (`RECOMP_SHADER_CACHE`).
+
+Result: 600 flips in 10.00 s, repeatedly, with zero resyncs, from a cold
+cache (`diag/async3`). Only level loading still hitches. A screenshot shows
+nothing missing (`diag/async_game.png`).
+
+**Lesson:** logging is not free here. Anything printed from the executor,
+render, APU or guest threads has to be rare or go through the pipe.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
