@@ -11,6 +11,17 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-09-29, later afternoon):** lit models render (packed
+normals, `7984c71`), and the executor is about twice as fast (`0afb035`),
+at roughly 1.6 fps in game. That's the ceiling of the single-threaded
+software renderer: the game waits on it. **Next decision: a GPU
+backend.** Vertex programs → HLSL, combiners → pixel shaders, texture
+upload/swizzle/DXT, render targets and depth on D3D11. The toolkit's
+`src/nv2a/nv2a_pgraph_d3d11.c` is a 653-line 2D-menu prototype for
+another title, not a base for this. The alternative is a multi-threaded
+software path with predecoded vertex programs, which is cheaper but
+probably tops out at a few fps.
+
 **Update (2026-09-29, afternoon):** with register combiners and four
 texture stages in the executor (toolkit `c5300e9`), **the front end and
 level ML1 render like the game**: the logo and snow backdrop, the rider
