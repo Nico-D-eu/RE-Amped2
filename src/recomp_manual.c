@@ -60,12 +60,69 @@ typedef void (*recomp_func_t)(void);
 /* printf to stderr for a probe pasted into generated code, which cannot
  * include stdio.h (the Ghidra-named declarations collide with the CRT's). */
 #include <stdarg.h>
+#include <stdlib.h>
 void amped2_diag(const char *fmt, ...)
 {
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
+    fflush(stderr);
+}
+
+/* Allocation probe, for a call pasted into the generated allocators
+ * (sub_000DC0F0 at loc_000DC1B8, sub_000DC1E0 at loc_000DC2AD -- see README
+ * "Bring-up notes"): who allocates from which heap object, by caller and
+ * thread, printed by the OOM wrapper below. RECOMP_AP_HEAP=<object> also
+ * logs every 20th allocation into that one heap. Nothing calls it unless
+ * the generated code has been edited to. */
+#define PROBE_SLOTS 4096
+__declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
+static struct { uint32_t heap, ret, count, bytes, fails; unsigned long tid; } s_ap[PROBE_SLOTS];
+void amped2_alloc_probe(uint32_t heap, uint32_t size, uint32_t result, uint32_t ret)
+{
+    unsigned long tid = GetCurrentThreadId();
+    int i;
+    for (i = 0; i < PROBE_SLOTS; i++) {
+        if (s_ap[i].count && s_ap[i].heap == heap && s_ap[i].ret == ret && s_ap[i].tid == tid)
+            break;
+        if (!s_ap[i].count) {
+            s_ap[i].heap = heap; s_ap[i].ret = ret; s_ap[i].tid = tid;
+            break;
+        }
+    }
+    if (i == PROBE_SLOTS)
+        return;
+    s_ap[i].count++;
+    s_ap[i].bytes += size;
+    if (!result)
+        s_ap[i].fails++;
+    {
+        static uint32_t watch_heap = 1;
+        if (watch_heap == 1) {
+            const char *e = getenv("RECOMP_AP_HEAP");
+            watch_heap = e ? (uint32_t)strtoul(e, NULL, 0) : 0;
+        }
+        if (!watch_heap || heap != watch_heap)
+            return;
+    }
+    {
+        static uint32_t n, total;
+        n++;
+        total += size;
+        if (n % 20 == 0 || size > 1000)
+            fprintf(stderr, "[AP] heap 0x%08X: alloc #%u size %u from 0x%08X tid %lu, %u bytes so far%s\n",
+                    heap, n, size, ret, tid, total, result ? "" : " FAILED");
+    }
+}
+static void alloc_probe_dump(uint32_t heap)
+{
+    int i;
+    fprintf(stderr, "[AP] allocations from heap object 0x%08X, by caller and thread:\n", heap);
+    for (i = 0; i < PROBE_SLOTS && s_ap[i].count; i++)
+        if (s_ap[i].heap == heap || s_ap[i].count >= 200)
+            fprintf(stderr, "[AP]   heap 0x%08X ret 0x%08X tid %5lu: %u allocs, %u bytes, %u failed\n",
+                    s_ap[i].heap, s_ap[i].ret, s_ap[i].tid, s_ap[i].count, s_ap[i].bytes, s_ap[i].fails);
     fflush(stderr);
 }
 
@@ -140,6 +197,18 @@ void sub_0002B6C0(void)
     uint32_t obj = g_edi;
 
     dump_guest_backtrace("out-of-memory handler 0x0002B6C0", 4096);
+    alloc_probe_dump(obj);
+    if (obj && obj < 0x04000000u) {
+        uint32_t i, vt = MEM32(obj);
+        fprintf(stderr, "[BT]   heap object 0x%08X:", obj);
+        for (i = 0; i < 56; i++)
+            fprintf(stderr, "%s%08X", (i % 8) ? " " : "\n[BT]     ", MEM32(obj + i * 4));
+        fprintf(stderr, "\n[BT]   its table 0x%08X:", vt);
+        if (vt && vt < 0x04000000u)
+            for (i = 0; i < 16; i++)
+                fprintf(stderr, " %08X", MEM32(vt + i * 4));
+        fprintf(stderr, "\n");
+    }
     if (obj && obj < 0x04000000u) {
         uint32_t i, vt = MEM32(obj);
         fprintf(stderr, "[BT]   allocator object 0x%08X vtable 0x%08X:", obj, vt);

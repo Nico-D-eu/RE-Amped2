@@ -521,6 +521,60 @@ menus now match the game, including the rider portraits that used to be
 dark, and ML1 renders snow, forest, lifts, sky and the HUD.
 `RECOMP_NO_COMBINERS=1` switches back to the old path.
 
+### GPU backend (2026-09-29, evening)
+
+Toolkit `bb4b030` draws on D3D11. It's on by default (`main.c` sets
+`RECOMP_GPU=d3d11`; `RECOMP_GPU=software` gets the software path back).
+The executor still decodes the pushbuffer; only draws, clears and flips
+change. Vertex programs and combiners become HLSL (`nv2a_hlsl.c`), and
+textures and surfaces are cached on the GPU by guest address. Finished
+frames are read back into the same window, so `RECOMP_FB_DUMP` and
+`RECOMP_FB_WINDOW_DUMP_EVERY` still work. The front end runs at 60–90 fps
+and ML1 at about 46 fps on the RTX 2070 (`diag/gpu3`, `diag/prof2`).
+
+Switches: `RECOMP_GPU_DEBUG` (D3D11 debug layer), `RECOMP_GPU_ADAPTER=default`
+(don't pick the high-performance GPU), `RECOMP_GPU_CULL` (backface culling;
+off until the winding has been checked on screen), `RECOMP_FLIP_INTERVAL=<n>`
+and `RECOMP_FLIP_NOWAIT` (flip pacing), `RECOMP_DVD_SPEED=<KB/s>` (reads take
+disc time), and `RECOMP_GUEST_CPU=<n>` (all guest threads on one CPU).
+
+In game, the main thread spends about 40% of its time in `sub_0031EC30`. That
+function sets PFIFO `0x100410` bit 16 and spins until the executor clears it,
+which is D3D's CPU/GPU sync point. So frame time is roughly game time plus
+executor time. Per frame in ML1: about 800 draws, 2.9 MB of vertex copies,
+3.3 MB of texture hashing, and 5 ms inside `nv2a_d3d11_draw`.
+
+**Level-load race (open).** With the GPU backend, the ML1 load fails about
+half the time, and in 3/3 runs with `RECOMP_DVD_SPEED=6000`. The title's
+out-of-memory handler (`0x0002B6C0`, reached from the allocator at
+`0x000DC1D6`) launches `d:\Boom.xbe`. The failing heap is the boarder's
+41,000-byte `"SkeletonData"` sub-heap, created at `0x0017C83A`
+(`sub_000DBE50(parent, 0xA028, 1, 0)`). A `RECOMP_WATCH` on its name field
+(`diag/w1.txt`) shows the sequence:
+1. The loader thread (worker `0x00259939`) creates the heap and writes its
+   name.
+2. The main thread's front-end teardown (`0x0017BFE0` → sub-heap destructor
+   `0x000DD79D` → `0x000DBFFB`) frees it.
+
+The loader then builds the rider skeleton (`0x0015CC26`, `0x0015CEE6`,
+recursive from `0x0015D799`) into freed memory and runs out. The software
+rasteriser hid this by keeping the main thread waiting on the GPU.
+
+These did not fix it:
+- flips at 30 fps;
+- all guest threads on one CPU with Windows priority boosts off;
+- disc-speed reads (made it worse).
+
+Found on the way: new threads were copying the main thread's live TLS
+block, current-heap stack included. They now copy a snapshot taken at load
+(toolkit `2fcc6f4`).
+
+To trace allocations again, paste
+`amped2_alloc_probe(edi, MEM32(esp + 0x28), eax, MEM32(esp + 0x24))` into
+the generated `sub_000DC0F0` at `loc_000DC1B8`. The out-of-memory wrapper
+then prints callers by heap and thread, and `RECOMP_AP_HEAP=<object>` logs
+one heap's allocations.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes

@@ -399,6 +399,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         _putenv("RECOMP_PB_EXEC=1");
     if (!getenv("RECOMP_FB_WINDOW"))
         _putenv("RECOMP_FB_WINDOW=1");
+    /* Draw on the GPU (the toolkit's D3D11 backend, nv2a_d3d11.c): about 46
+     * fps in game where the software rasteriser managed 1.6.
+     * RECOMP_GPU=software keeps the software path. */
+    if (!getenv("RECOMP_GPU"))
+        _putenv("RECOMP_GPU=d3d11");
     /* Input: the emulated USB gamepad, fed by a real XInput pad on the PC or,
      * with the game window focused, the keyboard (Enter = START, arrows =
      * d-pad, Z X A S = A B X Y, Backspace = BACK; see

@@ -11,6 +11,21 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-09-29, evening): the D3D11 GPU backend is in** (toolkit
+`bb4b030`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
+and register combiners are compiled to HLSL; textures, render targets and
+depth live on the GPU. The front end runs at 60–90 fps and level ML1 at
+**about 46 fps** (was 1.6), on the RTX 2070. Flips now wait for a 60 Hz
+vblank. **Blocker found:** level loads fail about half the time, and every
+time at disc speed. The loader thread creates the boarder's SkeletonData
+heap while the main thread's front-end teardown (`0x0017BFE0` → heap
+destructor `0x000DD79D`) frees it. The load then runs out of memory and
+launches `d:\Boom.xbe`. This is a race in the game that its threads now
+lose: the software renderer kept the main thread waiting. Neither
+single-CPU pinning (`RECOMP_GUEST_CPU`) nor 30 fps flips fixed it. Next:
+find what orders that hand-off on the console. Also next: fog, shadows,
+presenting to a swap chain with upscaling, and cheaper per-draw state.
+
 **Update (2026-09-29, later afternoon):** lit models render (packed
 normals, `7984c71`), and the executor is about twice as fast (`0afb035`),
 at roughly 1.6 fps in game. That's the ceiling of the single-threaded
@@ -199,8 +214,9 @@ Work items, in order of likelihood:
 **Exit criteria**
 
 - [ ] One level (the first career level) loads and renders
-      (2026-09-29: ML1 loads, runs and renders with combiners; the rider
-      model is black; no fog or shadows)
+      (2026-09-29: ML1 loads, runs and renders on the GPU at about 46 fps;
+      the load fails about half the time on a loader/teardown race; no fog
+      or shadows)
 - [ ] The rider can be controlled, tricks register, the score works
 - [ ] The run can be finished and exited back to the menu
 
