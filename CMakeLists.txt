@@ -111,6 +111,18 @@ if(MSVC)
     # optimisations.
     target_compile_options(${PROJECT_NAME} PRIVATE /Zi)
     target_link_options(${PROJECT_NAME} PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+
+    # F5 in Visual Studio: the game as the startup project, run from the
+    # project root (it finds game\ and writes game\UDATA relative to it),
+    # with the toolkit libraries and the generated chunks in the same
+    # solution. AMPED2_DEBUG_ENV adds RECOMP_* switches to the debug
+    # session, e.g. -DAMPED2_DEBUG_ENV="RECOMP_GPU_DEBUG=1".
+    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
+    set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+    set(AMPED2_DEBUG_ENV "" CACHE STRING "Environment for Visual Studio debug sessions (NAME=value;...)")
+    if(AMPED2_DEBUG_ENV)
+        set_property(TARGET ${PROJECT_NAME} PROPERTY VS_DEBUGGER_ENVIRONMENT "${AMPED2_DEBUG_ENV}")
+    endif()
 endif()
 
 # ── Game-specific additions ─────────────────────────────────────
