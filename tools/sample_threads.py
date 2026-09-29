@@ -239,6 +239,8 @@ def main():
     ap.add_argument("--stacks", action="store_true",
                     help="also print each thread's native call stack once, "
                          "keeping the frames in recompiled or runtime code")
+    ap.add_argument("--all-frames", action="store_true",
+                    help="with --stacks, keep every frame (system DLLs too)")
     args = ap.parse_args()
 
     proc = None
@@ -273,7 +275,7 @@ def main():
             named = []
             for pc in frames:
                 name, where, label = symbolize(hproc, pc)
-                if where or name.startswith(("sub_", "xbox_", "bridge_", "recomp_")):
+                if args.all_frames or where or name.startswith(("sub_", "xbox_", "bridge_", "recomp_")):
                     named.append("%s%s" % (name.split("+")[0],
                                            (" [guest %s]" % label) if label and label != "?" else ""))
             if named:

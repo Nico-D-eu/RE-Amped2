@@ -607,16 +607,51 @@ packets, and the display paces at 60 Hz with up to
 `RECOMP_GPU_FRAMES_AHEAD` (2) frames queued. ML1 runs at about 50–55 fps
 paced and about 70 unpaced (`RECOMP_FLIP_NOWAIT=1`).
 
-**Still open: sound-heap out-of-memory after 1.5–4 min in game.** The APU
-interrupt fix (toolkit `38bb728`) was necessary but not enough. XACT's sound
-instances, allocated via `sub_0002CFD0`/`0x0001304D` from XACTENG
-`0x0031005C` (reached from the sound code at `0x000E3064`), are never
-released: 4,041 allocations and 554 KB at the failure (`diag/leak1`).
-Earlier notes: The APU interrupt (vector 5) was never delivered, so DirectSound never saw voices end. Original notes: It is on
-the main thread, in heap `0x011B89D0`: a 0x48-byte allocation from
-`0x0001304D`, called through `0x0031005C` from the sound code at
-`0x000E3064`. Suspected cause: the APU never reports voices finished, so
-sound instances are never freed.
+### Sound heap out of memory and the APU freeze (fixed, 2026-09-29/30)
+
+**The out-of-memory was a lifter bug.** XACT's track state machine
+`sub_00316595` joins a 16-bit `cmp word [esi+30h],7` and a 32-bit
+`cmp eax,7` at one `jne` (`0x003165E3`).
+- The translator refused to merge compares of different widths, so the
+  `jne` became the `_flags` fallback, which is always false.
+- As a result, every transition into track states 3–6 was "illegal". The
+  track start `0x0031449F` returned E_FAIL, and every SoundBank Play
+  (`0x00310369`) failed.
+- Play's error path (`0x00310343`) stops the cue. That frees the track's
+  reference but not the cue's own, so each sound the game played leaked a
+  64-byte cue (refcount 1, flags 4, no tracks) plus a chunk of the size-class
+  pool (`0x0001304D`). The pool never returns chunks to the heap.
+
+The fix is toolkit `a5335eb`: mixed-width joins merge into a marker that
+answers only the width-independent conditions.
+
+How it was found:
+- A free probe showed 0 heap frees of the chunks.
+- Object tracking at `operator new`/`delete` (`sub_0002CFD0`/`sub_0002D040`)
+  found 4,091 cues and 30 deletes.
+- A cue lifecycle trace showed play → new → stop from the error path.
+- `setst 1→5` returned 0, which the original code allows.
+
+The probes are kept in `src/recomp_manual.c`: `amped2_new_probe`/
+`amped2_delete_probe`, and `amped2_cue_event` with
+`RECOMP_CUE_TRACE=<lines>`. Paste them into gen as the comments say.
+
+**With sounds playing, the game then froze after 1–4 min.** The APU frame
+thread spun forever in `voice_process`:
+- A persist stream voice with no SSLs left makes `voice_get_samples`
+  answer -1 with a notification. `voice_resample` turned that into 0, and
+  the caller loops until it gets a negative count. The frame thread spun
+  with `d->lock` held and wrote tens of millions of notifications.
+- The next DirectSound `VOICE_LOCK` write (`sub_0029694E`, through the MMIO
+  VEH) then waited on `d->lock` while holding the title's DirectSound lock.
+
+The fix is toolkit `db6b76c`, which also makes the frame thread hand the
+lock to queued writers. `RECOMP_APU_STATS=1` prints voice, notification and
+frame-rate counters every 5 s.
+
+Now the default: the APU reads the contiguous window (`AMPED2_APU_PHYS=0`
+restores the old silent base). In-game audio plays throughout
+(`diag/audio_fixed.wav`). `soak4` ran 15 min in ML1 at about 51 fps.
 
 ### Known toolkit issue (for upstream)
 

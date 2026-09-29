@@ -498,16 +498,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
          * separate storage, not an alias of low RAM. Giving it the base of
          * low RAM made it play whatever sat at those offsets there: a
          * clipping 750 Hz buzz (diag/audio_frontend.wav). */
-        /* Opt-in for now (AMPED2_APU_PHYS=1, which also unmutes the guest's
-         * audio): with the APU reading the right memory, sound plays, but
-         * XACT's sound instances (allocated through 0x0001304D from XACTENG
-         * 0x0031005C) are never released and the sound heap 0x011B89D0 runs
-         * out after about 2.4 min in ML1 (diag/leak1: 4041 allocations, 554
-         * KB). With low RAM's base the APU never sees a real voice, nothing
-         * accumulates, and a 12-minute soak is clean -- silent. */
+        /* The default since the sound-heap leak and the APU freeze were
+         * fixed (toolkit a5335eb, db6b76c; README "Sound heap out of
+         * memory"). AMPED2_APU_PHYS=0 is the old low-RAM base, which is
+         * silent and writes the APU's notifications into game memory at
+         * FENADDR's physical offset -- keep it for comparisons only. */
         extern ptrdiff_t xbox_GetMemoryOffset(void);
         const char *phys = getenv("AMPED2_APU_PHYS");
-        if (phys && *phys == '1') {
+        if (!(phys && *phys == '0')) {
             if (!getenv("RECOMP_APU_GUEST_AUDIO"))
                 _putenv("RECOMP_APU_GUEST_AUDIO=1");
             g_apu_state = mcpx_apu_init_standalone(

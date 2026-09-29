@@ -89,6 +89,152 @@ void amped2_race(const char *tag, uint32_t a, uint32_t b, uint32_t c)
     fflush(stderr);
 }
 
+/* Object lifetimes through the game's operator new/delete (sub_0002CFD0 /
+ * sub_0002D040), by the caller of new: which call sites keep objects alive.
+ * Paste amped2_new_probe(eax, MEM32(esp + 0xC), MEM32(esp + 0x10),
+ * MEM32(esp + 8)) at sub_0002CFD0's loc_0002D02C, and
+ * amped2_delete_probe(MEM32(esp + 4), MEM32(esp)) at loc_0002D040.
+ * Every 20000 news the callers holding the most live objects are listed. */
+#define LIVE_SLOTS (1u << 20)
+#define SITE_SLOTS 2048
+static struct { uint32_t ptr; uint16_t site; } s_live[LIVE_SLOTS];
+static struct { uint32_t ret, news, deletes, bytes, flags; } s_site[SITE_SLOTS];
+static uint32_t s_news, s_deletes, s_unknown_deletes;
+long _InterlockedExchange(long volatile *, long);
+void _mm_pause(void);
+#pragma intrinsic(_InterlockedExchange, _mm_pause)
+static volatile long s_live_lock;
+
+static void live_lock(void)   { while (_InterlockedExchange(&s_live_lock, 1)) _mm_pause(); }
+static void live_unlock(void) { _InterlockedExchange(&s_live_lock, 0); }
+
+static void live_report(void)
+{
+    uint32_t order[16] = {0}, i, k;
+    for (i = 1; i < SITE_SLOTS; i++) {
+        uint32_t live = s_site[i].news - s_site[i].deletes;
+        if (!s_site[i].ret)
+            continue;
+        for (k = 0; k < 16; k++) {
+            uint32_t o = order[k];
+            if (!o || live > s_site[o].news - s_site[o].deletes) {
+                memmove(&order[k + 1], &order[k], (15 - k) * sizeof order[0]);
+                order[k] = i;
+                break;
+            }
+        }
+    }
+    /* XACT sound cues (new at 0x0031005C): what the live ones are waiting
+     * on -- refcount (+0x34), flags (+0x38), and the state (+0x30) of each
+     * of the three track slots (+0x28/+0x2C/+0x30, 0 = empty). */
+    {
+        static struct { uint32_t key[5], count; } h[32];
+        uint32_t n = 0, j, t;
+        memset(h, 0, sizeof h);
+        for (j = 0; j < LIVE_SLOTS; j++) {
+            uint32_t p = s_live[j].ptr, key[5];
+            if (!p || p == 0xFFFFFFFFu || s_site[s_live[j].site].ret != 0x0031005Cu)
+                continue;
+            key[0] = MEM32(p + 0x34);
+            key[1] = MEM16(p + 0x38);
+            for (t = 0; t < 3; t++) {
+                uint32_t tr = MEM32(p + 0x28 + t * 4);
+                key[2 + t] = tr ? 0x10000u | MEM16(tr + 0x30) : 0;
+            }
+            for (t = 0; t < 32; t++)
+                if (!h[t].count || !memcmp(h[t].key, key, sizeof key)) {
+                    memcpy(h[t].key, key, sizeof key);
+                    h[t].count++;
+                    break;
+                }
+            n++;
+        }
+        fprintf(stderr, "[LIVE] %u live XACT cues by (refs, flags, track states):\n", n);
+        for (t = 0; t < 32 && h[t].count; t++)
+            fprintf(stderr, "[LIVE]   refs %u flags %04X tracks %05X %05X %05X: %u\n",
+                    h[t].key[0], h[t].key[1], h[t].key[2], h[t].key[3], h[t].key[4], h[t].count);
+    }
+    fprintf(stderr, "[LIVE] %u news, %u deletes (%u of unknown objects); top live by caller of new:\n",
+            s_news, s_deletes, s_unknown_deletes);
+    for (k = 0; k < 16 && order[k]; k++) {
+        i = order[k];
+        fprintf(stderr, "[LIVE]   ret 0x%08X flags %08X: %u new, %u deleted, %u live, %u bytes total\n",
+                s_site[i].ret, s_site[i].flags, s_site[i].news, s_site[i].deletes,
+                s_site[i].news - s_site[i].deletes, s_site[i].bytes);
+    }
+    fflush(stderr);
+}
+
+void amped2_new_probe(uint32_t ptr, uint32_t size, uint32_t flags, uint32_t ret)
+{
+    uint32_t i, k, site = 0;
+    if (!ptr)
+        return;
+    live_lock();
+    for (i = (ret * 2654435761u) & (SITE_SLOTS - 1), k = 0; k < SITE_SLOTS; k++, i = (i + 1) & (SITE_SLOTS - 1)) {
+        if (!i) continue;
+        if (s_site[i].ret == ret || !s_site[i].ret) {
+            s_site[i].ret = ret;
+            site = i;
+            break;
+        }
+    }
+    if (site) {
+        s_site[site].news++;
+        s_site[site].bytes += size;
+        s_site[site].flags = flags;
+        for (i = (ptr >> 3) & (LIVE_SLOTS - 1), k = 0; k < 256; k++, i = (i + 1) & (LIVE_SLOTS - 1))
+            if (!s_live[i].ptr || s_live[i].ptr == 0xFFFFFFFFu || s_live[i].ptr == ptr) {
+                if (s_live[i].ptr == ptr)       /* reused without a delete we saw */
+                    s_site[s_live[i].site].deletes++;
+                s_live[i].ptr = ptr;
+                s_live[i].site = (uint16_t)site;
+                break;
+            }
+    }
+    s_news++;
+    live_unlock();
+    if (s_news % 20000 == 0)
+        live_report();
+}
+
+void amped2_delete_probe(uint32_t ptr, uint32_t ret)
+{
+    uint32_t i, k;
+    (void)ret;
+    if (!ptr)
+        return;
+    live_lock();
+    s_deletes++;
+    for (i = (ptr >> 3) & (LIVE_SLOTS - 1), k = 0; k < 256 && s_live[i].ptr; k++, i = (i + 1) & (LIVE_SLOTS - 1))
+        if (s_live[i].ptr == ptr) {
+            s_site[s_live[i].site].deletes++;
+            s_live[i].ptr = 0xFFFFFFFFu;
+            live_unlock();
+            return;
+        }
+    s_unknown_deletes++;
+    live_unlock();
+}
+
+/* XACT cue lifecycle trace (RECOMP_CUE_TRACE=<lines>): Play, Stop, Release
+ * and notification events with the cue, its refcount and flags, and the
+ * caller. For probes pasted at the entry labels of sub_00310369 (Play),
+ * sub_00312FB0 (Stop), sub_00312C4F (Release), sub_00313600 (notify). */
+void amped2_cue_event(const char *tag, uint32_t cue, uint32_t a, uint32_t caller)
+{
+    static long limit = -1, lines;
+    if (limit < 0) {
+        const char *e = getenv("RECOMP_CUE_TRACE");
+        limit = e ? atol(e) : 0;
+    }
+    if (lines >= limit)
+        return;
+    lines++;
+    fprintf(stderr, "[CUE] %-7s cue %08X refs %u flags %04X arg %08X from %08X\n", tag, cue,
+            cue ? MEM32(cue + 0x34) : 0, cue ? MEM16(cue + 0x38) : 0, a, caller);
+}
+
 /* Allocation probe, for a call pasted into the generated allocators
  * (sub_000DC0F0 at loc_000DC1B8, sub_000DC1E0 at loc_000DC2AD -- see README
  * "Bring-up notes"): who allocates from which heap object, by caller and
@@ -133,9 +279,11 @@ void amped2_alloc_probe(uint32_t heap, uint32_t size, uint32_t result, uint32_t 
                     heap, n, size, ret, tid, total, result ? "" : " FAILED");
     }
 }
+
 static void alloc_probe_dump(uint32_t heap)
 {
     int i;
+    live_report();
     fprintf(stderr, "[AP] allocations from heap object 0x%08X, by caller and thread:\n", heap);
     for (i = 0; i < PROBE_SLOTS && s_ap[i].count; i++)
         if (s_ap[i].heap == heap || s_ap[i].count >= 200)
