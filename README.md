@@ -575,6 +575,31 @@ the generated `sub_000DC0F0` at `loc_000DC1B8`. The out-of-memory wrapper
 then prints callers by heap and thread, and `RECOMP_AP_HEAP=<object>` logs
 one heap's allocations.
 
+### Missing rider torso (fixed, toolkit `44a58ec`)
+
+In game only the rider's legs, board and hair rendered, on both draw
+paths. `RECOMP_VP_BAD` (toolkit `db5116f`) found the torso batches
+collapsed to one point with w ≈ −974. `tools/vp_disasm.py` shows their
+program is 4-bone skinning:
+- `a0 = v3*c[168].x`, with `c[168].x` = 256;
+- the rows are `c[a0+0..2]`;
+- oPos = `r5·c[164..167]`, the view-projection.
+
+At the draw, the palette rows in the executor's constant memory were
+identity, so the vertices stayed in model space and ended up behind the
+camera.
+
+The CPU was right. Probes in the palette upload (`sub_0014D5D0`: it
+multiplies inverse-bind `[obj+0x30]` by bone world `bone+0x30` with
+`sub_0002D786`, transposes with SSE, and uploads with `sub_00323C40`
+starting at register −96) showed world-placed rows, for example bone 2
+translated to (1214.45, 459.5, 0.75). **The upload never reached the
+executor.** `nv2a_pb_scan` ended a segment at any jump and skipped calls,
+so pushbuffers D3D runs from outside the ring (`RunPushBuffer`, recorded
+buffers) were never executed. It now follows jumps out of the ring until
+one lands back in it, plus one level of call/return: about 23,500 per
+140 s run. The rider renders whole (`diag/fb_jmp1.bmp`).
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes

@@ -18,7 +18,7 @@ depth live on the GPU. The front end runs at 60–90 fps and level ML1 at
 **about 46 fps** (was 1.6), on the RTX 2070. Flips now wait for a 60 Hz
 vblank. **The level-load failure is fixed** (`e8ca4b3`). Per-read logging made a
 front-end character take 11 s to load, and leaving the menu destroyed its
-heaps mid-load; 4/4 loads now reach ML1. Next: fog, shadows,
+heaps mid-load; 4/4 loads now reach ML1. **The rider renders whole** (`44a58ec`): the pushbuffer walker now follows jumps and calls out of the ring, and **fog** is in (`f6c8405`). Next: shadows,
 presenting to a swap chain with upscaling, and cheaper per-draw state.
 
 **Update (2026-09-29, later afternoon):** lit models render (packed
