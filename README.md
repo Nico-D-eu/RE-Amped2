@@ -717,9 +717,15 @@ black.
   `A180E0E6` and state `0x00240000`, which is ACTIVE plus PAUSED, at
   offset 0 (`diag/fmv7`). The movie's audio stream starts paused and nothing
   resumes it, so the XMV clock never moves.
-- Next: find what XMV waits for before it resumes the stream (a decoded
-  first frame, or buffered packets?), and whether `xbox_VideoPlayFile` (the
-  host-side video thread) is involved.
+- The voice is not paused by DirectSound's pause helper `sub_002939AD`,
+  the only writer of `VOICE_PAUSE` (`0xFE820140`). A probe there saw no
+  write at all, and our `VOICE_ON` does not set the bit, so the stream was
+  created paused. No resume ever comes either: XMV holds its audio back
+  itself, probably until the first video frame decodes. The file is read
+  twice at offset 0 (4 KB and 68 KB), then never again (`fmv8`).
+- Next: follow `sub_00329420` (the frame-ready check) to see what the
+  decoder waits for after that first read. `xbox_VideoPlayFile` is the
+  host-side `.wmv` player (`RECOMP_FMV_HOST`) and is not involved.
 
 ### Known toolkit issue (for upstream)
 
