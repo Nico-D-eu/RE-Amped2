@@ -418,14 +418,35 @@ static void stderr_async(void)
         if (!s_err_file && !s_err_log)
             return;
     }
+    {
+        /* A first line straight into the log, so an empty log still says
+         * how far this got. */
+        char hdr[160];
+        DWORD n;
+        int len = snprintf(hdr, sizeof hdr, "amped2.log: stderr type %lu, fd %d\r\n",
+                           (unsigned long)(s_err_file ? GetFileType(s_err_file) : 0),
+                           _fileno(stderr));
+        if (s_err_log && len > 0)
+            WriteFile(s_err_log, hdr, (DWORD)len, &n, NULL);
+    }
     if (!CreatePipe(&s_err_pipe_r, &w, NULL, 1u << 20))
         return;
     fd = _open_osfhandle((intptr_t)w, _O_WRONLY | _O_BINARY);
     if (fd < 0)
         return;
     fflush(stderr);
-    if (_dup2(fd, _fileno(stderr)) != 0)
+    if (_fileno(stderr) < 0) {
+        /* No stream behind stderr at all: give it one on the pipe. */
+        if (!freopen("NUL", "w", stderr))
+            return;
+    }
+    if (_dup2(fd, _fileno(stderr)) != 0) {
+        DWORD n;
+        if (s_err_log)
+            WriteFile(s_err_log, "amped2.log: _dup2 failed\r\n", 26, &n, NULL);
         return;
+    }
+    setvbuf(stderr, NULL, _IONBF, 0);
     SetStdHandle(STD_ERROR_HANDLE, (HANDLE)_get_osfhandle(_fileno(stderr)));
     s_err_pump = CreateThread(NULL, 0, stderr_pump, NULL, 0, NULL);
     atexit(stderr_drain);
