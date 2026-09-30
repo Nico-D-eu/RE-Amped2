@@ -712,8 +712,14 @@ black.
 - The decoder still never has a frame (`sub_00329420` returns 0). XMV paces
   video on its audio stream. `RECOMP_APU_STATS` shows 7 voices started and
   0 notifications, with the APU active (SECTL 0x0F, FECTL 0x100F). So the
-  movie's stream voices are never consumed. Next: check whether they are on
-  a voice list the VP walks, and their SSL and pause state.
+  movie's stream voices are never consumed.
+- They are on the 2D list (top `0x47`). Voice `0x47` has format
+  `A180E0E6` and state `0x00240000`, which is ACTIVE plus PAUSED, at
+  offset 0 (`diag/fmv7`). The movie's audio stream starts paused and nothing
+  resumes it, so the XMV clock never moves.
+- Next: find what XMV waits for before it resumes the stream (a decoded
+  first frame, or buffered packets?), and whether `xbox_VideoPlayFile` (the
+  host-side video thread) is involved.
 
 ### Known toolkit issue (for upstream)
 
