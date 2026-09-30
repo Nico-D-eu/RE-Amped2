@@ -727,6 +727,36 @@ black.
   decoder waits for after that first read. `xbox_VideoPlayFile` is the
   host-side `.wmv` player (`RECOMP_FMV_HOST`) and is not involved.
 
+### Pad dead in game, hissing sound effects, rumble (fixed, 2026-09-30)
+
+- **Pad input stopped a few seconds into every level** (toolkit
+  `32bea7d`). Rumble starts in game as HID SET_REPORT on the control pipe.
+  The OHCI model published the control list's done list over the periodic
+  list's in the same tick, so a pad report's completion was lost, and the
+  driver never polled again. All lists now share one done list per tick.
+  The DPC queue is also locked, since the OHCI and timer threads both
+  insert into it. Measured with `RECOMP_INPUT_DIAG`.
+- **Sound effects hissed; music inaudible** (toolkit `23d4159`). Low RAM
+  and the contiguous window are separate storage with overlapping physical
+  offsets. XACT keeps its wave banks in the ordinary heap, and DirectSound
+  maps them with `MmGetPhysicalAddress`, but the APU read every page from
+  the window, so every ADPCM voice decoded noise.
+  - `MmGetPhysicalAddress` now records each page's store
+    (`g_xbox_phys_lowram`), and the APU follows that record.
+  - A soft knee above 0.8 replaces hard clipping.
+  - `RECOMP_APU_STATS` lists every voice with its RMS, DC and Nyquist
+    level.
+- **Rumble**: the pad's output report goes to XInput. `RECOMP_RUMBLE=0`
+  turns it off.
+- **Still open (renderer):**
+  - the rider is a black silhouette on the Career menu;
+  - the loading screen's controller picture is missing (the text draws);
+  - terrain sometimes draws without ground after pause/resume.
+  
+  These happen with async shaders on or off, and `RECOMP_GPU_LOWRAM_PAGES`
+  doesn't change them. `RECOMP_GPU_SHOT=<prefix>` saves the renderer's own
+  frames for checking them.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
