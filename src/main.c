@@ -613,7 +613,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
          * low RAM made it play whatever sat at those offsets there: a
          * clipping 750 Hz buzz (diag/audio_frontend.wav). */
         /* The default since the sound-heap leak and the APU freeze were
-         * fixed (toolkit a5335eb, db6b76c; README "Sound heap out of
+         * fixed (toolkit ea41161, ed3d319; README "Sound heap out of
          * memory"). AMPED2_APU_PHYS=0 is the old low-RAM base, which is
          * silent and writes the APU's notifications into game memory at
          * FENADDR's physical offset -- keep it for comparisons only. */

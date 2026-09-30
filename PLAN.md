@@ -13,12 +13,12 @@ can't be tested, and they grow the surface area we have to debug.
 
 **Update (2026-09-30, night): sound works and ML1 holds 60 fps.**
 - **Sound.** The sound-heap out-of-memory was a lifter flag-join bug in
-  XACT (toolkit `a5335eb`). The freeze that followed was the APU spinning
-  on a dry stream voice (`db6b76c`). The APU now reads the right memory by
+  XACT (toolkit `ea41161`). The freeze that followed was the APU spinning
+  on a dry stream voice (`ed3d319`). The APU now reads the right memory by
   default, and in-game sound plays throughout. The soundtrack plays too:
-  directory listing with an empty pattern was broken (`515a44d`).
+  directory listing with an empty pattern was broken (`4a99fcf`).
 - **Frame rate.** Paced ML1 is a locked 60.0 fps, 600 flips in 10.00 s,
-  even with a cold shader cache (`0e5554b`, and async stderr in `main.c`).
+  even with a cold shader cache (`bc08c14`, and async stderr in `main.c`).
   The hitches came from logging on hot threads and from compiling shaders
   on the render thread.
 - **Soak.** 45 minutes in ML1 with no crash, no out-of-memory and no
@@ -26,17 +26,17 @@ can't be tested, and they grow the surface area we have to debug.
   black (README Bring-up notes).
 
 **Update (2026-09-29, evening): the D3D11 GPU backend is in** (toolkit
-`bb4b030`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
+`292382f`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
 and register combiners are compiled to HLSL; textures, render targets and
 depth live on the GPU. The front end runs at 60–90 fps and level ML1 at
 **about 46 fps** (was 1.6), on the RTX 2070. Flips now wait for a 60 Hz
-vblank. **The level-load failure is fixed** (`e8ca4b3`). Per-read logging made a
+vblank. **The level-load failure is fixed** (`8fc426a`). Per-read logging made a
 front-end character take 11 s to load, and leaving the menu destroyed its
-heaps mid-load; 4/4 loads now reach ML1. **The rider renders whole** (`44a58ec`): the pushbuffer walker now follows jumps and calls out of the ring, and **fog** is in (`f6c8405`). Next: shadows,
+heaps mid-load; 4/4 loads now reach ML1. **The rider renders whole** (`965bcf6`): the pushbuffer walker now follows jumps and calls out of the ring, and **fog** is in (`eb0f801`). Next: shadows,
 presenting to a swap chain with upscaling, and cheaper per-draw state.
 
 **Update (2026-09-29, later afternoon):** lit models render (packed
-normals, `7984c71`), and the executor is about twice as fast (`0afb035`),
+normals, `d175010`), and the executor is about twice as fast (`cd5e734`),
 at roughly 1.6 fps in game. That's the ceiling of the single-threaded
 software renderer: the game waits on it. **Next decision: a GPU
 backend.** Vertex programs → HLSL, combiners → pixel shaders, texture
@@ -47,7 +47,7 @@ software path with predecoded vertex programs, which is cheaper but
 probably tops out at a few fps.
 
 **Update (2026-09-29, afternoon):** with register combiners and four
-texture stages in the executor (toolkit `c5300e9`), **the front end and
+texture stages in the executor (toolkit `b3a9121`), **the front end and
 level ML1 render like the game**: the logo and snow backdrop, the rider
 portraits, and in game the snowy slopes, forest, lifts, sky, HUD and
 CHALLENGES panel (`diag/comb_menu_sheet.png`,
@@ -167,14 +167,14 @@ Work items, in order of likelihood:
 - ~~**Input:**~~ Done 2026-09-29: USB wired in `main.c`, the toolkit's
   bus-address fix, and seeds for the XPP class-driver and report routines
   (`0x003306DF`, `0x0032FC8B`). START is read; the menus navigate.
-- ~~**Menu camera.**~~ Done 2026-09-29 (toolkit `392a0a2`). It wasn't an
+- ~~**Menu camera.**~~ Done 2026-09-29 (toolkit `1d8eb21`). It wasn't an
   ordering problem: `lahf` after `ucomiss` was never lifted, so
   `sub_000BD8E0` decided at random whether a node's position was set.
-- ~~**Level-load crash.**~~ Done 2026-09-29 (toolkit `d41338a`,
-  `e4bd3bf`). A depth-only pass painted physical page 0, where XAPI's
+- ~~**Level-load crash.**~~ Done 2026-09-29 (toolkit `36a9fed`,
+  `b58a7a6`). A depth-only pass painted physical page 0, where XAPI's
   USB driver keeps its structures.
 - ~~**In-game rendering: black terrain.**~~ Done 2026-09-29 (toolkit
-  `c5300e9`): register combiners and texture stages 0–3. `0x001C8C20`
+  `b3a9121`): register combiners and texture stages 0–3. `0x001C8C20`
   seeded.
 - **In-game rendering (next):**
   - the rider draws black: check its combiner inputs, likely lighting
@@ -184,7 +184,7 @@ Work items, in order of likelihood:
   - fixed-function mode `0x4` batches (the shadow pass);
   - speed.
 - ~~**Depth, Gouraud, perspective, alpha test in the executor.**~~ Done
-  2026-09-29 (toolkit `963ef99`). Fixed-function T&L (mode `0x4`) and
+  2026-09-29 (toolkit `36629e2`). Fixed-function T&L (mode `0x4`) and
   register combiners are still open.
 - **Menu rendering: 3D in the executor.** The streaks are fixed
   (near-plane clipping). The remaining problem is menus stacking over one
