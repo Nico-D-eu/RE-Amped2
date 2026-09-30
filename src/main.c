@@ -365,14 +365,18 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
  * synchronous stderr (when a crash must not lose its last lines). */
 #include <io.h>
 #include <fcntl.h>
-static HANDLE s_err_file, s_err_pipe_r, s_err_pump;
+static HANDLE s_err_file, s_err_log, s_err_pipe_r, s_err_pump;
 static DWORD WINAPI stderr_pump(LPVOID unused)
 {
     char buf[65536];
     DWORD n, w;
     (void)unused;
-    while (ReadFile(s_err_pipe_r, buf, sizeof buf, &n, NULL) && n)
-        WriteFile(s_err_file, buf, n, &w, NULL);
+    while (ReadFile(s_err_pipe_r, buf, sizeof buf, &n, NULL) && n) {
+        if (s_err_file)
+            WriteFile(s_err_file, buf, n, &w, NULL);
+        if (s_err_log)
+            WriteFile(s_err_log, buf, n, &w, NULL);
+    }
     return 0;
 }
 
@@ -396,9 +400,22 @@ static void stderr_async(void)
     {
         /* A handle of our own: _dup2 below closes the one behind fd 2. */
         HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
-        if (!h || h == INVALID_HANDLE_VALUE || GetFileType(h) == FILE_TYPE_UNKNOWN
-                || !DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(),
+        DWORD type = (h && h != INVALID_HANDLE_VALUE) ? GetFileType(h) : FILE_TYPE_UNKNOWN;
+        if (type != FILE_TYPE_UNKNOWN
+                && !DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(),
                                     &s_err_file, 0, FALSE, DUPLICATE_SAME_ACCESS))
+            s_err_file = NULL;
+        /* Unless stderr already goes to a file (tools/diag.ps1), keep the
+         * run in amped2.log beside the game too: a console scrolls away and
+         * a double-clicked exe has no stderr at all, so a freeze during
+         * someone's play left nothing to look at. Overwritten each run. */
+        if (type != FILE_TYPE_DISK && !getenv("AMPED2_NO_LOG")) {
+            s_err_log = CreateFileA("amped2.log", GENERIC_WRITE, FILE_SHARE_READ,
+                                    NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (s_err_log == INVALID_HANDLE_VALUE)
+                s_err_log = NULL;
+        }
+        if (!s_err_file && !s_err_log)
             return;
     }
     if (!CreatePipe(&s_err_pipe_r, &w, NULL, 1u << 20))
