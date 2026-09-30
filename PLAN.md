@@ -15,8 +15,8 @@ can't be tested, and they grow the surface area we have to debug.
 - **Sound.** The sound-heap out-of-memory was a lifter flag-join bug in
   XACT (toolkit `a5335eb`). The freeze that followed was the APU spinning
   on a dry stream voice (`db6b76c`). The APU now reads the right memory by
-  default, and in-game sound plays throughout. Front-end music (WMA) is
-  still silent: the game never opens a song after its jukebox scan.
+  default, and in-game sound plays throughout. The soundtrack plays too:
+  directory listing with an empty pattern was broken (`515a44d`).
 - **Frame rate.** Paced ML1 is a locked 60.0 fps, 600 flips in 10.00 s,
   even with a cold shader cache (`0e5554b`, and async stderr in `main.c`).
   The hitches came from logging on hot threads and from compiling shaders

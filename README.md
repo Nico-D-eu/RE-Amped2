@@ -685,6 +685,20 @@ nothing missing (`diag/async_game.png`).
 **Lesson:** logging is not free here. Anything printed from the executor,
 render, APU or guest threads has to be rare or go through the pipe.
 
+### Soundtrack (fixed, toolkit `515a44d`, 2026-09-30)
+
+The jukebox builds its playlist by listing `d:\Audio\Music`, then each
+genre directory, with `NtQueryDirectoryFile` and an empty pattern (a
+buffer of length 0). The Windows implementation searched `dir\` for that,
+found nothing, and answered STATUS_NO_MORE_FILES straight away. The game
+only ever opened the six hardcoded probe tracks (a 4-byte ASF check), and
+music never played.
+
+An empty pattern now means `*`. The menus open a song
+(`HardCore\HEAVENS TO MURGATROID.wma`), and front-end audio starts at 20 s
+instead of at level start (`diag/audio_music1.wav`). `RECOMP_DIR_TRACE=1`
+logs each query.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
