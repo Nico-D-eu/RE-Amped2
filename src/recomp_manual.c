@@ -75,6 +75,8 @@ void amped2_diag(const char *fmt, ...)
 __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
 __declspec(dllimport) int __stdcall QueryPerformanceCounter(long long *);
 __declspec(dllimport) int __stdcall QueryPerformanceFrequency(long long *);
+__declspec(dllimport) unsigned long __stdcall GetTickCount(void);
+__declspec(dllimport) void __stdcall Sleep(unsigned long);
 void amped2_race(const char *tag, uint32_t a, uint32_t b, uint32_t c)
 {
     static long long f, t0;
@@ -380,6 +382,29 @@ void sub_0031C4B0(void)
     if (on)
         xbox_PresentPace();
     sub_0031C4B0_gen();
+}
+
+/*
+ * 0x0031AE90: D3DDevice_BlockUntilVerticalBlank. It clears the device's
+ * vblank KEVENT (device + 0x1DAC) and waits on it; D3D's GPU interrupt
+ * handler sets it each vblank. Nothing here raises the NV2A interrupt, so the
+ * wait never ended -- and the FMV player (sub_00150FF0, 0x0015154D) calls it
+ * every frame when its decoder has nothing ready, which left AMPED2_PLAY_MOVIES
+ * on a black screen at the first movie. Wait for the kernel's own 60 Hz
+ * vblank tick instead (the one the title's vblank counter follows).
+ */
+void sub_0031AE90(void)
+{
+    extern volatile long g_xbox_vblank_count;
+    long v = g_xbox_vblank_count;
+    unsigned long t0 = GetTickCount();
+    uint32_t dev = MEM32(0x32CEF8);
+
+    if (dev)
+        MEM32(dev + 0x1DB0) = 0;           /* the event's SignalState, as it did */
+    while (g_xbox_vblank_count == v && GetTickCount() - t0 < 50)
+        Sleep(1);
+    g_esp += 4; /* ret */
 }
 
 void sub_0002B6C0(void)

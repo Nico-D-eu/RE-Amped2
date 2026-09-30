@@ -699,6 +699,22 @@ An empty pattern now means `*`. The menus open a song
 instead of at level start (`diag/audio_music1.wav`). `RECOMP_DIR_TRACE=1`
 logs each query.
 
+### FMV (still open, 2026-09-30)
+
+With `AMPED2_PLAY_MOVIES=1`, the first movie (`Movies\MGS.xmv`) stays
+black.
+
+- The player (`sub_00150FF0`) called `D3DDevice_BlockUntilVerticalBlank`
+  (`sub_0031AE90`) whenever its decoder had no frame ready. That waits on a
+  KEVENT which D3D's GPU interrupt handler sets, and nothing raises that
+  interrupt here, so it waited forever. `recomp_manual.c` now replaces it
+  with a wait for the kernel's 60 Hz vblank tick.
+- The decoder still never has a frame (`sub_00329420` returns 0). XMV paces
+  video on its audio stream. `RECOMP_APU_STATS` shows 7 voices started and
+  0 notifications, with the APU active (SECTL 0x0F, FECTL 0x100F). So the
+  movie's stream voices are never consumed. Next: check whether they are on
+  a voice list the VP walks, and their SSL and pause state.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
