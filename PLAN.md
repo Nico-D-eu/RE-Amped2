@@ -21,8 +21,9 @@ can't be tested, and they grow the surface area we have to debug.
   even with a cold shader cache (`0e5554b`, and async stderr in `main.c`).
   The hitches came from logging on hot threads and from compiling shaders
   on the render thread.
-- **Soak.** 15 minutes in ML1 with no crash, no out-of-memory and no freeze
-  (`soak4`).
+- **Soak.** 45 minutes in ML1 with no crash, no out-of-memory and no
+  freeze, at 60 fps with the soundtrack cycling (`soak6`). FMV is still
+  black (README Bring-up notes).
 
 **Update (2026-09-29, evening): the D3D11 GPU backend is in** (toolkit
 `bb4b030`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
