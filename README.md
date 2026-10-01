@@ -112,6 +112,52 @@ capture the boot trace. It will crash on first run. That is expected; see
 `xboxrecomp/docs/GETTING_STARTED.md` step 8 and
 `xboxrecomp/docs/pipeline/06-debugging.md`.
 
+## Settings (`amped2.ini`)
+
+The game reads `amped2.ini` from the folder of the `.exe` (`build\Release`).
+It writes the file with every setting commented out the first time it starts
+without one. Remove the `;` in front of a line to use it, then restart. An
+environment variable that is already set wins over the file.
+
+| Section | Setting | Values | Switch |
+|---|---|---|---|
+| `[Display]` | `WindowSize` | `1280x960`, `1920x1080`, … (client area) | `RECOMP_WINDOW_SIZE` |
+| | `WindowMode` | `windowed`, `borderless` (F11 / Alt+Enter toggles) | `RECOMP_WINDOW_MODE` |
+| | `RenderScale` | `1`–`8`, or `720p` (2), `1080p`/`1440p` (3), `4k` (5) | `RECOMP_GPU_SCALE` |
+| `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
+| | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
+| | `DeadZone` | `0`–`0.9` (stick dead zone for a controller) | `RECOMP_PAD_DEADZONE` |
+| | `Rumble` | `1`, `0` | `RECOMP_RUMBLE` |
+| `[Audio]` | `Volume` | `0`–`100` | `RECOMP_AUDIO_VOLUME` |
+| `[Game]` | `PlayMovies` | `0`, `1` (movies still show black) | `AMPED2_PLAY_MOVIES` |
+| `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
+
+`RenderScale` renders the game's 640×480 surfaces at that multiple, so 3
+renders at 1920×1440. The result is scaled into the window, keeping 4:3. On
+an RTX 2070, ML1 holds the same ~56 fps at 1×, 2× and 4×.
+
+Keyboard layouts (a connected controller works alongside either):
+
+- **default:** arrows = d-pad, Z X A S = A B X Y, Q/E = white/black, 1/3 =
+  triggers, numeric pad = left stick, I J K L = right stick, Enter = Start,
+  Backspace = Back, Shift/Ctrl = stick clicks.
+- **wasd:** W A S D = left stick, Space = A, J K L = B X Y, U/O =
+  white/black, Q/E = triggers, arrows = right stick, numeric pad = d-pad,
+  Enter or Esc = Start, Backspace or Tab = Back.
+
+`KeyMap` targets: `UP DOWN LEFT RIGHT START BACK LTHUMB RTHUMB A B X Y WHITE
+BLACK LT RT LX- LX+ LY- LY+ RX- RX+ RY- RY+`. A key is a letter or digit, a
+name (`SPACE`, `RETURN`, `ESCAPE`, `TAB`, `SHIFT`, `CTRL`, `ALT`, `UP`…,
+`F1`–`F24`, `NUMPAD0`–`NUMPAD9`, `HOME`, `END`, `PAGEUP`, `PAGEDOWN`,
+`INSERT`, `DELETE`, `COMMA`, `PERIOD`), or a virtual-key code (`0x41`). Up to
+three keys per target, joined with `|`.
+
+For unattended runs, `RECOMP_PAD_SCRIPT="ms:mask[:hold],…"` presses a
+button mask at a time after the first pad poll. Mask bits 16–19 push the
+left stick down, up, left and right. A mask of 0 holds
+`RECOMP_PAD_PRESS` pulses off for its hold time. For example,
+`14000:0:16000,16000:0x02:250,17000:0x02:250,18500:0x100` opens Tutorials.
+
 ## Bring-up notes
 
 Record addresses, identified functions and overrides here as they are found.
