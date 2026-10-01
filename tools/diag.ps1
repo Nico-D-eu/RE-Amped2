@@ -15,7 +15,9 @@
     directories) into diag\saves_moved\<timestamp>\ before the run, so an
     unattended walk creates a new player instead of stopping at "That player
     already exists. Overwrite?" (default No, which loops back to name
-    entry). Moved, never deleted: copy a directory back to restore it.
+    entry). When the run ends, the run's own profile is moved to
+    diag\saves_moved\<timestamp>_run\ and the originals are put back, so the
+    player's save is never left aside (it was, until 2026-10-01).
 
 .EXAMPLE
     .\tools\diag.ps1 vblank @{ RECOMP_VBLANK = '1'; RECOMP_WATCHDOG_SECS = '20' }
@@ -41,12 +43,28 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 if ($FreshSave) {
     $udata = Join-Path $Project 'game\UDATA\4d530041'
     $profiles = @(Get-ChildItem -Path $udata -Directory -ErrorAction SilentlyContinue)
+    $dest = Join-Path $OutDir ("saves_moved\" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+    New-Item -ItemType Directory -Force $dest | Out-Null
     if ($profiles.Count) {
-        $dest = Join-Path $OutDir ("saves_moved\" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
-        New-Item -ItemType Directory -Force $dest | Out-Null
         foreach ($d in $profiles) { Move-Item -LiteralPath $d.FullName -Destination $dest }
         Write-Host "  moved $($profiles.Count) saved profile(s) to $dest"
     }
+}
+
+# Put the player's profiles back after a -FreshSave run: the run's own goes
+# to saves_moved\<timestamp>_run, the originals return to UDATA.
+function Restore-Saves {
+    if (-not $FreshSave -or -not $dest) { return }
+    $runDest = "${dest}_run"
+    $made = @(Get-ChildItem -Path $udata -Directory -ErrorAction SilentlyContinue)
+    if ($made.Count) {
+        New-Item -ItemType Directory -Force $runDest | Out-Null
+        foreach ($d in $made) { Move-Item -LiteralPath $d.FullName -Destination $runDest }
+    }
+    foreach ($d in @(Get-ChildItem -Path $dest -Directory)) {
+        Move-Item -LiteralPath $d.FullName -Destination $udata
+    }
+    Write-Host "  restored the saved profile(s); this run's profile is in $runDest"
 }
 
 $saved = @{}
@@ -65,6 +83,9 @@ try {
     }
 } finally {
     foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
+    if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit(5000) | Out-Null }
+    Start-Sleep -Milliseconds 500
+    Restore-Saves
 }
 
 $s = Get-Content $Log
