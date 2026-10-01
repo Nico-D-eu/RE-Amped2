@@ -458,8 +458,33 @@ extern void sub_0032F339_gen(void);
 static int xinput_handle_ok(uint32_t h)
 {
     uint32_t dev = h ? MEM32(h + 0xA3) : 0;
-    return h && dev >= 0x1000u && (dev < 0x04000000u
-                                   || (dev >= 0x80000000u && dev < 0x84000000u));
+    int ok = h && dev >= 0x1000u && (dev < 0x04000000u
+                                     || (dev >= 0x80000000u && dev < 0x84000000u));
+    if (!ok && h) {
+        /* The first time: physical page 0 (XPP's pool, where the handle
+         * lives) and XPP's data (its pool counter is 0x0032E2C8) to
+         * diag/xinput_page0.bin, and the extent of the 0xCC fill, to tell
+         * which write refilled the block. */
+        static int dumped;
+        if (!dumped++) {
+            FILE *f = fopen("diag/xinput_page0.bin", "wb");
+            uint32_t a, lo = 0, hi = 0;
+            for (a = 0x80000000u; a < 0x80001000u; a += 4) {
+                uint32_t v = MEM32(a);
+                if (f) fwrite(&v, 4, 1, f);
+                if (v == 0xCCCCCCCCu) { if (!lo) lo = a; hi = a + 4; }
+            }
+            for (a = 0x0032E120u; a < 0x0032E420u; a += 4) {
+                uint32_t v = MEM32(a);
+                if (f) fwrite(&v, 4, 1, f);
+            }
+            if (f) fclose(f);
+            fprintf(stderr, "  [XINPUT] handle %08X device %08X: XPP pool counter %08X;"
+                    " 0xCC dwords in page 0 from %08X to %08X; dumped to"
+                    " diag/xinput_page0.bin\n", h, dev, MEM32(0x0032E2C8u), lo, hi);
+        }
+    }
+    return ok;
 }
 
 void sub_0032F339(void)
