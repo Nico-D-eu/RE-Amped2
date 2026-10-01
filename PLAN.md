@@ -323,6 +323,11 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    it upstream so every title gets it.
 2. **Widescreen 16:9 / 21:9.** Patch the projection aspect and FOV in game
    code, and put the HUD in the 4:3 safe area or anchor it to the edges.
+   The game has no widescreen mode of its own, even though we already
+   report `XC_VIDEO_FLAGS_WIDESCREEN`. Its camera nodes carry an
+   `AspectRatio` field, and its GUI nodes carry `AspectCorrect`/
+   `UnAspectCorrect`, which are the hooks to use. The user asked for it
+   (2026-10-02) and agreed it waits for this phase.
 3. **AI-upscaled texture pack.** Add the runtime hook the asset toolkit
    already targets: on texture create, key =
    `crc32(top mip)_WxH_fmt`, and load `mods/texture_pack/<key>.dds` (BC7,

@@ -66,5 +66,9 @@
   {
     "start": "0x0012F7D0",
     "note": "Indirect-call target observed at runtime (level 3, Event 1 / BR1, 2026-10-01); decodes as a function body."
+  },
+  {
+    "start": "0x00123F30",
+    "note": "Indirect-call (vtable) target observed at runtime in ML1's photo shoot challenge (2026-10-02); decodes as a function body after a ret at 0x00123F2F."
   }
 ]
