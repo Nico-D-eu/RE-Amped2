@@ -478,6 +478,10 @@ static const char k_ini_default[] =
     "; windowed or borderless (fullscreen on the window's monitor).\r\n"
     "; F11 or Alt+Enter switches while playing.\r\n"
     ";WindowMode=windowed\r\n"
+    "; Internal rendering resolution: a multiple of the game's 640x480 (1 to 8),\r\n"
+    "; or a target: 720p (=2, 1280x960), 1080p (=3), 1440p (=3, 1920x1440),\r\n"
+    "; 4k (=5, 3200x2400). Higher is sharper; the picture is scaled to the window.\r\n"
+    ";RenderScale=2\r\n"
     "\r\n"
     "[Input]\r\n"
     "; default: arrows = d-pad, Z X A S = A B X Y, Q/E = white/black,\r\n"
@@ -522,6 +526,7 @@ static void load_settings(void)
     static const struct { const char *section, *key, *var; } map[] = {
         { "Display", "WindowSize",     "RECOMP_WINDOW_SIZE" },
         { "Display", "WindowMode",     "RECOMP_WINDOW_MODE" },
+        { "Display", "RenderScale",    "RECOMP_GPU_SCALE" },
         { "Input",   "KeyboardPreset", "RECOMP_KEYMAP_PRESET" },
         { "Input",   "KeyMap",         "RECOMP_KEYMAP" },
         { "Input",   "DeadZone",       "RECOMP_PAD_DEADZONE" },
@@ -589,6 +594,13 @@ static void load_settings(void)
         }
         for (i = 0; i < sizeof map / sizeof map[0]; i++) {
             if (!_stricmp(section, map[i].section) && !_stricmp(p, map[i].key)) {
+                /* RenderScale by name: the smallest whole multiple of 480
+                 * lines that covers the target's height. */
+                if (!strcmp(map[i].var, "RECOMP_GPU_SCALE")) {
+                    if (!_stricmp(eq, "720p")) eq = "2";
+                    else if (!_stricmp(eq, "1080p") || !_stricmp(eq, "1440p")) eq = "3";
+                    else if (!_stricmp(eq, "4k") || !_stricmp(eq, "2160p")) eq = "5";
+                }
                 ini_set(map[i].var, eq);
                 n++;
             }
