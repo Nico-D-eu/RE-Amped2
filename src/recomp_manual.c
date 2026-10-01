@@ -454,13 +454,19 @@ void sub_003285F0(void)
  */
 extern void sub_0032F339_gen(void);
 
+/* An XInput handle whose device pointer (handle + 0xA3) is an address. */
+static int xinput_handle_ok(uint32_t h)
+{
+    uint32_t dev = h ? MEM32(h + 0xA3) : 0;
+    return h && dev >= 0x1000u && (dev < 0x04000000u
+                                   || (dev >= 0x80000000u && dev < 0x84000000u));
+}
+
 void sub_0032F339(void)
 {
     uint32_t h = MEM32(g_esp + 4);
     uint32_t dev = h ? MEM32(h + 0xA3) : 0;
-    int ok = dev >= 0x1000u && (dev < 0x04000000u
-                                || (dev >= 0x80000000u && dev < 0x84000000u));
-    if (!h || !ok) {
+    if (!xinput_handle_ok(h)) {
         static unsigned said;
         if (said++ < 8)
             fprintf(stderr, "  [XINPUT] SetState on handle %08X with device %08X:"
@@ -470,6 +476,32 @@ void sub_0032F339(void)
         return;
     }
     sub_0032F339_gen();
+}
+
+/*
+ * 0x0032F2C6: XInputGetState(HANDLE, PXINPUT_STATE), stdcall. Same
+ * device pointer, read the same way (test byte [dev+0x28] at raised IRQL),
+ * called by the game's pad poll (0x000ABD21). With the SetState guard in
+ * place, run l3t0 (2026-10-01) crashed here instead: the block holding the
+ * handle (XPP's page-0 device block at 0x80000080) had been filled with
+ * 0xCC again mid-level, by what is still unknown. Same answer: not
+ * connected.
+ */
+extern void sub_0032F2C6_gen(void);
+
+void sub_0032F2C6(void)
+{
+    uint32_t h = MEM32(g_esp + 4);
+    if (!xinput_handle_ok(h)) {
+        static unsigned said;
+        if (said++ < 8)
+            fprintf(stderr, "  [XINPUT] GetState on handle %08X with device %08X:"
+                    " not attached, ignored\n", h, h ? MEM32(h + 0xA3) : 0);
+        g_eax = 0x48Fu;                       /* ERROR_DEVICE_NOT_CONNECTED */
+        g_esp += 4 + 8;                       /* ret 8 */
+        return;
+    }
+    sub_0032F2C6_gen();
 }
 
 /*

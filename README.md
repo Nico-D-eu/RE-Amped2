@@ -908,6 +908,14 @@ behaviour).
   regions are also released oldest-first, only as far as needed (toolkit
   `b8b4008`). A full competition then ran to the ranking screen with clean
   audio.
+- **Crash, second site (amped2, `sub_0032F2C6` wrapper):** run `l3t0`
+  crashed in `XInputGetState` the same way: the handle block at 0x80000080
+  (XPP's page-0 pool) was refilled with 0xCC mid-level. The pool counter
+  `[0x32E2C8]` only moved at boot in `l3watchc` (0xFE0 down to 0x25C, five
+  allocations), and handle+0xA3 was only written at boot in a 5-minute
+  watch, so the writer is still unknown. The one run that crashed was also
+  the only one with a `[NV2A] ring walk … lost` line. GetState now answers
+  "not connected" for such a handle, like SetState.
 - **Night level (fixed, toolkit `236f6fd`):** the near terrain (pixel
   shader `c585d542…`) blends each pixel between lit, `(v0 + t0)·t2`, and
   "in shadow", `v1·t2`, which is dark blue. The blend factor is t0.a
