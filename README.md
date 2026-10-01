@@ -848,6 +848,16 @@ black.
     `RECOMP_FENCE_EXACT` reports the executed release (NV097 0x1D70), but
     boot stalls at frame 306 with it.
 
+### Second level crashed: memory never freed (fixed, 2026-10-01)
+
+Loading a second level ran the 48 MB guest heap out. `NtFreeVirtualMemory`
+handed the guest's pointer to the host's `VirtualFree`, which always failed,
+so the level pools Amped 2 gets from `NtAllocateVirtualMemory` were never
+released (toolkit `4006169`). The heap's block reuse now also splits and
+coalesces properly. Three scripted Leave Mountain/reload cycles of ML1 run
+clean (`reload3`). One run crashed once in the USB driver's DPC
+(`sub_00334BA5`) after a reload; this has not been reproduced.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
