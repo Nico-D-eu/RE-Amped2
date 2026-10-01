@@ -888,6 +888,17 @@ the level's first allocations wiped the textures. Reused memory is now
 handed out unzeroed (toolkit; `RECOMP_CONTIG_ZERO=1` restores the old
 behaviour).
 
+### Level 3 black screen and in-level audio noise (fixed, 2026-10-01)
+
+- **Level 3 (Event 1, BR1)** calls a virtual method (`0x0012F7D0`) that
+  static analysis missed. The unresolved call blacked out the picture, and
+  it's now seeded (amped2 `4e3f064`). A USB DPC crash in the same run was
+  OHCI raising StartOfFrame before its list walk (toolkit `b321282`).
+- **Audio noise a few minutes into a level:** freeing `NtFreeVirtualMemory`
+  regions straight away (the level-2 memory fix) let the heap recycle memory
+  the sound engine was still reading. Those regions are now held until the
+  heap actually runs out, which happens at a level load (toolkit `e550168`).
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
