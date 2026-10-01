@@ -879,6 +879,15 @@ software-method interrupt (PGRAPH trap registers 0x400704/0x400708, with
 write-1-to-clear on 0x400100). That is a later toolkit item
 (`RECOMP_FENCE_EXACT` gets as far as that interrupt).
 
+### Loading screen black (fixed, 2026-10-01)
+
+The loading screen's background and controller picture are one textured
+quad. Amped 2 frees that package while the screen is still up. Our
+`MmAllocateContiguousMemory` zeroed reused memory (the console doesn't), so
+the level's first allocations wiped the textures. Reused memory is now
+handed out unzeroed (toolkit; `RECOMP_CONTIG_ZERO=1` restores the old
+behaviour).
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
