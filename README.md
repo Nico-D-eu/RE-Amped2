@@ -942,7 +942,7 @@ routes:
 - music to bins 0/1 (front), 3 (LFE, as loud as the fronts) and 4/5
   (back);
 - 3D effects to 6/7 (crosstalk front);
-- the announcer and some effects to 2 (centre);
+- some voices to 2 (centre), active on the night stage;
 - reverb sends to bin 10 (I3DL2), heavy on the night stage.
 
 The old even/odd sum put centre and the reverb send left only and LFE
