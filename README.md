@@ -935,6 +935,24 @@ behaviour).
     and `RECOMP_GPU_PS_DEBUG` 13 (what each stage has bound) and 18 (each
     pixel shader in its own colour, matching the DRAWDUMP tag).
 
+### Night-stage lights and audio break-up (fixed, 2026-10-01 evening)
+
+- **Lights (toolkit `937d8f6`):** floodlight glows and lens flares are
+  gated by D3D visibility tests:
+  - Begin pushes `0x817C8 1 1` (game code at 0x13A1CB); End (D3D
+    0x31ADF0) pushes `0x817CC 0 <report>`.
+  - Both were ignored, so flares drew through hills and the rider. They
+    are now D3D11 occlusion queries.
+  - GET_REPORT's parameter is `(slot & 0x0EFFFFFF) | 1<<24`, so with our
+    report page above 16 MB bits 24-27 are address bits.
+  - The report is completed at once with that slot's last count, because
+    the title reads results a frame later than our GPU delivers them.
+- **Audio (toolkit `2a27569`):** DirectSound traps the APU front end
+  (SE2FE_IDLE_VOICE) until its ISR/DPC run. The frame thread used to emit
+  silent sub-frames meanwhile: 224-sample holes, dozens a second. It now
+  waits instead. The throttle also makes up lost time and steers by the
+  XAudio2 queue depth.
+
 ### Mixbin downmix (toolkit `45dd9aa`, 2026-10-01)
 
 The DSP is a stub, so the mixbins are folded to stereo on the host. Amped 2
