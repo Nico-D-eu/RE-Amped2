@@ -858,6 +858,27 @@ coalesces properly. Three scripted Leave Mountain/reload cycles of ML1 run
 clean (`reload3`). One run crashed once in the USB driver's DPC
 (`sub_00334BA5`) after a reload; this has not been reproduced.
 
+### Level-2 glitches: the recorded-pushbuffer race (fixed, 2026-10-01)
+
+D3D re-patches recorded pushbuffers (RunPushBuffer) several times a frame:
+the jump back into the ring and the per-call fixup data. On the console it
+patches from the CPU only when the GPU has finished with the buffer.
+Otherwise it patches from the NOP-interrupt handler when the GPU gets there.
+Our fence mirror always reports the GPU as done, so D3D patched while the
+pushbuffer walker was still behind. The walker then followed later calls'
+jumps and ran earlier calls with later fixups. In level 2 this caused garbage
+state that persisted into the menus.
+
+`recomp_manual.c` now wraps the patcher (`sub_003285F0`). Before patching,
+it sets PUT to D3D's write pointer and waits until the walker has consumed
+it (amped2 `66f5be1`). Walker resyncs dropped to zero, and level 2
+(Breckenridge) plays clean.
+
+The faithful alternative is exact fences plus a model of the NOP
+software-method interrupt (PGRAPH trap registers 0x400704/0x400708, with
+write-1-to-clear on 0x400100). That is a later toolkit item
+(`RECOMP_FENCE_EXACT` gets as far as that interrupt).
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
