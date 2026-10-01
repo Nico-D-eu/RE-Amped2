@@ -52,7 +52,10 @@ if (-not (Test-Path $Xbe)) {
 
 function Invoke-Step([string]$Name, [scriptblock]$Body) {
     Write-Host "`n=== $Name ===" -ForegroundColor Cyan
-    & $Body
+    # The tools log progress to stderr, which Windows PowerShell 5.1 turns
+    # into a terminating error under 'Stop'. The exit code is what counts.
+    $ErrorActionPreference = 'Continue'
+    & $Body 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE -ne 0) { throw "$Name failed (exit $LASTEXITCODE)" }
 }
 
