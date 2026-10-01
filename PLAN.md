@@ -20,6 +20,10 @@ can't be tested, and they grow the surface area we have to debug.
   no crash, 58 fps.
 - **Sound.** Voices are resampled to their pitch (`87d77e3`), so the
   crackle on APU frame boundaries is down 99%.
+- **Soak.** 60 minutes in ML1 at 2x internal resolution with constant
+  pause/resume: no crash, no bad state, 59.2 fps, memory flat (`soak7`).
+- **Settings.** `amped2.ini` beside the exe: window size, borderless (F11),
+  render scale 1-8x, WASD or custom key bindings, dead zone, volume.
 - **Open:** the loading screen is black (its textures' memory is zero),
   FMV needs the NV2A video overlay, and resyncs come from the fence mirror
   being ahead of the walk (README Bring-up notes).
@@ -269,7 +273,7 @@ Work items, in order of likelihood:
 - [ ] Every level and mode can be played start to finish
 - [ ] Audio, music and FMV work
 - [ ] Saves persist across restarts
-- [ ] 60 minutes of play with no crash
+- [x] 60 minutes of play with no crash (`soak7`, 2026-10-01: ML1 at 2x with scripted pause/resume, 59.2 fps, memory flat at ~500 MB)
 - [ ] The build reproduces from a clean checkout plus the user's own disc
 
 ---
