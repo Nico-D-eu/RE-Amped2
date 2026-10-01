@@ -899,6 +899,20 @@ behaviour).
   the sound engine was still reading. Those regions are now held until the
   heap actually runs out, which happens at a level load (toolkit `e550168`).
 
+### Competition-stage crash; night level too dark (2026-10-01)
+
+- **Crash:** the game's rumble update calls `XInputSetState`
+  (`sub_0032F339`) while the pad's device pointer (handle+0xA3) still holds
+  XPP's fresh-block fill 0xCCCCCCCC. A wrapper in `recomp_manual.c` now
+  returns "not connected" in that window (amped2 `c3c8563`). Held heap
+  regions are also released oldest-first, only as far as needed (toolkit
+  `b8b4008`). A full competition then ran to the ranking screen with clean
+  audio.
+- **Night level (still open):** the terrain's stage-1 texture is a small
+  ramp (0x81F3FE00, 32×64) sampled at coordinates far outside its range,
+  so it reads black. Next: the terrain vertex program's stage-1 output and
+  constants. Debug views: `RECOMP_GPU_PS_DEBUG` 1/2/4–10.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
