@@ -908,10 +908,24 @@ behaviour).
   regions are also released oldest-first, only as far as needed (toolkit
   `b8b4008`). A full competition then ran to the ranking screen with clean
   audio.
-- **Night level (still open):** the terrain's stage-1 texture is a small
-  ramp (0x81F3FE00, 32×64) sampled at coordinates far outside its range,
-  so it reads black. Next: the terrain vertex program's stage-1 output and
-  constants. Debug views: `RECOMP_GPU_PS_DEBUG` 1/2/4–10.
+- **Night level (fixed, toolkit `236f6fd`):** the near terrain (pixel
+  shader `c585d542…`) blends each pixel between lit, `(v0 + t0)·t2`, and
+  "in shadow", `v1·t2`, which is dark blue. The blend factor is t0.a
+  (baked floodlight mask, from the 1024×2048 atlas at 0x81118400) times
+  t1.b. Stage 1 is a 512×512 Y16 shadow map at 0x80D20000 (format 0x30)
+  that the game renders the rider and props into, sampled with
+  SET_SHADOW_DEPTH_FUNC 6 (GEQUAL). We read it as colour from guest memory
+  that never receives our depth, so it returned 0 and the whole level sat
+  "in shadow". Depth textures now sample our own depth surface at that
+  address and compare in the shader. 0x81F3FE00 turned out to be a
+  32×64×32 3D volume (trees, some slopes), now uploaded as Texture3D.
+  - The distant terrain (shader `d6ca92e0…`) fogs through a 256×256 ramp at
+    0x80DA4000: alpha by distance/2087, near-black colour.
+  - Its stage-2 texture 0x81114200 is a 32×32 all-transparent DXT1 that
+    turns off a night tint (factor0 0x243748).
+  - Tools used: `RECOMP_DRAW_DUMP`, `RECOMP_SKIP_PS`/`RECOMP_SKIP_BLEND`,
+    and `RECOMP_GPU_PS_DEBUG` 13 (what each stage has bound) and 18 (each
+    pixel shader in its own colour, matching the DRAWDUMP tag).
 
 ### Known toolkit issue (for upstream)
 
