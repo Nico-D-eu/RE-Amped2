@@ -935,6 +935,21 @@ behaviour).
     and `RECOMP_GPU_PS_DEBUG` 13 (what each stage has bound) and 18 (each
     pixel shader in its own colour, matching the DRAWDUMP tag).
 
+### Mixbin downmix (toolkit `45dd9aa`, 2026-10-01)
+
+The DSP is a stub, so the mixbins are folded to stereo on the host. Amped 2
+routes:
+- music to bins 0/1 (front), 3 (LFE, as loud as the fronts) and 4/5
+  (back);
+- 3D effects to 6/7 (crosstalk front);
+- the announcer and some effects to 2 (centre);
+- reverb sends to bin 10 (I3DL2), heavy on the night stage.
+
+The old even/odd sum put centre and the reverb send left only and LFE
+right at full level. The downmix is now ITU-style: centre and back at
+-3 dB; LFE and the sends dropped. `RECOMP_APU_MIXDOWN=sum` brings back the
+old fold.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
