@@ -464,6 +464,140 @@ void amped2_stderr_drain(void)
         stderr_drain();
 }
 
+/* amped2.ini, beside the exe: the player's settings, as the toolkit's runtime
+ * switches. A switch already in the environment wins, so a diagnostic run can
+ * still override any of them. Written with its defaults (all commented out)
+ * the first time the game starts without one. */
+static const char k_ini_default[] =
+    "; Amped 2 settings. Lines starting with ; are comments; remove the ; to\r\n"
+    "; change a setting. Restart the game to apply.\r\n"
+    "\r\n"
+    "[Display]\r\n"
+    "; Window client size, e.g. 1280x960 or 1920x1080 (the picture keeps 4:3).\r\n"
+    ";WindowSize=1280x960\r\n"
+    "; windowed or borderless (fullscreen on the window's monitor).\r\n"
+    "; F11 or Alt+Enter switches while playing.\r\n"
+    ";WindowMode=windowed\r\n"
+    "\r\n"
+    "[Input]\r\n"
+    "; default: arrows = d-pad, Z X A S = A B X Y, Q/E = white/black,\r\n"
+    ";          1/3 = triggers, numeric pad = left stick, I J K L = right stick,\r\n"
+    ";          Enter = Start, Backspace = Back.\r\n"
+    "; wasd:    W A S D = left stick, Space = A, J K L = B X Y, U/O = white/black,\r\n"
+    ";          Q/E = triggers, arrows = right stick, numeric pad = d-pad,\r\n"
+    ";          Enter or Esc = Start, Backspace or Tab = Back.\r\n"
+    ";KeyboardPreset=wasd\r\n"
+    "; Single bindings on top of the preset: target=key, up to 3 keys with |.\r\n"
+    "; Targets: UP DOWN LEFT RIGHT START BACK LTHUMB RTHUMB A B X Y WHITE BLACK\r\n"
+    ";          LT RT LX- LX+ LY- LY+ RX- RX+ RY- RY+\r\n"
+    ";KeyMap=A=SPACE|Z,START=RETURN|ESCAPE\r\n"
+    "; Stick dead zone for a controller, 0 to 0.9 (0 = as the controller reports).\r\n"
+    ";DeadZone=0.1\r\n"
+    "; Controller rumble: 1 on, 0 off.\r\n"
+    ";Rumble=1\r\n"
+    "\r\n"
+    "[Audio]\r\n"
+    "; Master volume, 0 to 100.\r\n"
+    ";Volume=100\r\n"
+    "\r\n"
+    "[Game]\r\n"
+    "; Play the intro movies (not working yet: they stay black).\r\n"
+    ";PlayMovies=0\r\n"
+    "\r\n"
+    "[Advanced]\r\n"
+    "; Any RECOMP_ switch, set as written, e.g.\r\n"
+    ";RECOMP_GPU_ASYNC_SHADERS=0\r\n";
+
+static void ini_set(const char *var, const char *value)
+{
+    char buf[1024];
+    if (getenv(var) || !*value)
+        return;
+    snprintf(buf, sizeof buf, "%s=%s", var, value);
+    _putenv(buf);
+}
+
+static void load_settings(void)
+{
+    static const struct { const char *section, *key, *var; } map[] = {
+        { "Display", "WindowSize",     "RECOMP_WINDOW_SIZE" },
+        { "Display", "WindowMode",     "RECOMP_WINDOW_MODE" },
+        { "Input",   "KeyboardPreset", "RECOMP_KEYMAP_PRESET" },
+        { "Input",   "KeyMap",         "RECOMP_KEYMAP" },
+        { "Input",   "DeadZone",       "RECOMP_PAD_DEADZONE" },
+        { "Input",   "Rumble",         "RECOMP_RUMBLE" },
+        { "Audio",   "Volume",         "RECOMP_AUDIO_VOLUME" },
+        { "Game",    "PlayMovies",     "AMPED2_PLAY_MOVIES" },
+    };
+    char path[MAX_PATH], line[1024], section[64] = "";
+    char *slash;
+    FILE *f;
+    int n = 0;
+
+    if (!GetModuleFileNameA(NULL, path, sizeof path))
+        return;
+    slash = strrchr(path, '\\');
+    if (!slash || (size_t)(slash - path) + 12 >= sizeof path)
+        return;
+    strcpy(slash + 1, "amped2.ini");
+    f = fopen(path, "rb");
+    if (!f) {
+        f = fopen(path, "wb");
+        if (f) {
+            fwrite(k_ini_default, 1, sizeof k_ini_default - 1, f);
+            fclose(f);
+        }
+        return;
+    }
+    while (fgets(line, sizeof line, f)) {
+        char *p = line, *eq, *end;
+        size_t i;
+        while (*p == ' ' || *p == '\t')
+            p++;
+        end = p + strlen(p);
+        while (end > p && (end[-1] == '\r' || end[-1] == '\n' || end[-1] == ' '
+                           || end[-1] == '\t'))
+            *--end = '\0';
+        if (!*p || *p == ';' || *p == '#')
+            continue;
+        if (*p == '[') {
+            char *close = strchr(p, ']');
+            if (close && (size_t)(close - p - 1) < sizeof section) {
+                memcpy(section, p + 1, (size_t)(close - p - 1));
+                section[close - p - 1] = '\0';
+            }
+            continue;
+        }
+        eq = strchr(p, '=');
+        if (!eq)
+            continue;
+        *eq = '\0';
+        {
+            char *k = eq;
+            while (k > p && (k[-1] == ' ' || k[-1] == '\t'))
+                *--k = '\0';
+        }
+        eq++;
+        while (*eq == ' ' || *eq == '\t')
+            eq++;
+        if (!_stricmp(section, "Advanced")) {
+            if (!_strnicmp(p, "RECOMP_", 7) || !_strnicmp(p, "AMPED2_", 7)) {
+                ini_set(p, eq);
+                n++;
+            }
+            continue;
+        }
+        for (i = 0; i < sizeof map / sizeof map[0]; i++) {
+            if (!_stricmp(section, map[i].section) && !_stricmp(p, map[i].key)) {
+                ini_set(map[i].var, eq);
+                n++;
+            }
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "  amped2.ini: %d settings from %s\n", n, path);
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow)
 {
@@ -479,6 +613,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
     stderr_async();
+    load_settings();
+    if (!getenv("RECOMP_WINDOW_TITLE"))
+        _putenv("RECOMP_WINDOW_TITLE=Amped 2");
 
     /* Runtime switches Amped 2 cannot boot without, as defaults. They must be
      * set before xbox_MemoryLayoutInit, which reads them. Anything already in
