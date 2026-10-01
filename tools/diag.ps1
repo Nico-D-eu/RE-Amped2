@@ -27,6 +27,10 @@ param(
     [hashtable]$Env = @{},
     [int]$Seconds = 30,
     [switch]$FreshSave,
+    # Run with the player's own profile, but put it back exactly as it was
+    # afterwards (copied to saves_moved\<timestamp>_keep first), so a test can
+    # use their unlocks without the run's autosaves changing their progress.
+    [switch]$KeepSave,
     # Another build of the exe in build\Release, e.g. a copy taken so a rebuild
     # can relink amped2_recomp.exe while this run is going.
     [string]$ExeName = 'amped2_recomp.exe'
@@ -49,6 +53,22 @@ if ($FreshSave) {
         foreach ($d in $profiles) { Move-Item -LiteralPath $d.FullName -Destination $dest }
         Write-Host "  moved $($profiles.Count) saved profile(s) to $dest"
     }
+}
+
+if ($KeepSave) {
+    $udataK = Join-Path $Project 'game\UDATA\4d530041'
+    $keep = Join-Path $OutDir ("saves_moved\" + (Get-Date -Format 'yyyyMMdd_HHmmss') + "_keep")
+    New-Item -ItemType Directory -Force $keep | Out-Null
+    Copy-Item -Recurse -Path (Join-Path $udataK '*') -Destination $keep
+    Write-Host "  kept a copy of the saved profile(s) in $keep"
+}
+function Restore-Kept {
+    if (-not $KeepSave) { return }
+    foreach ($d in @(Get-ChildItem -Path $udataK -Directory)) {
+        Remove-Item -Recurse -Force -LiteralPath $d.FullName
+    }
+    Copy-Item -Recurse -Path (Join-Path $keep '*') -Destination $udataK
+    Write-Host "  put the saved profile(s) back as they were before the run"
 }
 
 # Put the player's profiles back after a -FreshSave run: the run's own goes
@@ -86,6 +106,7 @@ try {
     if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit(5000) | Out-Null }
     Start-Sleep -Milliseconds 500
     Restore-Saves
+    Restore-Kept
 }
 
 $s = Get-Content $Log

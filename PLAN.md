@@ -285,6 +285,17 @@ Work items, in order of likelihood:
 The base every later mod builds on. None of the later phases should need to
 touch generated code directly.
 
+- **More memory (user request, 2026-10-01).** The guest has the retail
+  layout: 64 MB of low RAM (heap about 48 MB) plus a separate 64 MB
+  contiguous window. Mods with bigger textures and new content will want
+  more. The model to copy is the debug kit's 128 MB, which emulators such
+  as xemu also offer (xboxdevwiki "Memory"), or 256/512 MB for CPU-only
+  data placed above the hardware-visible range. Constraint: the GPU and APU
+  get physical addresses from `MmGetPhysicalAddress`/the contiguous
+  allocator, so anything they read must stay in the RAM range they map;
+  `g_xbox_phys_lowram`, `guest_ok` in the D3D11 backend and
+  `xbox_ContiguousAllocatedBytes` all assume 64 MB today. Not needed for
+  M4: the level-2 out-of-memory was a leak (`4006169`).
 - **Virtual file system overlay.** The kernel file layer checks
   `mods/<pack>/…` before `game/…`, which allows loose-file overrides of
   any archive entry without repacking. `.gfx`/`.res` are ZIPs, so this is

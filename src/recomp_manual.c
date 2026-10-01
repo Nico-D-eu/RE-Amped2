@@ -385,6 +385,63 @@ void sub_0031C4B0(void)
 }
 
 /*
+ * 0x003285F0: D3D's recorded-pushbuffer patcher (RunPushBuffer's fixups). It
+ * writes the buffer's jump back into the ring and copies the per-call fixup
+ * data into the buffer itself. On the console D3D only does this from the CPU
+ * when the GPU has finished with the buffer; otherwise it queues a NOP with an
+ * interrupt and patches from the PGRAPH handler (0x322830) when the GPU gets
+ * there. Our fence mirror always says the GPU is done, so D3D patched from the
+ * CPU three times a frame while the pushbuffer walker was still behind: the
+ * walker then followed a later call's jump back (into data, or past commands)
+ * and ran earlier calls with later fixups -- the corrupted state in level 2
+ * that stayed into the menus.
+ *
+ * So before patching, make it true. RunPushBuffer (0x328690) has written the
+ * jump to the buffer at the ring's write pointer (device + 0) and not yet
+ * moved the pointer, so everything before the pointer is complete: set PUT
+ * there (D3D's own form, VA & 0x0FFFFFFF) and wait for the walker to report
+ * it consumed (DMA_GET == PUT). Every earlier call of the buffer has then
+ * run with its own patch. RECOMP_PB_PATCH_NOWAIT=1 restores the old
+ * behaviour.
+ */
+extern void sub_003285F0_gen(void);
+
+#define AMPED2_D3D_DEVICE_PTR 0x0032CEF8u
+#define AMPED2_NV2A_DMA_PUT   0xFD800040u
+#define AMPED2_NV2A_DMA_GET   0xFD800044u
+
+void sub_003285F0(void)
+{
+    static int nowait = -1;
+    if (nowait < 0)
+        nowait = getenv("RECOMP_PB_PATCH_NOWAIT") != NULL;
+    if (!nowait) {
+        uint32_t dev = MEM32(AMPED2_D3D_DEVICE_PTR);
+        uint32_t put = dev ? (MEM32(dev) & 0x0FFFFFFFu) : 0;
+        unsigned long t0 = GetTickCount();
+        if (put) {
+            uint32_t cur = MEM32(AMPED2_NV2A_DMA_PUT);
+            /* Only forward within the same lap; a pointer behind PUT is a
+             * wrap D3D has not kicked yet, and the walker is ahead of it. */
+            if (put > cur || cur - put > 0x00400000u)
+                MEM32(AMPED2_NV2A_DMA_PUT) = put;
+            while (MEM32(AMPED2_NV2A_DMA_GET) != MEM32(AMPED2_NV2A_DMA_PUT)) {
+                if (GetTickCount() - t0 > 250) {
+                    static unsigned said;
+                    if (said++ < 8)
+                        fprintf(stderr, "  [D3D] pushbuffer patch: GET %08X did not"
+                                " reach PUT %08X in 250 ms; patching anyway\n",
+                                MEM32(AMPED2_NV2A_DMA_GET), MEM32(AMPED2_NV2A_DMA_PUT));
+                    break;
+                }
+                Sleep(0);
+            }
+        }
+    }
+    sub_003285F0_gen();
+}
+
+/*
  * 0x0031AE90: D3DDevice_BlockUntilVerticalBlank. It clears the device's
  * vblank KEVENT (device + 0x1DAC) and waits on it; D3D's GPU interrupt
  * handler sets it each vblank. Nothing here raises the NV2A interrupt, so the
