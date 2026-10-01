@@ -442,6 +442,37 @@ void sub_003285F0(void)
 }
 
 /*
+ * 0x0032F339: XInputSetState(HANDLE, PXINPUT_FEEDBACK), stdcall. The game's
+ * rumble update (0x000ACA31) calls it every frame. The device pointer it
+ * follows (handle + 0xA3) is filled in once the pad is attached; until then it
+ * holds XPP's fresh-block fill, 0xCCCCCCCC (the pool allocator at 0x0033195B).
+ * Twice the game called it in that window -- after ten minutes of play and
+ * once 40 s into a level -- and crashed reading through 0xCCCCCCCC, with the
+ * USB DPC faulting on the same half-built structure. Answer
+ * ERROR_DEVICE_NOT_CONNECTED for a device pointer that is not an address yet,
+ * which the game already handles for an unplugged pad.
+ */
+extern void sub_0032F339_gen(void);
+
+void sub_0032F339(void)
+{
+    uint32_t h = MEM32(g_esp + 4);
+    uint32_t dev = h ? MEM32(h + 0xA3) : 0;
+    int ok = dev >= 0x1000u && (dev < 0x04000000u
+                                || (dev >= 0x80000000u && dev < 0x84000000u));
+    if (!h || !ok) {
+        static unsigned said;
+        if (said++ < 8)
+            fprintf(stderr, "  [XINPUT] SetState on handle %08X with device %08X:"
+                    " not attached yet, ignored\n", h, dev);
+        g_eax = 0x48Fu;                       /* ERROR_DEVICE_NOT_CONNECTED */
+        g_esp += 4 + 8;                       /* ret 8 */
+        return;
+    }
+    sub_0032F339_gen();
+}
+
+/*
  * 0x0031AE90: D3DDevice_BlockUntilVerticalBlank. It clears the device's
  * vblank KEVENT (device + 0x1DAC) and waits on it; D3D's GPU interrupt
  * handler sets it each vblank. Nothing here raises the NV2A interrupt, so the
