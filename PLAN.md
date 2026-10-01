@@ -11,6 +11,19 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-01, overnight): menu rider, in-game state and crackle fixed.**
+- **Renderer.** The menu rider is drawn with cube maps and the dot-product
+  texture modes (`96fe19f`). The pushbuffer walker finishes methods split
+  at PUT (`e76cfce`). It now runs the ring from a GET pointer and follows
+  every jump, wraps included (`7caae46`), which ends the garbage state and
+  the terrain without ground. 240 s in ML1 with pause/resume: no bad state,
+  no crash, 58 fps.
+- **Sound.** Voices are resampled to their pitch (`87d77e3`), so the
+  crackle on APU frame boundaries is down 99%.
+- **Open:** the loading screen is black (its textures' memory is zero),
+  FMV needs the NV2A video overlay, and resyncs come from the fence mirror
+  being ahead of the walk (README Bring-up notes).
+
 **Update (2026-09-30, night): sound works and ML1 holds 60 fps.**
 - **Sound.** The sound-heap out-of-memory was a lifter flag-join bug in
   XACT (toolkit `ea41161`). The freeze that followed was the APU spinning
@@ -134,7 +147,7 @@ Work items, in order of likelihood:
 
 - [x] The main loop leaves `sub_001455C0` (2026-09-29: the stall was
       downstream failures, now fixed; boot reaches `app->Run()`)
-- [ ] At least one `Present` or flip reaches the host swap chain
+- [x] At least one `Present` or flip reaches the host swap chain (D3D11 swap chain, 2026-09-29)
 - [x] The window shows a guest-rendered image (the legal or splash screen)
       (2026-09-29: title splash, `RECOMP_FB_WINDOW`)
 - [x] The finding is written up in the README's bring-up notes
@@ -222,7 +235,7 @@ Work items, in order of likelihood:
 
 **Exit criteria**
 
-- [ ] One level (the first career level) loads and renders
+- [x] One level (the first career level) loads and renders (ML1, 2026-09-29)
       (2026-09-29: ML1 loads, runs and renders on the GPU at about 46 fps;
       no fog or shadows yet)
 - [ ] The rider can be controlled, tricks register, the score works

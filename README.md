@@ -723,8 +723,16 @@ black.
   created paused. No resume ever comes either: XMV holds its audio back
   itself, probably until the first video frame decodes. The file is read
   twice at offset 0 (4 KB and 68 KB), then never again (`fmv8`).
-- Next: follow `sub_00329420` (the frame-ready check) to see what the
-  decoder waits for after that first read. `xbox_VideoPlayFile` is the
+- `sub_00329420` is D3D `GetOverlayUpdateStatus`, not an XMV check:
+  `[dev+0x2400] != [dev+0x1DD8]`, where `UpdateOverlay` (0x329240) saves
+  the vblank count from `+0x1DD8`. D3D's vblank handler (0x31C371) counts a
+  vblank only when its parity matches the field from
+  `AvSendTVEncoderOption` option 0x0F, which returned a constant 0. The
+  option now returns an alternating field (toolkit `7caae46`), and the
+  count moves.
+- The movie is still black. XMV shows frames through the NV2A video
+  overlay (PVIDEO), which the renderer doesn't draw. That is the next piece
+  (2026-10-01). `xbox_VideoPlayFile` is the
   host-side `.wmv` player (`RECOMP_FMV_HOST`) and is not involved.
 
 ### Pad dead in game, hissing sound effects, rumble (fixed, 2026-09-30)
@@ -748,7 +756,8 @@ black.
     level.
 - **Rumble**: the pad's output report goes to XInput. `RECOMP_RUMBLE=0`
   turns it off.
-- **Still open (renderer):**
+- **Still open (renderer)** (the rider and the terrain were fixed on
+  2026-10-01, see below):
   - the rider is a black silhouette on the Career menu;
   - the loading screen's controller picture is missing (the text draws);
   - terrain sometimes draws without ground after pause/resume.
@@ -756,6 +765,42 @@ black.
   These happen with async shaders on or off, and `RECOMP_GPU_LOWRAM_PAGES`
   doesn't change them. `RECOMP_GPU_SHOT=<prefix>` saves the renderer's own
   frames for checking them.
+
+### Renderer glitches, game-wide crackle (2026-10-01, overnight)
+
+- **Terrain without ground, garbage state** (toolkit `e76cfce`,
+  `7caae46`). Two pushbuffer-walker bugs:
+  - D3D sets PUT in the middle of a long method, and the walker dropped
+    the rest of it. The unfinished method is now carried over.
+  - Ring wraps were handled as segments bounded by the lowest and highest
+    PUT ever seen. Amped 2 writes past the old PUT and jumps back to the
+    ring start wherever it runs out, sometimes from inside a recorded buffer
+    (RunPushBuffer). The walker now keeps one GET position and follows
+    every jump, as the GPU does (`nv2a_pb_run`).
+
+  D3D doesn't use calls, so a call word, or a word with low bits 3, means
+  the walk is reading data. It then resyncs at PUT instead of executing it.
+  The D3D11 backend range-checks every guest read (`guest_ok`). Result:
+  240 s in ML1 with pause/resume, no bad state, no crash, 58 fps.
+- **Black rider on the menus** (toolkit `96fe19f`): cube maps and the
+  dot-product texture modes (DOT_PRODUCT, DOT_ST, DOT_RFLCT_*,
+  DOT_STR_CUBE) with PS_INPUTTEXTURE and PS_DOTMAPPING. The rider has a
+  reflective look.
+- **Crackle/hiss in game** (toolkit `87d77e3`): voices were played at
+  48 kHz whatever their pitch. Slower streams ran dry mid-frame, so each
+  32-sample frame could end in a step. A per-voice linear resampler cut the
+  steps on frame boundaries from 1901 to 22 a minute.
+- **Still open:**
+  - **Loading screen black.** Its background and controller picture are
+    one quad sampling two 512×512 DXT3 textures (0x81FFD080, 0x8203D100)
+    whose memory is all zero while drawn. There are no CPU writes to the
+    back buffer and no 2D blits. Tools: `RECOMP_TEX_LOG`,
+    `RECOMP_GPU_SHOT_MEM`.
+  - **Walker resyncs.** A reused recorded buffer (0x8264A580) has its jump
+    back re-patched for a later call before the walk follows it. The fence
+    mirror reports D3D's submitted count, not what was executed.
+    `RECOMP_FENCE_EXACT` reports the executed release (NV097 0x1D70), but
+    boot stalls at frame 306 with it.
 
 ### Known toolkit issue (for upstream)
 
