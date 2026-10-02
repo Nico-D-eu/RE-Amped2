@@ -356,9 +356,9 @@ extern void sub_000F37E0(void);   /* src/lua_probe.c */
 extern void sub_000F24C0(void);   /* src/lua_probe.c */
 extern void sub_00150E80(void);   /* src/lua_probe.c */
 
-/* Skip FMV (see sub_00150E80 in lua_probe.c). main.c clears it when
- * AMPED2_PLAY_MOVIES is set. */
-int g_amped2_skip_movies = 1;
+/* Skip FMV (see sub_00150E80 in lua_probe.c). main.c sets it from
+ * AMPED2_PLAY_MOVIES: movies play unless that is 0. */
+int g_amped2_skip_movies = 0;
 
 /*
  * 0x0031C4B0: D3DDevice_Swap. It writes FLIP_INCREMENT_WRITE + FLIP_STALL
@@ -452,6 +452,85 @@ void sub_003285F0(void)
  * ERROR_DEVICE_NOT_CONNECTED for a device pointer that is not an address yet,
  * which the game already handles for an unplugged pad.
  */
+/*
+ * 0x002CDE60: XMV's GetNextFrame(decoder, ?, PXMVSTATUS, ?), stdcall 16.
+ * AMPED2_XMV_TRACE=1: the decoder's packet state before the call and the
+ * status after, for the first calls and on every change -- why a movie
+ * never gets a frame. Fields: +0x1C/+0x20 the packet callbacks (get next,
+ * release), +0x24 their context, +0x50 frames left in the packet, +0x60 the
+ * current packet, +0x68/+0x74 end flags, +0x6C a packet requested.
+ */
+extern void sub_002CDE60_gen(void);
+
+void sub_002CDE60(void)
+{
+    static int trace = -1;
+    static unsigned n;
+    static uint32_t last[6];
+    uint32_t dec = MEM32(g_esp + 4), pstatus = MEM32(g_esp + 12);
+    uint32_t cur[6];
+    int k, changed = 0;
+
+    if (trace < 0)
+        trace = getenv("AMPED2_XMV_TRACE") != NULL;
+    if (trace && dec) {
+        cur[0] = MEM32(dec + 0x50); cur[1] = MEM32(dec + 0x60); cur[2] = MEM32(dec + 0x68);
+        cur[3] = MEM32(dec + 0x6C); cur[4] = MEM32(dec + 0x74); cur[5] = MEM32(dec + 0x64);
+        for (k = 0; k < 6; k++)
+            changed |= cur[k] != last[k];
+    }
+    sub_002CDE60_gen();
+    if (trace && dec && (n < 12 || (changed && n < 400) || n % 120 == 0)) {
+        fprintf(stderr, "  [XMV] #%u dec %08X cb %08X/%08X ctx %08X: frames %08X pkt %08X"
+                " end %08X/%08X req %08X +64 %08X -> status %u (eax %08X)\n", n, dec,
+                MEM32(dec + 0x1C), MEM32(dec + 0x20), MEM32(dec + 0x24), cur[0], cur[1],
+                cur[2], cur[4], cur[3], cur[5], pstatus ? MEM32(pstatus) : 0xFFu, g_eax);
+        fprintf(stderr, "  [XMV]    vblank %u start %u next-frame %08X e8 %08X 3c %08X"
+                " b0/b4 %08X/%08X c8 %08X bc %08X\n",
+                MEM32(MEM32(0x0032CEF8u) + 0x1DD8), MEM32(dec + 0xB8), MEM32(dec + 0xF8),
+                MEM32(dec + 0xE8), MEM32(dec + 0x3C), MEM32(dec + 0xB0), MEM32(dec + 0xB4),
+                MEM32(dec + 0xC8), MEM32(dec + 0xBC));
+        if (n < 3) {   /* the per-stream decoders: object, vtable, the two flags */
+            uint32_t cnt = MEM32(dec + 0x48), i;
+            for (i = 0; i < cnt && i < 8; i++) {
+                uint32_t obj = MEM32(MEM32(dec + 0x134) + i * 4);
+                fprintf(stderr, "  [XMV]    stream %u: obj %08X vtbl %08X flag138 %08X flag13C %08X"
+                        " obj+4..+1C %08X %08X %08X %08X %08X %08X %08X\n", i, obj,
+                        obj ? MEM32(obj) : 0, MEM32(MEM32(dec + 0x138) + i * 4),
+                        MEM32(MEM32(dec + 0x13C) + i * 4),
+                        obj ? MEM32(obj + 4) : 0, obj ? MEM32(obj + 8) : 0,
+                        obj ? MEM32(obj + 12) : 0, obj ? MEM32(obj + 16) : 0,
+                        obj ? MEM32(obj + 20) : 0, obj ? MEM32(obj + 24) : 0,
+                        obj ? MEM32(obj + 28) : 0);
+            }
+        }
+        memcpy(last, cur, sizeof last);
+    }
+    n++;
+}
+
+/*
+ * 0x00295E64: DirectSound's voice pause worker, thiscall (ecx = voice client,
+ * one stack arg: the new state flags; bits 0x40 paused, 0x04 starved, 0x400
+ * at +0x12). AMPED2_XMV_TRACE=1 logs every call with the old flags and the
+ * caller -- whether a movie's audio stream is ever told to resume.
+ */
+extern void sub_00295E64_gen(void);
+
+void sub_00295E64(void)
+{
+    static int trace = -1;
+    static unsigned n;
+    uint32_t self = g_ecx, flags = MEM32(g_esp + 4), ret = MEM32(g_esp);
+    uint32_t old = self ? (MEM32(self + 0x12) & 0xFFFFu) : 0;
+    if (trace < 0)
+        trace = getenv("AMPED2_XMV_TRACE") != NULL;
+    if (trace && n++ < 200)
+        fprintf(stderr, "  [DSPAUSE] client %08X flags %04X -> %04X from %08X\n",
+                self, old, flags & 0xFFFFu, ret);
+    sub_00295E64_gen();
+}
+
 extern void sub_0032F339_gen(void);
 
 /* An XInput handle whose device pointer (handle + 0xA3) is an address. */

@@ -25,12 +25,12 @@ extern void amped2_report_lua_error(uint32_t L, uint32_t status);
  * one stack arg = target surface. The loop in sub_00150FF0 presents frames
  * until result is 2 (end of file) or 3 (failure).
  *
- * XMV paces video by its audio stream's play position, and this runtime's APU
- * does not advance that clock yet. So the decoder answers "no frame yet"
- * (0) forever: the MGS logo movie never ends and boot stops on a black
- * screen with the main loop turning. Until FMV works (PLAN.md, Phase 4),
- * movies are skipped: the decode still runs, then the result reads as end of
- * file. AMPED2_PLAY_MOVIES=1 (checked in main.c) plays them instead. */
+ * XMV paces video on D3D's vblank count and starts on an even field. Until
+ * the toolkit delivered both (2026-10-02: vblank held until acknowledged,
+ * the field pin at port 0x80C0) the decoder answered "no frame yet" (0)
+ * forever and boot stopped on the MGS logo. Movies now play by default.
+ * AMPED2_PLAY_MOVIES=0 (checked in main.c) skips them: the decode still
+ * runs, then the result reads as end of file. */
 extern int g_amped2_skip_movies;
 
 void sub_00150E80(void)

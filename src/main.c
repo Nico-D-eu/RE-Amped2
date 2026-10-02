@@ -505,8 +505,8 @@ static const char k_ini_default[] =
     ";Volume=100\r\n"
     "\r\n"
     "[Game]\r\n"
-    "; Play the intro movies (not working yet: they stay black).\r\n"
-    ";PlayMovies=0\r\n"
+    "; Play the intro movies: 1 on, 0 skips them.\r\n"
+    ";PlayMovies=1\r\n"
     "\r\n"
     "[Advanced]\r\n"
     "; Any RECOMP_ switch, set as written, e.g.\r\n"
@@ -676,13 +676,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (!getenv("RECOMP_KEYBOARD"))
         _putenv("RECOMP_KEYBOARD=1");
 
-    /* FMV is skipped until the APU's stream clock drives XMV (PLAN.md
-     * Phase 4); see sub_00150E80 in lua_probe.c. */
+    /* Movies play unless AMPED2_PLAY_MOVIES=0 (see sub_00150E80 in
+     * lua_probe.c). XMV opens its file for overlapped reads and keeps
+     * several in flight; completed synchronously it gets fewer packets
+     * ahead and plays the intro late, so asynchronous I/O is on by default
+     * too (2026-10-02; gameplay and music unchanged with it). */
     {
         extern int g_amped2_skip_movies;
         const char *play = getenv("AMPED2_PLAY_MOVIES");
-        g_amped2_skip_movies = !(play && *play && *play != '0');
+        g_amped2_skip_movies = play && *play == '0';
     }
+    if (!getenv("RECOMP_ASYNC_IO"))
+        _putenv("RECOMP_ASYNC_IO=1");
     if (!getenv("RECOMP_DSP_ACK"))
         _putenv("RECOMP_DSP_ACK=0x8106C810");
 
