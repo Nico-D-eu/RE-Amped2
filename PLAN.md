@@ -220,7 +220,8 @@ Work items, in order of likelihood:
 - [x] Legal → splash → title → main menu with no manual steps
       (2026-09-29: splash → title automatic; START reaches the menus,
       which render correctly since the lahf fix)
-- [ ] All top-level menus open and close with a pad
+- [x] All top-level menus open and close with a pad
+      (2026-10-02: the user plays career, challenges and events from the menus)
 - [ ] No unresolved indirect calls reached in the frontend
       (2026-09-29: only `0x002C8DAD`, XNET, deliberately left unseeded)
 
@@ -242,8 +243,10 @@ Work items, in order of likelihood:
 - [x] One level (the first career level) loads and renders (ML1, 2026-09-29)
       (2026-09-29: ML1 loads, runs and renders on the GPU at about 46 fps;
       no fog or shadows yet)
-- [ ] The rider can be controlled, tricks register, the score works
-- [ ] The run can be finished and exited back to the menu
+- [x] The rider can be controlled, tricks register, the score works
+      (2026-10-02: user play, styled tricks score extra points)
+- [x] The run can be finished and exited back to the menu
+      (2026-10-02: competitions won, challenges completed, menu and back)
 
 ### Phase 4: Complete systems
 
@@ -272,7 +275,10 @@ Work items, in order of likelihood:
 
 - [ ] Every level and mode can be played start to finish
 - [ ] Audio, music and FMV work
-- [ ] Saves persist across restarts
+      (2026-10-02: audio and music work in play after the dispatch lock,
+      toolkit `cf8ed97`; FMV still black)
+- [x] Saves persist across restarts
+      (2026-10-02: career progress, level 4+ unlocks kept across many sessions)
 - [x] 60 minutes of play with no crash (`soak7`, 2026-10-01: ML1 at 2x with scripted pause/resume, 59.2 fps, memory flat at ~500 MB)
 - [ ] The build reproduces from a clean checkout plus the user's own disc
 
