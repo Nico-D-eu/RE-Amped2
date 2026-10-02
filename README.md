@@ -129,7 +129,7 @@ environment variable that is already set wins over the file.
 | | `DeadZone` | `0`–`0.9` (stick dead zone for a controller) | `RECOMP_PAD_DEADZONE` |
 | | `Rumble` | `1`, `0` | `RECOMP_RUMBLE` |
 | `[Audio]` | `Volume` | `0`–`100` | `RECOMP_AUDIO_VOLUME` |
-| `[Game]` | `PlayMovies` | `0`, `1` (movies still show black) | `AMPED2_PLAY_MOVIES` |
+| `[Game]` | `PlayMovies` | `1` (default), `0` skips the intro movies | `AMPED2_PLAY_MOVIES` |
 | `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
 
 `RenderScale` renders the game's 640×480 surfaces at that multiple, so 3
@@ -371,9 +371,9 @@ problem is why the loop stalls after one frame. An XNet worker
    `kernel_bridge.c` (`ke_dispatcher_handle`, event-state mirroring).
    Before it, the movie worker and D3D's vblank wait spun through tens of
    millions of failed or instantly-satisfied waits.
-3. **The intro movie never ends,** because XMV is paced by an audio clock
-   the APU doesn't advance. Movies are skipped (`sub_00150E80` hand copy)
-   unless `AMPED2_PLAY_MOVIES=1`.
+3. **The intro movie never ended,** so movies were skipped
+   (`sub_00150E80` hand copy). They have played since 2026-10-02; see
+   "FMV" below. `AMPED2_PLAY_MOVIES=0` still skips them.
 
 The title then reaches its **front end**: 150 disc files, 6 threads,
 continuous rendering. The UI is drawn **wrong**: squashed into the top-left
@@ -745,41 +745,66 @@ An empty pattern now means `*`. The menus open a song
 instead of at level start (`diag/audio_music1.wav`). `RECOMP_DIR_TRACE=1`
 logs each query.
 
-### FMV (still open, 2026-09-30)
+### FMV (fixed, 2026-10-02)
 
-With `AMPED2_PLAY_MOVIES=1`, the first movie (`Movies\MGS.xmv`) stays
-black.
+The boot movies (`MGS.xmv`, `XSN.xmv`, `Intro.xmv`) play with sound and the
+game reaches the title screen. They play by default; `PlayMovies=0` skips
+them. Four things were missing, all in the toolkit:
 
-- The player (`sub_00150FF0`) called `D3DDevice_BlockUntilVerticalBlank`
-  (`sub_0031AE90`) whenever its decoder had no frame ready. That waits on a
-  KEVENT which D3D's GPU interrupt handler sets, and nothing raises that
-  interrupt here, so it waited forever. `recomp_manual.c` now replaces it
-  with a wait for the kernel's 60 Hz vblank tick.
-- The decoder still never has a frame (`sub_00329420` returns 0). XMV paces
-  video on its audio stream. `RECOMP_APU_STATS` shows 7 voices started and
-  0 notifications, with the APU active (SECTL 0x0F, FECTL 0x100F). So the
-  movie's stream voices are never consumed.
-- They are on the 2D list (top `0x47`). Voice `0x47` has format
-  `A180E0E6` and state `0x00240000`, which is ACTIVE plus PAUSED, at
-  offset 0 (`diag/fmv7`). The movie's audio stream starts paused and nothing
-  resumes it, so the XMV clock never moves.
-- The voice is not paused by DirectSound's pause helper `sub_002939AD`,
-  the only writer of `VOICE_PAUSE` (`0xFE820140`). A probe there saw no
-  write at all, and our `VOICE_ON` does not set the bit, so the stream was
-  created paused. No resume ever comes either: XMV holds its audio back
-  itself, probably until the first video frame decodes. The file is read
-  twice at offset 0 (4 KB and 68 KB), then never again (`fmv8`).
-- `sub_00329420` is D3D `GetOverlayUpdateStatus`, not an XMV check:
-  `[dev+0x2400] != [dev+0x1DD8]`, where `UpdateOverlay` (0x329240) saves
-  the vblank count from `+0x1DD8`. D3D's vblank handler (0x31C371) counts a
-  vblank only when its parity matches the field from
-  `AvSendTVEncoderOption` option 0x0F, which returned a constant 0. The
-  option now returns an alternating field (toolkit `7caae46`), and the
-  count moves.
-- The movie is still black. XMV shows frames through the NV2A video
-  overlay (PVIDEO), which the renderer doesn't draw. That is the next piece
-  (2026-10-01). `xbox_VideoPlayFile` is the
-  host-side `.wmv` player (`RECOMP_FMV_HOST`) and is not involved.
+- **XMV's clock is D3D's vblank count** (`dev+0x1DD8`, miniport `+0x1C0`,
+  read by GetDisplayFieldStatus 0x0031AE50). It stood at 2–4. The NV2A ISR
+  0x003220C0 only masks PMC_INTR_EN and queues a DPC. The DPC 0x003221E0
+  calls the vblank handler 0x00322390 (count++) only if PMC_INTR_0 still
+  shows PCRTC, and our ack thread had zeroed it by then. The tick now writes
+  PCRTC_INTR_0 = 0x80000001; the bits stay pending until the title's
+  acknowledge drops the marker, and a vblank-only thread then clears them at
+  once (toolkit `125b24c`). (0x0031C2E0, which counts only on a field parity
+  match, is the mode-set path, not this one.)
+- **XMV starts only on an even field.** GetNextFrame sets its start time
+  (0x002CE2D5) only when the field is not ODD. In interlaced modes the field
+  comes from `in al, dx` at port 0x80C0 (bit 5, the TV encoder's field pin)
+  in the ISR (0x0032213C) and the handler (0x0032240D). The lifter left `in`
+  unimplemented. It now lifts port I/O to `xbox_PortIn/xbox_PortOut`, and
+  0x80C0 follows the vblank parity (toolkit `94b6738`; needs a regen).
+- **The picture is the NV2A video overlay** (PVIDEO, registers at
+  0xFD008000; D3D UpdateOverlay 0x00329240). The D3D11 backend reads it at
+  present time and draws the YUY2 surface (BT.601) into its destination
+  rect, presenting every 16 ms while the player does not flip.
+- **The end of a movie:** EnableOverlay(FALSE) (0x003293B0) writes
+  PVIDEO_STOP and spins until PVIDEO_BUFFER reads 0, which hardware does on
+  STOP. Plain memory never did, so the first movie never ended.
+
+XMV opens movies for overlapped reads. With them completed synchronously it
+gets fewer packets ahead and the intro plays late, so `main.c` makes
+`RECOMP_ASYNC_IO=1` the default (gameplay and music unchanged in a BR1 run).
+The diagnostics: `AMPED2_XMV_TRACE=1` (GetNextFrame state, `[DSPAUSE]`),
+`RECOMP_PVIDEO_TRACE=1`, `RECOMP_GPU_SHOT_PRESENT=<prefix>` (the presented
+picture, overlay included). `xbox_VideoPlayFile` is the host-side `.wmv`
+player (`RECOMP_FMV_HOST`) and is not involved.
+
+### Sound breaks up after a while: dead voices in the APU lists (fix under test, 2026-10-02)
+
+After 10–30 minutes of play the sound could go bad and the game lag behind
+it, for good. [HEALTH] showed it: APU 250–500 of 1500 frames/s, an APU
+interrupt every timer pass, thousands of trapped-front-end waits.
+
+- About 25 idle voices were still linked in the APU's voice lists. The VP
+  traps the front end for each idle voice in a list (SE2FE_IDLE_VOICE),
+  and the last one in the frame (0x7D) is reported in FEDECPARAM.
+  DirectSound's trap service 0x00293D39 → 0x002936B5 acts only on a voice
+  it still owns (`this[0x88 + v*4]`, the object's current handle == v).
+  0x00295B4B then unlinks it by rewriting the predecessor's link word
+  (+0x7C) from its own copy of the list order.
+- The two copies of the order had drifted apart. At dispatch-lock level 1
+  the timer thread ran DPCs without the lock, so DirectSound's trap DPC
+  could run beside a game thread inserting voices. Each DPC now holds the
+  lock (bounded at 20 ms), and the APU wakes the timer thread when it
+  raises its line, so a trap is serviced at once (toolkit `ec8ad24`).
+- [HEALTH] now ends with "N idle voices linked"; a steady count above a
+  handful is this failure.
+- Separately, the kernel call counter wrapped at 2^31 calls and logged
+  every kernel call from then on (135 MB in ten minutes), fixed in toolkit
+  `a8cfbed`.
 
 ### Pad dead in game, hissing sound effects, rumble (fixed, 2026-09-30)
 

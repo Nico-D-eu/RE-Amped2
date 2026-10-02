@@ -11,6 +11,17 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-02, afternoon): the movies play.**
+- **FMV.** The boot movies (MGS, XSN, Intro) play with sound and lead to
+  the title screen, on by default (`PlayMovies=0` skips them). XMV needed
+  D3D's vblank count to move, the TV field pin at port 0x80C0 (the lifter
+  now lifts port I/O), the PVIDEO overlay drawn, and PVIDEO_STOP honoured
+  (toolkit `94b6738`, `125b24c`). In-game movies are untested.
+- **Sound after long play.** Dead voices left linked in the APU's voice
+  lists slowed the APU to a third of real time, and the game with it. DPCs
+  now hold the dispatch lock, and traps are serviced at once (`ec8ad24`).
+  Under test; [HEALTH] counts "idle voices linked".
+
 **Update (2026-10-01, overnight): menu rider, in-game state and crackle fixed.**
 - **Renderer.** The menu rider is drawn with cube maps and the dot-product
   texture modes (`96fe19f`). The pushbuffer walker finishes methods split
@@ -172,9 +183,8 @@ Work items, in order of likelihood:
   *(2026-09-29: `XNetGetTitleXnAddr` now reports NONE via
   `config/force_return.txt`, which removed the post-splash deadlock.)*
 - **FMV:** decide whether XMV plays (`tools.xmv`) or is skipped for now.
-  Skipping is acceptable for M2. *(2026-09-29: skipped by default,
-  `AMPED2_PLAY_MOVIES=1` to play. XMV waits on an audio clock the APU
-  doesn't advance.)*
+  Skipping is acceptable for M2. *(2026-09-29: skipped by default.
+  2026-10-02: XMV plays, on by default; see README "FMV".)*
 - ~~**Front-end rendering:** the executor drew the UI squashed into the
   top-left.~~ Done 2026-09-29: vertex-program interpreter
   (`src/kernel/nv2a_vp.c`), viewport constants, general blending, texture ×
@@ -276,7 +286,9 @@ Work items, in order of likelihood:
 - [ ] Every level and mode can be played start to finish
 - [ ] Audio, music and FMV work
       (2026-10-02: audio and music work in play after the dispatch lock,
-      toolkit `cf8ed97`; FMV still black)
+      toolkit `cf8ed97`. The boot movies play with sound, `125b24c`.
+      Still to confirm: in-game movies, and long play without the
+      dead-voice slowdown, `ec8ad24`)
 - [x] Saves persist across restarts
       (2026-10-02: career progress, level 4+ unlocks kept across many sessions)
 - [x] 60 minutes of play with no crash (`soak7`, 2026-10-01: ML1 at 2x with scripted pause/resume, 59.2 fps, memory flat at ~500 MB)
