@@ -70,5 +70,37 @@
   {
     "start": "0x00123F30",
     "note": "Indirect-call (vtable) target observed at runtime in ML1's photo shoot challenge (2026-10-02); decodes as a function body after a ret at 0x00123F2F."
+  },
+  {
+    "start": "0x00124BA0",
+    "note": "Indirect-call target observed at runtime starting a Pro challenge on Millicent (ML1, 2026-10-02); the miss crashed the game in sub_00034D90."
+  },
+  {
+    "start": "0x001A2D10",
+    "note": "Indirect-call target observed at runtime starting a Pro challenge on Millicent (ML1, 2026-10-02); the miss crashed the game in sub_00034D90."
+  },
+  {
+    "start": "0x0006FA20",
+    "note": "Vtable entry at .rdata 0x0034B2B8 beside known methods, found by a static vtable scan (2026-10-02) after two missed vtable targets crashed untested modes; decodes as a function entry outside every known body."
+  },
+  {
+    "start": "0x00070CA0",
+    "note": "Vtable entry at .rdata 0x0034B5E8 beside known methods, found by a static vtable scan (2026-10-02) after two missed vtable targets crashed untested modes; decodes as a function entry outside every known body."
+  },
+  {
+    "start": "0x001C17D0",
+    "note": "Vtable entry at .rdata 0x003645A4 beside known methods, found by a static vtable scan (2026-10-02) after two missed vtable targets crashed untested modes; decodes as a function entry outside every known body."
+  },
+  {
+    "start": "0x001F2130",
+    "note": "Vtable entry at .rdata 0x00368430 beside known methods, found by a static vtable scan (2026-10-02) after two missed vtable targets crashed untested modes; decodes as a function entry outside every known body."
+  },
+  {
+    "start": "0x00226210",
+    "note": "Vtable entry at .rdata 0x0036CFA0 beside known methods, found by a static vtable scan (2026-10-02) after two missed vtable targets crashed untested modes; decodes as a function entry outside every known body."
+  },
+  {
+    "start": "0x00245B40",
+    "note": "Vtable entry at .rdata 0x00364A20 beside known methods, found by a static vtable scan (2026-10-02) after two missed vtable targets crashed untested modes; decodes as a function entry outside every known body."
   }
 ]

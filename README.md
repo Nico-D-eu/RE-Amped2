@@ -745,6 +745,22 @@ An empty pattern now means `*`. The menus open a song
 instead of at level start (`diag/audio_music1.wav`). `RECOMP_DIR_TRACE=1`
 logs each query.
 
+### Crashes on entering an untested mode: missed vtable methods (2026-10-02)
+
+The photo-shoot challenge (`0x00123F30`) and a Pro challenge (`0x00124BA0`,
+`0x001A2D10`) crashed the first time they ran. The log shows
+`[ICALL] Failed to resolve VA ...` just before the fault. Each was a
+vtable method the static analysis never found. The fix is a seed in
+`config/seed_functions.json` (never `0x002C8DAD`) and a regen.
+
+To catch the rest before a player does, a scan of the data sections
+(`.rdata` is flagged executable here, so treat only `.text` and the XDK
+library sections as code) looks for vtable runs whose entries are neither
+known functions nor inside one. It found six more, now seeded. Two of
+them follow a switch's jump tables with no prologue, and the disassembler
+rejected them until toolkit `0426dc4` (an aligned seed after int3 padding
+counts as a boundary).
+
 ### FMV (fixed, 2026-10-02)
 
 The boot movies (`MGS.xmv`, `XSN.xmv`, `Intro.xmv`) play with sound and the
