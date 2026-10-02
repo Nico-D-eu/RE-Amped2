@@ -968,6 +968,29 @@ right at full level. The downmix is now ITU-style: centre and back at
 -3 dB; LFE and the sends dropped. `RECOMP_APU_MIXDOWN=sum` brings back the
 old fold.
 
+### Music corruption and the whistle (fixed, 2026-10-02)
+
+- **Music crackle/distortion in levels (toolkit `cf8ed97`).** DirectSound's
+  critical section is KeRaiseIrql to DISPATCH, which on the console's one
+  CPU excludes everything else. Here the game and XACT threads ran their
+  `SET_CURRENT_VOICE` + `SET_VOICE_*` sequences on different cores at
+  once, and SFX settings landed on the music stream voices: fmt
+  0xA200E041, BA 0, EBO 0, still active, a constant DC from one ADPCM
+  header sample. Fixed by the dispatch lock (`RECOMP_DISPATCH_LOCK=1`,
+  the default): one guest thread at DISPATCH at a time. Level 2 (which
+  also holds it across the timer's DPC passes) hitched, so it is opt-in.
+- **Pad crash, same root cause.** XPP built a pad slot ten bytes off the
+  handle it returned (see "Pad-handle race" below); the lock covers the
+  thread-vs-thread half of that.
+- **Whistle (toolkit `1010e73`).** Voices 0x40–0x43 loop one VP frame (32
+  samples) of a buffer the GP DSP rewrites every frame; our GP is a stub,
+  so they replayed stale memory, in one session the DSP program image.
+  They are now silent (`RECOMP_APU_GP_READBACK=1` to hear them).
+- **Physical numbering (toolkit `bf8c174`).** Ordinary memory is now
+  64–128 MB physical, so it never shares a page number with the window.
+- **Pad-handle race.** `diag/xinput_page0.bin`: the device pointer was
+  written at 0x80000322 while the handle 0x80000289 expects it at +0xA3.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
