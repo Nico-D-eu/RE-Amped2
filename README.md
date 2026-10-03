@@ -130,7 +130,17 @@ environment variable that is already set wins over the file.
 | | `Rumble` | `1`, `0` | `RECOMP_RUMBLE` |
 | `[Audio]` | `Volume` | `0`–`100` | `RECOMP_AUDIO_VOLUME` |
 | `[Game]` | `PlayMovies` | `1` (default), `0` skips the intro movies | `AMPED2_PLAY_MOVIES` |
+| | `Mods` | `1` (default), `0` plays the original data | `AMPED2_MODS` |
 | `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
+
+**Mods.** The runtime reads `mods\build\game\` over `game\`
+(`RECOMP_OVERLAY_DIR`), so modded archives never touch your game files.
+They are built from your own data by recipe scripts in `tools/mods/`, since
+no game data is committed. The menu mod (`python tools/mods/menus.py`)
+currently removes "Multiplayer" from the main menu. It decompiles
+the original scene, edits it, writes plain Lua source into
+`mods\overrides\` (the game's Lua loads source as well as bytecode) and
+repacks with the asset toolkit. `Mods=0` turns all of it off.
 
 `RenderScale` renders the game's 640×480 surfaces at that multiple, so 3
 renders at 1920×1440. The result is scaled into the window, keeping 4:3. On

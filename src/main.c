@@ -507,6 +507,9 @@ static const char k_ini_default[] =
     "[Game]\r\n"
     "; Play the intro movies: 1 on, 0 skips them.\r\n"
     ";PlayMovies=1\r\n"
+    "; Use the modded files in mods\\build\\game (built by the asset\r\n"
+    "; toolkit's repack): 1 on, 0 plays the original data.\r\n"
+    ";Mods=1\r\n"
     "\r\n"
     "[Advanced]\r\n"
     "; Any RECOMP_ switch, set as written, e.g.\r\n"
@@ -533,6 +536,7 @@ static void load_settings(void)
         { "Input",   "Rumble",         "RECOMP_RUMBLE" },
         { "Audio",   "Volume",         "RECOMP_AUDIO_VOLUME" },
         { "Game",    "PlayMovies",     "AMPED2_PLAY_MOVIES" },
+        { "Game",    "Mods",           "AMPED2_MODS" },
     };
     char path[MAX_PATH], line[1024], section[64] = "";
     char *slash;
@@ -688,6 +692,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     }
     if (!getenv("RECOMP_ASYNC_IO"))
         _putenv("RECOMP_ASYNC_IO=1");
+    /* Mods: files in mods\build\game (the asset toolkit's `repack` output)
+     * stand in for the same paths in game\, which stays untouched. Relative:
+     * the path layer reads it at the first file open, after find_game_root
+     * has made the project root the working directory.
+     * AMPED2_MODS=0 (ini Mods=0) plays the original data. */
+    {
+        const char *mods = getenv("AMPED2_MODS");
+        if (!getenv("RECOMP_OVERLAY_DIR") && !(mods && *mods == '0'))
+            _putenv("RECOMP_OVERLAY_DIR=mods\\build\\game");
+    }
     if (!getenv("RECOMP_DSP_ACK"))
         _putenv("RECOMP_DSP_ACK=0x8106C810");
 

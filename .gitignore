@@ -34,7 +34,7 @@ src/recomp/gen/
 # Game files (user must provide their own legally-owned copies)
 game/
 # Extracted / upscaled / modded game data (tools/assets writes here)
-mods/
+/mods/
 __pycache__/
 *.xbe
 *.iso

@@ -538,7 +538,8 @@ def cmd_repack(a):
             (build / p.name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ov_root / p.name, build / p.name)
             log(f"{p.name}: replaced")
-    log(f"built archives are in {build} - run install to copy them into game/")
+    log(f"built archives are in {build}; the game reads them from there (ini [Game] Mods=1,"
+        " the default) - install is only for runtimes without the overlay")
 
 
 def cmd_install(a):

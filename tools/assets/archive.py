@@ -7,7 +7,7 @@ rebuilt archive differs from the shipped one only in the entries you changed.
 import zipfile
 from pathlib import Path
 
-ARCHIVE_EXTS = (".gfx", ".res")
+ARCHIVE_EXTS = (".gfx", ".res", ".rui", ".ruirr")
 
 
 def find_archives(game: Path):
