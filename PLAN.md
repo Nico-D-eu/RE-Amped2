@@ -11,6 +11,15 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-03): M4 "Playable" reached; Part B (mods) starts.**
+The user called M4 after playing every unlocked level, Career, Free Ride,
+the sponsor, photo and Pro challenges and sk8 runs, with movies and
+sound (Legend challenges not yet reported). Hiccups found later get fixed as they come. Still open
+from the M4 list, kept as follow-ups: a full career to the end, long play
+with the dead-voice fix (`ec8ad24`), in-game movies, and the
+clean-checkout build check. First mod work: the menu changes below
+(Phase 6).
+
 **Update (2026-10-02, afternoon): the movies play.**
 - **FMV.** The boot movies (MGS, XSN, Intro) play with sound and lead to
   the title screen, on by default (`PlayMovies=0` skips them). XMV needed
@@ -283,8 +292,10 @@ Work items, in order of likelihood:
 
 **M4 exit criteria (the gate for Part B)**
 
-- [ ] Every level and mode can be played start to finish
-- [ ] Audio, music and FMV work
+- [x] Every level and mode can be played start to finish
+      (2026-10-03, by the user's call: every mode reached plays; a full
+      career run to the end is still a follow-up)
+- [x] Audio, music and FMV work
       (2026-10-02: audio and music work in play after the dispatch lock,
       toolkit `cf8ed97`. The boot movies play with sound, `125b24c`.
       Still to confirm: in-game movies, and long play without the
@@ -293,6 +304,7 @@ Work items, in order of likelihood:
       (2026-10-02: career progress, level 4+ unlocks kept across many sessions)
 - [x] 60 minutes of play with no crash (`soak7`, 2026-10-01: ML1 at 2x with scripted pause/resume, 59.2 fps, memory flat at ~500 MB)
 - [ ] The build reproduces from a clean checkout plus the user's own disc
+      (follow-up; not blocking Part B by the user's decision, 2026-10-03)
 
 ---
 
@@ -328,6 +340,19 @@ touch generated code directly.
   source recompiled to the 5.0 beta format, through the overlay. The
   scripts drive characters, levels and challenges, so this is the main
   content lever.
+- **Menu changes (user request, 2026-10-03)**, the first users of the
+  overlay, script overrides and hook points:
+  1. Hide "Multiplayer" from the main menu (`Shell.rui`
+     `Scenes/Main.scene`: the `Items`/`TextIDs`/`HelpTextIDs` lists).
+  2. A "Close game" item at the end of the main menu: a new action name
+     caught by a native hook on the game's GUI action dispatcher.
+  3. "Options" → "Game Options" (`Base.rui` `Scenes/Options_Game.scene`)
+     gains the non-advanced `amped2.ini` settings (window, borderless,
+     render scale, volume, rumble, dead zone, movies), read from and
+     written back to the ini, applied live where possible.
+  Scenes are compiled Lua 5.0 beta tables; the exe carries Lua's text
+  parser, so replacements can likely be source. Strings: `Base.rui`
+  `StringTables/<lang>/StringTable.dat`.
 - **A debug overlay** (Dear ImGui): FPS, the loaded mods, texture-pack hit
   and miss counts, and a free camera.
 
