@@ -137,10 +137,13 @@ environment variable that is already set wins over the file.
 (`RECOMP_OVERLAY_DIR`), so modded archives never touch your game files.
 They are built from your own data by recipe scripts in `tools/mods/`, since
 no game data is committed. The menu mod (`python tools/mods/menus.py`)
-currently removes "Multiplayer" from the main menu. It decompiles
-the original scene, edits it, writes plain Lua source into
+removes "Multiplayer" from the main menu and adds QUIT at the end. It
+decompiles the original scene, edits it, writes plain Lua source into
 `mods\overrides\` (the game's Lua loads source as well as bytecode) and
-repacks with the asset toolkit. `Mods=0` turns all of it off.
+repacks with the asset toolkit. QUIT runs a new `Quit` action
+(`tools/assets/rui_actions.py` edits the GUI `.actions` format), which
+calls `QuitGame()`, a shell command `recomp_manual.c` registers. That
+command closes the window. `Mods=0` turns all of it off.
 
 `RenderScale` renders the game's 640×480 surfaces at that multiple, so 3
 renders at 1920×1440. The result is scaled into the window, keeping 4:3. On
