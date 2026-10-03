@@ -14,7 +14,8 @@ can't be tested, and they grow the surface area we have to debug.
 **Update (2026-10-03): M4 "Playable" reached; Part B (mods) starts.**
 The user called M4 after playing every unlocked level, Career, Free Ride,
 the sponsor, photo and Pro challenges and sk8 runs, with movies and
-sound (Legend challenges not yet reported). Hiccups found later get fixed as they come. Still open
+sound. Legend runs unlock only once the whole game is completed, so
+they are a long-term check. Hiccups found later get fixed as they come. Still open
 from the M4 list, kept as follow-ups: a full career to the end, long play
 with the dead-voice fix (`ec8ad24`), in-game movies, and the
 clean-checkout build check. First mod work: the menu changes below

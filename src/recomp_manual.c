@@ -808,8 +808,100 @@ void sub_00259000(void)
  *       g_eax = result;
  *   }
  */
+/* ── Menu mod: a "QuitGame" shell command ──────────────────────────────
+ *
+ * The GUI's actions call native commands by name (PushMenu, PopMenu,
+ * PlayMenuItemSelectSound ...). 0x00218140 registers them, thiscall on the
+ * shell object, one name at a time into the registry at [this+4]:
+ *     key = String(name)               sub_000122B0  eax = C string, push &key
+ *     Register(registry, &key), ecx=fn sub_00205370  (ebx = the shell, non-zero)
+ *     ~key                             sub_0001A490  ecx = &key
+ * A command is thiscall with one stack argument and returns al = 0 (`ret 4`).
+ *
+ * The wrapper registers one more, QuitGame, after the title's own. Its name
+ * lives in the unused tail of the XBE header page (headers end at
+ * 0x00010B60, .text starts at 0x00011000). Its "code address" is a value
+ * no guest code or data uses, above 0xFE000000: the indirect-call guard
+ * (RECOMP_ICALL_IS_CODE) passes that range, and recomp_lookup_manual below
+ * answers it before anything else. One in the header page was refused as
+ * "not code". The menu mod (tools/mods/menus.py) gives the main menu a QUIT
+ * item that calls it.
+ */
+#define AMPED2_QUIT_NAME_VA 0x00010F00u
+#define AMPED2_QUIT_FN_VA   0xFEFFFF00u
+
+extern void sub_000122B0(void);
+extern void sub_00205370(void);
+extern void sub_0001A490(void);
+extern void sub_00218140_gen(void);
+
+/* The command: close the window, which is how the game quits (the title
+ * saves as it goes). */
+static void amped2_cmd_quit(void)
+{
+    extern void xbox_RequestQuit(void);     /* toolkit fb_present.c */
+    fprintf(stderr, "  [MOD] QuitGame from the menu\n");
+    fflush(stderr);
+    xbox_RequestQuit();
+    SET_LO8(g_eax, 0);
+    g_esp += 8;                             /* ret 4 */
+}
+
+static void amped2_register_command(uint32_t self, const char *name, uint32_t fn_va,
+                                    uint32_t name_va)
+{
+    uint32_t key, saved_ebx = g_ebx, saved_ecx = g_ecx;
+    size_t i;
+
+    for (i = 0; name[i]; i++)
+        MEM8(name_va + i) = (uint8_t)name[i];
+    MEM8(name_va + i) = 0;
+
+    g_esp -= 16;                            /* the key, on the guest stack */
+    key = g_esp;
+    MEM32(key) = 0;
+
+    g_esp -= 4; MEM32(g_esp) = key;         /* String(name) -> key */
+    g_esp -= 4; MEM32(g_esp) = 0;
+    g_eax = name_va;
+    sub_000122B0();
+
+    /* Register(registry, &key). ebx is the shell object here, as in the
+     * title (`ebx = edi` before its registrations): sub_00205370 builds the
+     * functor from ecx only when ebx is non-zero, and with ebx = 0 it
+     * stored a null function, so QuitGame() was never found. */
+    g_ebx = self;
+    g_esp -= 4; MEM32(g_esp) = key;         /* pushed first, as the title does */
+    g_esp -= 4; MEM32(g_esp) = MEM32(self + 4);
+    g_esp -= 4; MEM32(g_esp) = 0;
+    g_ecx = fn_va;
+    sub_00205370();
+
+    g_ecx = key;                            /* ~key */
+    g_esp -= 4; MEM32(g_esp) = 0;
+    sub_0001A490();
+
+    g_esp += 16;
+    g_ebx = saved_ebx;
+    g_ecx = saved_ecx;
+}
+
+void sub_00218140(void)
+{
+    uint32_t self = g_ecx, ret;
+    sub_00218140_gen();
+    ret = g_eax;
+    amped2_register_command(self, "QuitGame", AMPED2_QUIT_FN_VA, AMPED2_QUIT_NAME_VA);
+    fprintf(stderr, "  [MOD] shell command QuitGame registered\n");
+    fflush(stderr);
+    g_eax = ret;
+}
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
+    if (xbox_va == AMPED2_QUIT_FN_VA) return amped2_cmd_quit;
+    if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
+
     /*
      * TODO: Add your overrides here. Examples:
      *
