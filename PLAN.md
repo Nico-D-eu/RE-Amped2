@@ -365,10 +365,14 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    4K), which means scaling viewports, scissor, render targets and depth
    buffers in the D3D8→D3D11 layer. This isn't in xboxrecomp yet; build
    it upstream so every title gets it.
-2. **Widescreen 16:9 / 21:9.** Patch the projection aspect and FOV in game
-   code, and put the HUD in the 4:3 safe area or anchor it to the edges.
-   The game has no widescreen mode of its own, even though we already
-   report `XC_VIDEO_FLAGS_WIDESCREEN`. Its camera nodes carry an
+2. **Widescreen 16:9 / 21:9.** **16:9 done (2026-10-07):** the game has
+   its own 1280x720 widescreen mode, with the HUD at the edges and the
+   menus laid out for it. It was hidden because the toolkit reported the
+   video flags in the wrong bits; `RECOMP_VIDEO_MODES` (default
+   `480p,720p,widescreen`) turns it on. Verified in ML1 at 3840x2160
+   (RenderScale 3), 58.6 fps. Still open: 21:9, which needs the
+   projection aspect and FOV patched in game code. The earlier note that
+   the game "has no widescreen mode of its own" was wrong. Its camera nodes carry an
    `AspectRatio` field, and its GUI nodes carry `AspectCorrect`/
    `UnAspectCorrect`, which are the hooks to use. The user asked for it
    (2026-10-02) and agreed it waits for this phase.

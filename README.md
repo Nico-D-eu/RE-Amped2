@@ -33,7 +33,7 @@ From `py -3 -m tools.xbe_parser` (full output in `game/default_analysis.json`):
 
 | | |
 |---|---|
-| Release | Europe, Australia (En, Fr, De) |
+| Release | **USA** (since 2026-10-07); Europe, Australia (En, Fr, De) also works |
 | Title ID | `0x4D530041` — retail, DVD_X2 |
 | Built | 2003-10-03, XDK **1.0.5558** — internal codename *Yeti* (`c:\depot\yeti\...\YetiGame\Default.exe`) |
 | Image | base `0x00010000`, size `0x003E9520` |
@@ -42,6 +42,16 @@ From `py -3 -m tools.xbe_parser` (full output in `game/default_analysis.json`):
 | `.text` | `0x00011000`, 2.49 MB |
 | XDK code sections | DSOUND, XONLINE, XNET, XMV, WMADEC, XACTENG, XGRPH, D3D, XPP, DOLBY, XON_RD |
 | Libraries | XAPILIB, LIBCMT, DSOUND, XONLINES, XVOICE, XMV, D3D8LTCG, XGRAPHCL, XACTENLT |
+
+**Either disc works.** The USA and PAL XBEs are the same build: same entry
+point, layout, imports and code, apart from one byte (the PAL rip is
+media-patched at `0x0025543A`), and all 720 data files are identical. The
+certificates differ (region `0x1` vs `0x4`, ratings, keys). XAPI's DVD
+authentication `sub_00255202`, which the unpatched USA XBE runs, is
+overridden in `recomp_manual.c` to report success, so `game/` can hold
+either disc and `regen.ps1` works from either `default.xbe`. The exe prints
+which one it loaded (`XBE region: ...`). We use the USA disc; the PAL XBE
+is kept as `game/default.pal.xbe`. Comparison: `../amped2-ntsc/NOTES.md`.
 
 Other executables on the disc (`Boom.xbe`, `cdx.xbe`, `update.xbe`,
 `dashupdate.xbe`) are not part of the port; only `default.xbe` is recompiled.
@@ -124,6 +134,7 @@ environment variable that is already set wins over the file.
 | `[Display]` | `WindowSize` | `1280x960`, `1920x1080`, … (client area) | `RECOMP_WINDOW_SIZE` |
 | | `WindowMode` | `windowed`, `borderless` (F11 / Alt+Enter toggles) | `RECOMP_WINDOW_MODE` |
 | | `RenderScale` | `1`–`8`, or `720p` (2), `1080p`/`1440p` (3), `4k` (5) | `RECOMP_GPU_SCALE` |
+| | `VideoModes` | comma list of `480p`, `720p`, `1080i`, `widescreen`, or `none` | `RECOMP_VIDEO_MODES` |
 | `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
 | | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
 | | `DeadZone` | `0`–`0.9` (stick dead zone for a controller) | `RECOMP_PAD_DEADZONE` |
@@ -179,6 +190,40 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x0025A120` / `0x0025A15B` — `__SEH_prolog` / `__SEH_epilog` (auto-detected by `tools.recomp`)
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
+
+### Built-in HD and widescreen modes (2026-10-07)
+
+The game has its own 720p and widescreen modes; it never saw them enabled.
+Its video setup `sub_00139640` (called from `sub_0002B740` with mode 4,
+"best available") reads `XGetVideoFlags` (`sub_00263799`):
+
+- 720p flag, pack HDTV, language not Japanese -> **1280x720**, progressive
+  (`0x40`), widescreen (`0x10`).
+- Otherwise 640x480, progressive if the 480p flag is set, widescreen if the
+  widescreen flag is set.
+- Refresh 60 Hz is requested only for PAL-I with the PAL60 flag; NTSC is
+  60 Hz anyway.
+
+`XGetVideoFlags` returns `(XC_VIDEO >> 16) & 0x5F`, and clears the HD bits
+unless `XGetAVPack` (`sub_00263BEA`, which reads `HalBootSMCVideoMode`) is 1
+(HDTV) and the standard (`XC_FACTORY_AV_REGION` byte 1) is not PAL-I. The
+toolkit stored the flags in the low bits (`0x3`) and left
+`HalBootSMCVideoMode` at 0, so the game always saw 0: 480i, 4:3. Toolkit
+change: `RECOMP_VIDEO_MODES` (kernel_xbox.c, kernel_bridge.c) reports the
+flags in the EEPROM layout, an HDTV pack and NTSC-M, and folds them into
+the `AvSendTVEncoderOption` AV-pack word, where D3D's mode lookup reads the
+allowed HD modes (`avpack & 0xE0000` at `0x00322CFE` for an HDTV pack;
+without it CreateDevice failed and the title tore down to `Boom.xbe`).
+Unset, nothing changes. `main.c` defaults it to `480p,720p,widescreen`
+(ini `VideoModes`; `none` gives the old 640x480 4:3). Verified on both XBEs:
+title screen and level ML1 at 1280x720 x3, HUD at the edges, 58.6 fps.
+This is the same in the PAL XBE; the USA disc is not needed for it. The
+60 fps was never a PAL/NTSC matter here either: the runtime has always
+reported NTSC 60 Hz, so the PAL XBE never ran at 50 Hz.
+
+`[0x3CE228]` is the game's display object: `+0xC` width (`0x3CE234`),
+`+0x10` height (`0x3CE238`), `+0x34` present flags (`0x3CE25C`). Code at
+`0x0002C862` and elsewhere branches on height 720 / 1080.
 
 ### First boot (2026-09-28)
 

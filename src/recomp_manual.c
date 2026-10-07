@@ -1027,3 +1027,22 @@ void recomp_unimpl(const char *text, uint32_t va)
     }
     if (stop) abort();
 }
+
+/*
+ * 0x00255202: XAPI's DVD authentication, called once from the startup code
+ * sub_002553DC. With the certificate allowing DVD_X2 only (both discs), it
+ * opens \Device\CdRom0, sends MODE SENSE page 0x3E, then READ DVD STRUCTURE,
+ * and checks the security sector against the certificate timestamp, a SHA-1
+ * and an RSA signature under the kernel's public key (sub_0025514B). No
+ * emulated drive can pass the last part, and a failure ends in sub_002550E6
+ * -> sub_00252E25, a relaunch to the dashboard.
+ *
+ * The PAL rip we started from is media-patched (jmp at 0x0025543A ignores
+ * the result); the USA disc is not (jge). Answering STATUS_SUCCESS here makes
+ * either XBE boot, with no IOCTLs sent.
+ */
+void sub_00255202(void)
+{
+    g_eax = 0;   /* STATUS_SUCCESS */
+    g_esp += 4;  /* ret */
+}
