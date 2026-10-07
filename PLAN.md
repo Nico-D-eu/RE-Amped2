@@ -12,6 +12,19 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-07): USA disc, HD widescreen, in-game PC settings.**
+- **Source.** The USA disc is the source now; the EU one still works.
+  Both XBEs are the same build apart from the EU rip's media patch.
+- **HD.** The game's own 1280x720 16:9 mode is on by default (toolkit
+  video-flag fixes, `RECOMP_VIDEO_MODES`), with 16x anisotropic filtering.
+  21:9 dropped.
+- **Mods.** The string table is decoded, so mods can add text. The main
+  menu has "QUIT GAME", and Options → Game Options has WINDOW and
+  RESOLUTION, saved to `amped2.ini`.
+- **M4.** The clean-checkout build is ticked.
+- **Next, larger:** the texture-pack runtime hook (7.3), anti-aliasing
+  (7.4), more guest memory, `mods.json`, and the debug overlay.
+
 **Update (2026-10-03): M4 "Playable" reached; Part B (mods) starts.**
 The user called M4 after playing every unlocked level, Career, Free Ride,
 the sponsor, photo and Pro challenges and sk8 runs, with movies and
