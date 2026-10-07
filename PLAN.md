@@ -333,19 +333,28 @@ touch generated code directly.
   `g_xbox_phys_lowram`, `guest_ok` in the D3D11 backend and
   `xbox_ContiguousAllocatedBytes` all assume 64 MB today. Not needed for
   M4: the level-2 out-of-memory was a leak (`4006169`).
-- **Virtual file system overlay.** The kernel file layer checks
-  `mods/<pack>/…` before `game/…`, which allows loose-file overrides of
-  any archive entry without repacking. `.gfx`/`.res` are ZIPs, so this is
-  an overlay on top of the archive, keyed by entry name.
+- **Virtual file system overlay. Done (archive level):** the path layer
+  reads `mods\build\game\` over `game\` (toolkit `RECOMP_OVERLAY_DIR`,
+  ini `Mods`), and recipes in `tools/mods/` rebuild whole archives from
+  `mods/overrides/` with the asset toolkit's `repack`. Still open: loose
+  entries served without a repack (an overlay keyed by archive entry).
 - **Mod loader and config.** A `mods/mods.json` (or TOML) with enabled
   packs, load order and per-mod settings; a user-facing `amped2.ini`
-  for graphics and input options.
-- **Hook points.** A documented way to wrap a guest function from
-  `recomp_manual.c` (pre/post hooks by address), so mods don't fork the
-  generated code.
-- **Lua script overrides.** Load replacement scripts, whether compiled or
-  source recompiled to the 5.0 beta format, through the overlay. The
-  scripts drive characters, levels and challenges, so this is the main
+  for graphics and input options. **`amped2.ini` done** (display, input,
+  audio, game, advanced; Game Options writes back to it); `mods.json`
+  with several packs and a load order is still open.
+- **Hook points. Done:** in `recomp_manual.c`, define `sub_X` and declare
+  `extern void sub_X_gen(void);` to wrap a guest function. The recompiler
+  then emits the original as `sub_X_gen`, so code runs before and after
+  it (examples: the QuitGame registration, both Game Options wrappers,
+  XInput). Add the address to `recomp_lookup_manual` when the function is
+  reached through an indirect call. A function another file calls by name
+  must be mentioned in `recomp_manual.c`, or the naming pass may rename it
+  (see the clean-checkout fix, 2026-10-07).
+- **Lua script overrides. Done for GUI scenes:** the game's Lua loads
+  plain source as readily as bytecode, so decompiled and edited scenes go
+  back through the overlay as source (the menu mod). Not yet tried on the
+  gameplay scripts (characters, levels, challenges), which are the main
   content lever.
 - **Menu changes (user request, 2026-10-03)**, the first users of the
   overlay, script overrides and hook points:
