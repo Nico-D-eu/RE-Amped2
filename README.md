@@ -148,17 +148,22 @@ environment variable that is already set wins over the file.
 (`RECOMP_OVERLAY_DIR`), so modded archives never touch your game files.
 They are built from your own data by recipe scripts in `tools/mods/`, since
 no game data is committed. The menu mod (`python tools/mods/menus.py`)
-removes "Multiplayer" from the main menu and adds QUIT at the end. It
+removes "Multiplayer" from the main menu, adds QUIT GAME at the end, and
+puts WINDOW and RESOLUTION into Options -> Game Options (they read and
+write `amped2.ini`; Window applies at once, Resolution after a restart). It
 decompiles the original scene, edits it, writes plain Lua source into
 `mods\overrides\` (the game's Lua loads source as well as bytecode) and
 repacks with the asset toolkit. QUIT runs a new `Quit` action
 (`tools/assets/rui_actions.py` edits the GUI `.actions` format), which
 calls `QuitGame()`, a shell command `recomp_manual.c` registers. That
-command closes the window. `Mods=0` turns all of it off.
+command closes the window. New labels go into the game's string table
+(`tools/assets/string_table.py`). `Mods=0` turns all of it off. The recipe
+needs the toolkit's Python packages: `py -3.10 tools/mods/menus.py` here.
 
-`RenderScale` renders the game's 640×480 surfaces at that multiple, so 3
-renders at 1920×1440. The result is scaled into the window, keeping 4:3. On
-an RTX 2070, ML1 holds the same ~56 fps at 1×, 2× and 4×.
+`RenderScale` renders the game's surfaces at that multiple: 1280×720 with
+the default `VideoModes`, so 3 renders at 3840×2160 (640×480 with
+`VideoModes=none`, so 3 is 1920×1440). The result is scaled into the window,
+keeping its 16:9 (or 4:3). On an RTX 2070, ML1 holds ~58 fps at 3× in 720p.
 
 Keyboard layouts (a connected controller works alongside either):
 

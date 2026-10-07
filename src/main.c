@@ -531,6 +531,124 @@ static void ini_set(const char *var, const char *value)
     _putenv(buf);
 }
 
+static BOOL ini_path(char *path, size_t size)
+{
+    char *slash;
+    if (!GetModuleFileNameA(NULL, path, (DWORD)size))
+        return FALSE;
+    slash = strrchr(path, '\\');
+    if (!slash || (size_t)(slash - path) + 12 >= size)
+        return FALSE;
+    strcpy(slash + 1, "amped2.ini");
+    return TRUE;
+}
+
+/* The key's name if `line` sets one ("key=..." or ";key=..."), else NULL.
+ * `len` gets its length. */
+static const char *ini_line_key(const char *line, size_t *len, int *commented)
+{
+    const char *p = line, *e;
+    *commented = 0;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == ';') { *commented = 1; p++; }
+    for (e = p; *e && *e != '=' && *e != '\r' && *e != '\n'; e++)
+        if (*e == ' ' || *e == '\t' || *e == '[') return NULL;
+    if (*e != '=' || e == p)
+        return NULL;
+    *len = (size_t)(e - p);
+    return p;
+}
+
+/*
+ * Write one setting back to amped2.ini, for the in-game Game Options (see
+ * recomp_manual.c). The line for the key in its section is replaced -- the
+ * live one, or the commented example the template has -- so the file keeps
+ * its comments and order; a key with neither goes right after the section
+ * header, and a missing section is appended. The environment is not
+ * touched: settings that need a restart take effect on the next start.
+ */
+void amped2_ini_set(const char *section, const char *key, const char *value)
+{
+    char path[MAX_PATH], *buf = NULL, *out;
+    char cur[64] = "";
+    const char *line, *next;
+    const char *live = NULL, *example = NULL, *header_end = NULL;
+    size_t n = 0, cap, klen = strlen(key);
+    FILE *f;
+
+    if (!ini_path(path, sizeof path))
+        return;
+    f = fopen(path, "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        n = (size_t)ftell(f);
+        fseek(f, 0, SEEK_SET);
+        buf = (char *)malloc(n + 1);
+        if (!buf) { fclose(f); return; }
+        n = fread(buf, 1, n, f);
+        fclose(f);
+    } else {
+        buf = (char *)malloc(1);
+        if (!buf) return;
+    }
+    buf[n] = 0;
+
+    for (line = buf; *line; line = next) {
+        size_t len;
+        int commented;
+        const char *k;
+        next = strchr(line, '\n');
+        next = next ? next + 1 : line + strlen(line);
+        if (*line == '[') {
+            const char *e = strchr(line, ']');
+            if (e && e < next && (size_t)(e - line - 1) < sizeof cur) {
+                memcpy(cur, line + 1, (size_t)(e - line - 1));
+                cur[e - line - 1] = 0;
+                if (!_stricmp(cur, section))
+                    header_end = next;
+            }
+            continue;
+        }
+        if (_stricmp(cur, section))
+            continue;
+        k = ini_line_key(line, &len, &commented);
+        if (k && len == klen && !_strnicmp(k, key, klen)) {
+            if (!commented && !live) live = line;
+            else if (commented && !example) example = line;
+        }
+    }
+
+    cap = n + strlen(section) + klen + strlen(value) + 16;
+    out = (char *)malloc(cap);
+    if (!out) { free(buf); return; }
+    {
+        const char *at = live ? live : example ? example : header_end;
+        const char *skip = at;
+        size_t pre;
+        if (at && (live || example)) {
+            skip = strchr(at, '\n');
+            skip = skip ? skip + 1 : at + strlen(at);
+        }
+        if (!at) {
+            /* No such section: append it. */
+            snprintf(out, cap, "%s%s[%s]\r\n%s=%s\r\n", buf,
+                     n && buf[n - 1] != '\n' ? "\r\n" : "", section, key, value);
+        } else {
+            pre = (size_t)(at - buf);
+            memcpy(out, buf, pre);
+            snprintf(out + pre, cap - pre, "%s=%s\r\n%s", key, value, skip);
+        }
+    }
+    f = fopen(path, "wb");
+    if (f) {
+        fwrite(out, 1, strlen(out), f);
+        fclose(f);
+    }
+    fprintf(stderr, "  amped2.ini: [%s] %s=%s\n", section, key, value);
+    free(out);
+    free(buf);
+}
+
 static char s_render_scale_name[16];
 
 /*
@@ -578,16 +696,11 @@ static void load_settings(void)
         { "Game",    "Mods",           "AMPED2_MODS" },
     };
     char path[MAX_PATH], line[1024], section[64] = "";
-    char *slash;
     FILE *f;
     int n = 0;
 
-    if (!GetModuleFileNameA(NULL, path, sizeof path))
+    if (!ini_path(path, sizeof path))
         return;
-    slash = strrchr(path, '\\');
-    if (!slash || (size_t)(slash - path) + 12 >= sizeof path)
-        return;
-    strcpy(slash + 1, "amped2.ini");
     f = fopen(path, "rb");
     if (!f) {
         f = fopen(path, "wb");

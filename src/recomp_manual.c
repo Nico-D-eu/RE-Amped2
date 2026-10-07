@@ -20,6 +20,8 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 /* ── ICALL trace ring buffer ───────────────────────────────── */
 
@@ -897,10 +899,105 @@ void sub_00218140(void)
     g_eax = ret;
 }
 
+/* ── Menu mod: PC settings in Options -> Game Options ─────────────────
+ *
+ * The Game Options menu object (vtable 0x00367DA0) keeps its four rows in
+ * +0x40 vibration, +0x44 camera distance, +0x48 button layout, +0x4C hints.
+ * sub_001EE6A0 (eax = the menu) shows them when the screen opens: for each
+ * row, sub_002116F0(ecx = row, eax = combo index, push the list control
+ * [menu+0x3C]), `ret 4`. Changing a value runs the GUI action
+ * GameOptions_ComboChanged(listIndex, comboItemIndex), the command
+ * sub_001EE7E0 (thiscall, one stack argument: the call's arguments, an
+ * array of 12-byte values at [arg+0x84], the value at +4); its switch knows
+ * rows 0-3 and ignores any other.
+ *
+ * The menu mod (tools/mods/menus.py) adds two rows to the scene, bound to
+ * the two free item slots on screen: 4 Window (windowed / full screen) and
+ * 5 Resolution (1x-4x). Their values come from the settings in effect and
+ * are written back to amped2.ini. Window applies at once; Resolution at the
+ * next start, which its help text says. A third row would make the list
+ * scroll, and the value boxes do not scroll with it.
+ */
+#define AMPED2_OPT_WINDOW     4
+#define AMPED2_OPT_RESOLUTION 5
+
+extern void sub_001EE6A0_gen(void);
+extern void sub_001EE7E0_gen(void);
+extern void sub_002116F0(void);
+extern void amped2_ini_set(const char *section, const char *key,
+                           const char *value);       /* main.c */
+extern void xbox_SetFullscreen(int on);               /* toolkit fb_present.c */
+extern int xbox_IsFullscreen(void);
+
+static uint32_t amped2_opt_current(int row)
+{
+    const char *e;
+    int v;
+    switch (row) {
+    case AMPED2_OPT_WINDOW:
+        return xbox_IsFullscreen() ? 1 : 0;
+    case AMPED2_OPT_RESOLUTION:
+        e = getenv("RECOMP_GPU_SCALE");
+        v = e ? atoi(e) : 1;
+        return (uint32_t)(v < 1 ? 0 : v > 4 ? 3 : v - 1);
+    }
+    return 0;
+}
+
+void sub_001EE6A0(void)
+{
+    uint32_t menu = g_eax, saved_ebx = g_ebx;
+    int row;
+
+    sub_001EE6A0_gen();                     /* the four rows; pops our return */
+    for (row = AMPED2_OPT_WINDOW; row <= AMPED2_OPT_RESOLUTION; row++) {
+        g_esp -= 4; MEM32(g_esp) = MEM32(menu + 0x3C);
+        g_esp -= 4; MEM32(g_esp) = 0;       /* return address */
+        g_ecx = (uint32_t)row;
+        g_eax = amped2_opt_current(row);
+        sub_002116F0();                     /* ret 4 */
+    }
+    g_ebx = saved_ebx;
+}
+
+void sub_001EE7E0(void)
+{
+    uint32_t arg = MEM32(g_esp + 4);
+    uint32_t count = MEM32(arg + 0x88), values = MEM32(arg + 0x84);
+    uint32_t row, combo;
+    char buf[16];
+
+    if (count < 2) {
+        sub_001EE7E0_gen();
+        return;
+    }
+    row = MEM32(values + 4);
+    combo = MEM32(values + 0xC + 4);
+    if (row < AMPED2_OPT_WINDOW || row > AMPED2_OPT_RESOLUTION) {
+        sub_001EE7E0_gen();
+        return;
+    }
+    switch (row) {
+    case AMPED2_OPT_WINDOW:
+        xbox_SetFullscreen(combo == 1);
+        amped2_ini_set("Display", "WindowMode",
+                       combo == 1 ? "borderless" : "windowed");
+        break;
+    case AMPED2_OPT_RESOLUTION:
+        snprintf(buf, sizeof buf, "%u", combo + 1);
+        amped2_ini_set("Display", "RenderScale", buf);
+        break;
+    }
+    SET_LO8(g_eax, 0);
+    g_esp += 8;                             /* ret 4 */
+}
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
     if (xbox_va == AMPED2_QUIT_FN_VA) return amped2_cmd_quit;
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
+    if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
+    if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */
 
     /*
      * TODO: Add your overrides here. Examples:

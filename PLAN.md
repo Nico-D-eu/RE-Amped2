@@ -349,9 +349,16 @@ touch generated code directly.
   2. A "Close game" item at the end of the main menu: a new action name
      caught by a native hook on the game's GUI action dispatcher.
   3. "Options" → "Game Options" (`Base.rui` `Scenes/Options_Game.scene`)
-     gains the non-advanced `amped2.ini` settings (window, borderless,
-     render scale, volume, rumble, dead zone, movies), read from and
-     written back to the ini, applied live where possible.
+     gains the non-advanced `amped2.ini` settings, read from and written
+     back to the ini, applied live where possible. **Done (2026-10-07)
+     for WINDOW (live) and RESOLUTION (after a restart).** The screen has
+     six visible rows; a seventh scrolls the list, and the value boxes
+     stay bound to their slots, so further settings need a second page or
+     a fix to the list's combo binding. Volume and rumble already have the
+     game's own Audio and Vibration options; dead zone, movies and the
+     picture format stay ini-only for now.
+  1-2 done (2026-10-03); the QUIT item has its own label "QUIT GAME"
+  since the string table was decoded (2026-10-07).
   Scenes are compiled Lua 5.0 beta tables; the exe carries Lua's text
   parser, so replacements can likely be source. Strings: `Base.rui`
   `StringTables/<lang>/StringTable.dat`.
