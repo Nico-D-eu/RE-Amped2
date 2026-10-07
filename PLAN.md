@@ -425,8 +425,13 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    key the runtime computes matched the asset toolkit's for 32 of the 33
    textures up to the main menu (the other is built at run time), and a
    2048x2048 recoloured jacket showed up in game. `RECOMP_TEXTURE_PACK_MISSES`
-   lists keys the pack lacks. Still to do: build the pack itself
-   (export, upscale, edit, pack). Original plan: add the runtime hook the asset toolkit
+   lists keys the pack lacks. **Pack built (2026-10-07):** 3376 textures
+   (ultrasharp-4x, lightmaps/tiny ones Lanczos), BC7, 4.8 GB in
+   `mods/texture_pack`, about an hour on the RTX 2070. In ML1: 229
+   replaced, 22 not covered, 59.2 fps, no visible artifacts. Open: the 22
+   misses (`diag/fullpack_misses.txt`: mostly 512x512 DXT3 the exporter
+   does not reach, or textures built at run time; one in format 0x3C), and
+   hand edits. Original plan: add the runtime hook the asset toolkit
    already targets: on texture create, key =
    `crc32(top mip)_WxH_fmt`, and load `mods/texture_pack/<key>.dds` (BC7,
    full mips) into host VRAM only. Pipeline: `tex-export` → `tex-upscale`
