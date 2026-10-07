@@ -135,6 +135,7 @@ environment variable that is already set wins over the file.
 | | `WindowMode` | `windowed`, `borderless` (F11 / Alt+Enter toggles) | `RECOMP_WINDOW_MODE` |
 | | `RenderScale` | `1`–`8`, or `720p` (2), `1080p`/`1440p` (3), `4k` (5) | `RECOMP_GPU_SCALE` |
 | | `VideoModes` | comma list of `480p`, `720p`, `1080i`, `widescreen`, or `none` | `RECOMP_VIDEO_MODES` |
+| | `Anisotropic` | `1` (off) to `16` (default) | `RECOMP_GPU_ANISO` |
 | `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
 | | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
 | | `DeadZone` | `0`–`0.9` (stick dead zone for a controller) | `RECOMP_PAD_DEADZONE` |

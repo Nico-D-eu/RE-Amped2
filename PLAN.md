@@ -369,10 +369,9 @@ touch generated code directly.
 
 In order: the cheapest win first, and the ones that affect gameplay last.
 
-1. **Internal resolution scaling.** Render guest surfaces at N× (up to
-   4K), which means scaling viewports, scissor, render targets and depth
-   buffers in the D3D8→D3D11 layer. This isn't in xboxrecomp yet; build
-   it upstream so every title gets it.
+1. **Internal resolution scaling. Done** (toolkit `RECOMP_GPU_SCALE`, ini
+   `RenderScale` 1-8, in-game Game Options RESOLUTION 1x-4x): 3x of the
+   720p mode is 3840x2160 at ~58 fps in ML1.
 2. **Widescreen 16:9. Done (2026-10-07).** The game has its own 1280x720
    widescreen mode, with the HUD at the edges and the menus laid out for
    it. It was hidden because the toolkit reported the video flags in the
@@ -387,7 +386,9 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    `tex-pack`. Needs a hit and miss report, plus a dump of missed keys to
    catch textures created at runtime.
 4. **Anti-aliasing and filtering:** MSAA or SMAA and 16× anisotropic
-   filtering.
+   filtering. **Anisotropic done (2026-10-07):** `RECOMP_GPU_ANISO`, 16 by
+   default (ini `Anisotropic`), on mipmapped, linearly filtered textures
+   only; 58.3 fps with and without it in ML1. Anti-aliasing still open.
 5. **Optional extras:** higher-precision shadows, a higher LOD distance,
    60 fps or an uncapped framerate. Needs the game timestep to be
    separated from the frame rate first, so it goes last and needs its own

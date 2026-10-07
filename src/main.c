@@ -489,6 +489,9 @@ static const char k_ini_default[] =
     "; a comma list of 480p, 720p, 1080i, widescreen, or none. With 720p (the\r\n"
     "; default) the game picks its own 1280x720 16:9 mode; none is 640x480 4:3.\r\n"
     ";VideoModes=480p,720p,widescreen\r\n"
+    "; Anisotropic texture filtering, 1 (off) to 16: sharper ground and walls\r\n"
+    "; at a distance.\r\n"
+    ";Anisotropic=16\r\n"
     "\r\n"
     "[Input]\r\n"
     "; default: arrows = d-pad, Z X A S = A B X Y, Q/E = white/black,\r\n"
@@ -687,6 +690,7 @@ static void load_settings(void)
         { "Display", "WindowMode",     "RECOMP_WINDOW_MODE" },
         { "Display", "RenderScale",    "RECOMP_GPU_SCALE" },
         { "Display", "VideoModes",     "RECOMP_VIDEO_MODES" },
+        { "Display", "Anisotropic",    "RECOMP_GPU_ANISO" },
         { "Input",   "KeyboardPreset", "RECOMP_KEYMAP_PRESET" },
         { "Input",   "KeyMap",         "RECOMP_KEYMAP" },
         { "Input",   "DeadZone",       "RECOMP_PAD_DEADZONE" },
@@ -791,6 +795,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (!getenv("RECOMP_VIDEO_MODES"))
         _putenv("RECOMP_VIDEO_MODES=480p,720p,widescreen");
     resolve_render_scale();
+    /* 16x anisotropic filtering on mipmapped, linearly filtered textures
+     * (toolkit nv2a_d3d11.c); ini Anisotropic=1 turns it off. */
+    if (!getenv("RECOMP_GPU_ANISO"))
+        _putenv("RECOMP_GPU_ANISO=16");
     if (!getenv("RECOMP_WINDOW_TITLE"))
         _putenv("RECOMP_WINDOW_TITLE=Amped 2");
 
