@@ -899,6 +899,14 @@ void sub_00218140(void)
     g_eax = ret;
 }
 
+/* Names other hand-written files call. The recompiler keeps the sub_ name of
+ * every function this file mentions, whatever the Ghidra pass calls it; it
+ * does not scan src/lua_probe.c, whose copy of sub_000F24C0 calls the CRT
+ * longjmp. Without this, that call had to use the Ghidra name
+ * (longjmp_0025B8FC), and a checkout without the cached Ghidra export
+ * failed to link. */
+extern void sub_0025B8FC(void);             /* longjmp */
+
 /* ── Menu mod: PC settings in Options -> Game Options ─────────────────
  *
  * The Game Options menu object (vtable 0x00367DA0) keeps its four rows in

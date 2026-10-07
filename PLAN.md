@@ -305,8 +305,13 @@ Work items, in order of likelihood:
 - [x] Saves persist across restarts
       (2026-10-02: career progress, level 4+ unlocks kept across many sessions)
 - [x] 60 minutes of play with no crash (`soak7`, 2026-10-01: ML1 at 2x with scripted pause/resume, 59.2 fps, memory flat at ~500 MB)
-- [ ] The build reproduces from a clean checkout plus the user's own disc
-      (follow-up; not blocking Part B by the user's decision, 2026-10-03)
+- [x] The build reproduces from a clean checkout plus the user's own disc
+      (2026-10-07: fresh clones of amped2 and xboxrecomp, the USA disc
+      unpacked with xdvdfs, `regen.ps1`, configure, build, boot to the
+      title. It first failed to link: `src/lua_probe.c` called a
+      Ghidra-only name, which a checkout without the cached Ghidra export
+      does not have; fixed by pinning the sub_ name. The menu mods are a
+      separate, optional step, `py -3.10 tools/mods/menus.py`)
 
 ---
 

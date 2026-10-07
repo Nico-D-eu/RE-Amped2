@@ -59,6 +59,8 @@ if ($KeepSave) {
     $udataK = Join-Path $Project 'game\UDATA\4d530041'
     $keep = Join-Path $OutDir ("saves_moved\" + (Get-Date -Format 'yyyyMMdd_HHmmss') + "_keep")
     New-Item -ItemType Directory -Force $keep | Out-Null
+    # A fresh checkout has no saves yet: keep an empty set, not an error.
+    New-Item -ItemType Directory -Force $udataK | Out-Null
     Copy-Item -Recurse -Path (Join-Path $udataK '*') -Destination $keep
     Write-Host "  kept a copy of the saved profile(s) in $keep"
 }

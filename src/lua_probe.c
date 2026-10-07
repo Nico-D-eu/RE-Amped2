@@ -84,7 +84,7 @@ loc_000F24C7: ;
     eax = eax + 4;
     _fa = (uint32_t)(eax) & 0xFFFFFFFFu; _fas = (int32_t)(int32_t)(_fa); /* add result */
     PUSH32(esp, eax);
-    if (!recomp_guest_longjmp(MEM32(esp), MEM32(esp + 4))) { PUSH32(esp, 0x000F24D8u); longjmp_0025B8FC(); } /* longjmp 0x0025B8FC */
+    if (!recomp_guest_longjmp(MEM32(esp), MEM32(esp + 4))) { PUSH32(esp, 0x000F24D8u); sub_0025B8FC(); } /* longjmp; sub_ name pinned in recomp_manual.c */
 
 loc_000F24D8: ;
     ecx = MEM32(eax + 0x10);
