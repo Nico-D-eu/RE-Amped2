@@ -143,6 +143,7 @@ environment variable that is already set wins over the file.
 | `[Audio]` | `Volume` | `0`–`100` | `RECOMP_AUDIO_VOLUME` |
 | `[Game]` | `PlayMovies` | `1` (default), `0` skips the intro movies | `AMPED2_PLAY_MOVIES` |
 | | `Mods` | `1` (default), `0` plays the original data | `AMPED2_MODS` |
+| | `TexturePack` | `1` (default; uses `mods\texture_pack\` if present), `0` off | `RECOMP_TEXTURE_PACK` |
 | `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
 
 **Mods.** The runtime reads `mods\build\game\` over `game\`

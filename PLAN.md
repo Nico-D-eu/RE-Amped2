@@ -405,7 +405,14 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    wrong bits; `RECOMP_VIDEO_MODES` (default `480p,720p,widescreen`) turns
    it on. Verified in ML1 at 3840x2160 (RenderScale 3), 58.6 fps. Wider
    formats (21:9) are not wanted (user, 2026-10-07).
-3. **AI-upscaled texture pack.** Add the runtime hook the asset toolkit
+3. **AI-upscaled texture pack.** **Runtime hook done (2026-10-07):**
+   toolkit `RECOMP_TEXTURE_PACK` loads `mods\texture_pack\<key>.dds`
+   (any size, BC1-3/BC7/32-bit, own mips) in place of the original; the
+   key the runtime computes matched the asset toolkit's for 32 of the 33
+   textures up to the main menu (the other is built at run time), and a
+   2048x2048 recoloured jacket showed up in game. `RECOMP_TEXTURE_PACK_MISSES`
+   lists keys the pack lacks. Still to do: build the pack itself
+   (export, upscale, edit, pack). Original plan: add the runtime hook the asset toolkit
    already targets: on texture create, key =
    `crc32(top mip)_WxH_fmt`, and load `mods/texture_pack/<key>.dds` (BC7,
    full mips) into host VRAM only. Pipeline: `tex-export` → `tex-upscale`

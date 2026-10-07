@@ -520,6 +520,9 @@ static const char k_ini_default[] =
     "; Use the modded files in mods\\build\\game (built by the asset\r\n"
     "; toolkit's repack): 1 on, 0 plays the original data.\r\n"
     ";Mods=1\r\n"
+    "; Use the texture pack in mods\\texture_pack (the asset toolkit's\r\n"
+    "; tex-pack) when it is there: 1 on, 0 shows the original textures.\r\n"
+    ";TexturePack=1\r\n"
     "\r\n"
     "[Advanced]\r\n"
     "; Any RECOMP_ switch, set as written, e.g.\r\n"
@@ -698,6 +701,7 @@ static void load_settings(void)
         { "Audio",   "Volume",         "RECOMP_AUDIO_VOLUME" },
         { "Game",    "PlayMovies",     "AMPED2_PLAY_MOVIES" },
         { "Game",    "Mods",           "AMPED2_MODS" },
+        { "Game",    "TexturePack",    "AMPED2_TEXTURE_PACK" },
     };
     char path[MAX_PATH], line[1024], section[64] = "";
     FILE *f;
@@ -870,6 +874,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         const char *mods = getenv("AMPED2_MODS");
         if (!getenv("RECOMP_OVERLAY_DIR") && !(mods && *mods == '0'))
             _putenv("RECOMP_OVERLAY_DIR=mods\\build\\game");
+    }
+    /* The texture pack: mods\texture_pack\<key>.dds, as the asset toolkit's
+     * tex-pack writes it, replaces the original texture with that key
+     * (toolkit nv2a_d3d11.c). Relative, like the overlay: files are opened
+     * only once the game root is the working directory, and with no pack
+     * there each texture costs one failed open, once. Ini
+     * [Game] TexturePack=0 (or Mods=0) plays the original textures. */
+    {
+        const char *mods = getenv("AMPED2_MODS");
+        const char *pack = getenv("AMPED2_TEXTURE_PACK");
+        if (!getenv("RECOMP_TEXTURE_PACK") && !(mods && *mods == '0')
+                && !(pack && *pack == '0'))
+            _putenv("RECOMP_TEXTURE_PACK=mods\\texture_pack");
     }
     if (!getenv("RECOMP_DSP_ACK"))
         _putenv("RECOMP_DSP_ACK=0x8106C810");
