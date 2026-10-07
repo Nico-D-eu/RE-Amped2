@@ -136,6 +136,7 @@ environment variable that is already set wins over the file.
 | | `RenderScale` | `1`–`8`, or `720p` (2), `1080p`/`1440p` (3), `4k` (5) | `RECOMP_GPU_SCALE` |
 | | `VideoModes` | comma list of `480p`, `720p`, `1080i`, `widescreen`, or `none` | `RECOMP_VIDEO_MODES` |
 | | `Anisotropic` | `1` (off) to `16` (default) | `RECOMP_GPU_ANISO` |
+| | `FXAA` | `1` on, `0` off (default); most useful at `RenderScale=1` | `RECOMP_GPU_FXAA` |
 | `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
 | | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
 | | `DeadZone` | `0`–`0.9` (stick dead zone for a controller) | `RECOMP_PAD_DEADZONE` |

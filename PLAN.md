@@ -422,7 +422,10 @@ In order: the cheapest win first, and the ones that affect gameplay last.
 4. **Anti-aliasing and filtering:** MSAA or SMAA and 16× anisotropic
    filtering. **Anisotropic done (2026-10-07):** `RECOMP_GPU_ANISO`, 16 by
    default (ini `Anisotropic`), on mipmapped, linearly filtered textures
-   only; 58.3 fps with and without it in ML1. Anti-aliasing still open.
+   only; 58.3 fps with and without it in ML1. **FXAA done (2026-10-07):**
+   `RECOMP_GPU_FXAA`, off by default (ini `FXAA=1`), in the final blit;
+   `RenderScale` 2 and up already supersample. MSAA/SMAA not pursued:
+   every render target would need multisampled copies and resolves.
 5. **Optional extras:** higher-precision shadows, a higher LOD distance,
    60 fps or an uncapped framerate. Needs the game timestep to be
    separated from the frame rate first, so it goes last and needs its own

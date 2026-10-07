@@ -492,6 +492,9 @@ static const char k_ini_default[] =
     "; Anisotropic texture filtering, 1 (off) to 16: sharper ground and walls\r\n"
     "; at a distance.\r\n"
     ";Anisotropic=16\r\n"
+    "; FXAA anti-aliasing on the finished picture: 1 on, 0 off (default).\r\n"
+    "; Most useful at RenderScale=1; higher scales already smooth edges.\r\n"
+    ";FXAA=1\r\n"
     "\r\n"
     "[Input]\r\n"
     "; default: arrows = d-pad, Z X A S = A B X Y, Q/E = white/black,\r\n"
@@ -694,6 +697,7 @@ static void load_settings(void)
         { "Display", "RenderScale",    "RECOMP_GPU_SCALE" },
         { "Display", "VideoModes",     "RECOMP_VIDEO_MODES" },
         { "Display", "Anisotropic",    "RECOMP_GPU_ANISO" },
+        { "Display", "FXAA",           "RECOMP_GPU_FXAA" },
         { "Input",   "KeyboardPreset", "RECOMP_KEYMAP_PRESET" },
         { "Input",   "KeyMap",         "RECOMP_KEYMAP" },
         { "Input",   "DeadZone",       "RECOMP_PAD_DEADZONE" },
