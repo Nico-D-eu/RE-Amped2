@@ -175,6 +175,9 @@ the default `VideoModes`, so 3 renders at 3840×2160 (640×480 with
 `VideoModes=none`, so 3 is 1920×1440). The result is scaled into the window,
 keeping its 16:9 (or 4:3). On an RTX 2070, ML1 holds ~58 fps at 3× in 720p.
 
+**F3** shows a debug overlay: fps, the game's size and render scale, the
+texture pack's counts and the active mod folders.
+
 Keyboard layouts (a connected controller works alongside either):
 
 - **default:** arrows = d-pad, Z X A S = A B X Y, Q/E = white/black, 1/3 =

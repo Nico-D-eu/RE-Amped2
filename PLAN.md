@@ -395,7 +395,12 @@ touch generated code directly.
   parser, so replacements can likely be source. Strings: `Base.rui`
   `StringTables/<lang>/StringTable.dat`.
 - **A debug overlay** (Dear ImGui): FPS, the loaded mods, texture-pack hit
-  and miss counts, and a free camera.
+  and miss counts, and a free camera. **Done without ImGui (2026-10-07):**
+  F3 (or `RECOMP_GPU_HUD=1`) shows fps, the game's size and scale, FXAA
+  and anisotropic flags, texture-pack hits and misses, and the active file
+  overlays, drawn with GDI text over the presented frame. ImGui would be a
+  third-party download, and the free camera needs game-side camera hooks;
+  both are still open.
 
 ### Phase 7: Graphics upscaling (M6)
 
