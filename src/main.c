@@ -393,6 +393,26 @@ static void stderr_drain(void)
     Sleep(5);
 }
 
+/* The window's close handler (toolkit fb_present.c, g_xbox_quit_logs):
+ * quitting must not wait on the log. stderr_drain's fflush takes the stdio
+ * lock, which a thread blocked on a full pipe holds, and its wait for an
+ * empty pipe never ends while other threads keep printing -- QUIT GAME took
+ * 8.4 s to close under tools/diag.ps1, and seconds in normal play. So: no
+ * stdio here, the closing line written straight to the log, and at most a
+ * quarter of a second for the pump. */
+static void stderr_drain_quit(void)
+{
+    static const char line[] = "  [WINDOW] closed -- exiting\r\n";
+    DWORD avail = 0, n, t0 = GetTickCount();
+    while (s_err_pipe_r && PeekNamedPipe(s_err_pipe_r, NULL, 0, NULL, &avail, NULL)
+           && avail && GetTickCount() - t0 < 250)
+        Sleep(1);
+    if (s_err_file)
+        WriteFile(s_err_file, line, sizeof line - 1, &n, NULL);
+    if (s_err_log)
+        WriteFile(s_err_log, line, sizeof line - 1, &n, NULL);
+}
+
 static void stderr_async(void)
 {
     HANDLE w;
@@ -454,7 +474,9 @@ static void stderr_async(void)
     atexit(stderr_drain);
     {
         extern void (*g_xbox_flush_logs)(void);
+        extern void (*g_xbox_quit_logs)(void);
         g_xbox_flush_logs = stderr_drain;
+        g_xbox_quit_logs = stderr_drain_quit;
     }
 }
 
