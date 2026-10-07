@@ -22,8 +22,12 @@ can't be tested, and they grow the surface area we have to debug.
   menu has "QUIT GAME", and Options → Game Options has WINDOW and
   RESOLUTION, saved to `amped2.ini`.
 - **M4.** The clean-checkout build is ticked.
-- **Next, larger:** the texture-pack runtime hook (7.3), anti-aliasing
-  (7.4), more guest memory, `mods.json`, and the debug overlay.
+- **Evening.** Done: the texture-pack runtime hook (7.3), FXAA (7.4),
+  `mods.json` mod packs, and the F3 debug overlay. The full AI-upscaled
+  pack is being built.
+- **Next:** more guest memory (needs the 64-128 MB physical numbering
+  and the GPU/APU range checks reworked); the free camera; loose-entry
+  overlays; overrides for the gameplay scripts.
 
 **Update (2026-10-03): M4 "Playable" reached; Part B (mods) starts.**
 The user called M4 after playing every unlocked level, Career, Free Ride,
