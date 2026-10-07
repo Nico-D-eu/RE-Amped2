@@ -356,6 +356,11 @@ touch generated code directly.
   for graphics and input options. **`amped2.ini` done** (display, input,
   audio, game, advanced; Game Options writes back to it); `mods.json`
   with several packs and a load order is still open.
+  **`mods.json` done (2026-10-07):** `{ "packs": ["a", "b"] }`, first
+  wins; each pack is `mods\packs\<name>\` with `game\` (file
+  overrides) and `textures\` (DDS), ahead of the tools' default
+  folders. The toolkit takes `;`-separated lists in `RECOMP_OVERLAY_DIR`
+  and `RECOMP_TEXTURE_PACK`.
 - **Hook points. Done:** in `recomp_manual.c`, define `sub_X` and declare
   `extern void sub_X_gen(void);` to wrap a guest function. The recompiler
   then emits the original as `sub_X_gen`, so code runs before and after

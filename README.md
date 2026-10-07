@@ -163,6 +163,13 @@ command closes the window. New labels go into the game's string table
 (`tools/assets/string_table.py`). `Mods=0` turns all of it off. The recipe
 needs the toolkit's Python packages: `py -3.10 tools/mods/menus.py` here.
 
+**Mod packs.** `mods\mods.json` lists the packs to use, highest priority
+first: `{ "packs": ["hd-snow", "menus"] }`. A pack is a folder
+`mods\packs\<name>\` with `game\` (files that stand in for the same paths in
+`game\`, e.g. repacked archives) and/or `textures\` (`<key>.dds` replacements
+from `tex-pack`). The tools' own output folders, `mods\build\game\` and
+`mods\texture_pack\`, always come last.
+
 `RenderScale` renders the game's surfaces at that multiple: 1280×720 with
 the default `VideoModes`, so 3 renders at 3840×2160 (640×480 with
 `VideoModes=none`, so 3 is 1920×1440). The result is scaled into the window,
