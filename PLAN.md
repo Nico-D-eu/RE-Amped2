@@ -1,6 +1,7 @@
 # Amped 2 recompilation: project plan
 
-**Goal:** a native Windows build of *Amped 2* (EU, `0x4D530041`) that plays
+**Goal:** a native Windows build of *Amped 2* (USA disc since 2026-10-07; the EU
+one works too; `0x4D530041`) that plays
 the whole game at least as well as the original Xbox. Once that works, it
 becomes a moddable base: higher-resolution rendering, AI-upscaled textures,
 and new content.
@@ -365,17 +366,12 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    4K), which means scaling viewports, scissor, render targets and depth
    buffers in the D3D8→D3D11 layer. This isn't in xboxrecomp yet; build
    it upstream so every title gets it.
-2. **Widescreen 16:9 / 21:9.** **16:9 done (2026-10-07):** the game has
-   its own 1280x720 widescreen mode, with the HUD at the edges and the
-   menus laid out for it. It was hidden because the toolkit reported the
-   video flags in the wrong bits; `RECOMP_VIDEO_MODES` (default
-   `480p,720p,widescreen`) turns it on. Verified in ML1 at 3840x2160
-   (RenderScale 3), 58.6 fps. Still open: 21:9, which needs the
-   projection aspect and FOV patched in game code. The earlier note that
-   the game "has no widescreen mode of its own" was wrong. Its camera nodes carry an
-   `AspectRatio` field, and its GUI nodes carry `AspectCorrect`/
-   `UnAspectCorrect`, which are the hooks to use. The user asked for it
-   (2026-10-02) and agreed it waits for this phase.
+2. **Widescreen 16:9. Done (2026-10-07).** The game has its own 1280x720
+   widescreen mode, with the HUD at the edges and the menus laid out for
+   it. It was hidden because the toolkit reported the video flags in the
+   wrong bits; `RECOMP_VIDEO_MODES` (default `480p,720p,widescreen`) turns
+   it on. Verified in ML1 at 3840x2160 (RenderScale 3), 58.6 fps. Wider
+   formats (21:9) are not wanted (user, 2026-10-07).
 3. **AI-upscaled texture pack.** Add the runtime hook the asset toolkit
    already targets: on texture create, key =
    `crc32(top mip)_WxH_fmt`, and load `mods/texture_pack/<key>.dds` (BC7,
@@ -390,7 +386,7 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    separated from the frame rate first, so it goes last and needs its own
    physics check.
 
-**Exit criteria:** 4K widescreen with the full texture pack and no visual
+**Exit criteria:** 4K 16:9 with the full texture pack and no visual
 regressions on any level, at a steady framerate.
 
 ### Phase 8: Additional content (M7)

@@ -18,9 +18,11 @@ Edits:
      -- the select sound and button animation every item plays -- then
      QuitGame(), a shell command src/recomp_manual.c registers (wrapper of
      0x00218140), which closes the window as the close button does. Item
-     lists only take $actions; a bare Name() there is ignored. Its label
-     reuses the pause menu's "QUIT" text until the string table can take
-     new entries.
+     lists only take $actions; a bare Name() there is ignored.
+  3. Its own label and help text, MainMenu_Quit and MainMenu_Quit_Help,
+     added to Base.rui's StringTables/<lang>/StringTable.dat for all three
+     languages (tools/assets/string_table.py), in the fonts of the
+     "Choose Boarder" item above it.
 """
 import subprocess
 import sys
@@ -31,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[2]
 GAME = ROOT / "game"
 sys.path.insert(0, str(ROOT / "tools" / "assets"))
 import rui_actions  # noqa: E402
+import string_table  # noqa: E402
 ASSETS = ROOT / "tools" / "assets" / "amped_assets.py"
 SOURCE = ROOT / "mods" / "source"
 OVERRIDES = ROOT / "mods" / "overrides"
@@ -40,8 +43,17 @@ DROP_FROM_MAIN = {'"$MutltiPlayer"', '"MainMenu_Mutliplayer"', '"MainMenu_Mutlip
 # Appended after the last entry of each list (keyed by that entry).
 QUIT_AFTER = {
     '"$ChangeBoarder"': '"$Quit"',                            # AButton, Start
-    '"MainMenu_ChangeBoarder"': '"PauseMenu_QuitToMainMenu_TextNormal"',
-    '"MainMenu_ChangeBoarder_Help"': '"PauseMenu_QuitToMainMenu_TextNormal"',
+    '"MainMenu_ChangeBoarder"': '"MainMenu_Quit"',
+    '"MainMenu_ChangeBoarder_Help"': '"MainMenu_Quit_Help"',
+}
+
+# New strings: key -> (the entry whose font and scale it takes, text by language)
+STRINGS = {
+    "MainMenu_Quit": ("MainMenu_ChangeBoarder", {
+        "eng": "QUIT GAME", "fre": "QUITTER LE JEU", "ger": "SPIEL BEENDEN"}),
+    "MainMenu_Quit_Help": ("MainMenu_ChangeBoarder_Help", {
+        "eng": "Close Amped 2.", "fre": "Fermer Amped 2.",
+        "ger": "Amped 2 beenden."}),
 }
 
 
@@ -109,7 +121,22 @@ def main_actions():
     print(f"wrote {path.relative_to(ROOT)}")
 
 
+def strings():
+    """The new keys in every language's StringTable.dat."""
+    with zipfile.ZipFile(GAME / "GuiPackages" / "Base.rui") as z:
+        for lang in ("eng", "fre", "ger"):
+            name = f"StringTables/{lang}/StringTable.dat"
+            table = string_table.read(z.read(name))
+            for key, (like, texts) in STRINGS.items():
+                table.set(key, texts[lang], like)
+            path = OVERRIDES / "GuiPackages" / "Base.rui" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(string_table.write(table))
+            print(f"wrote {path.relative_to(ROOT)}")
+
+
 if __name__ == "__main__":
     main_menu()
     main_actions()
+    strings()
     run("repack")
