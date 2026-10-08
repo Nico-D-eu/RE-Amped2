@@ -546,6 +546,9 @@ static const char k_ini_default[] =
     "; Use the modded files in mods\\build\\game (built by the asset\r\n"
     "; toolkit's repack): 1 on, 0 plays the original data.\r\n"
     ";Mods=1\r\n"
+    "; Use the mod packs (mods\\mods.json) and loose entries (mods\\loose):\r\n"
+    "; 1 on, 0 off. Options and Mods -> Mods switches it as well.\r\n"
+    ";ModPacks=1\r\n"
     "; Use the texture pack in mods\\texture_pack (the asset toolkit's\r\n"
     "; tex-pack) when it is there: 1 on, 0 shows the original textures.\r\n"
     ";TexturePack=1\r\n"
@@ -732,6 +735,7 @@ static void load_settings(void)
         { "Audio",   "Volume",         "RECOMP_AUDIO_VOLUME" },
         { "Game",    "PlayMovies",     "AMPED2_PLAY_MOVIES" },
         { "Game",    "Mods",           "AMPED2_MODS" },
+        { "Game",    "ModPacks",       "AMPED2_MOD_PACKS" },
         { "Game",    "TexturePack",    "AMPED2_TEXTURE_PACK" },
         { "Game",    "Memory",         "RECOMP_GUEST_RAM_MB" },
     };
@@ -1183,7 +1187,9 @@ static BOOL load_xbe(const char *path, void **out_data, size_t *out_size)
  * the toolkit as ';'-separated RECOMP_OVERLAY_DIR and RECOMP_TEXTURE_PACK,
  * first match wins. Relative paths: this runs once the project root is the
  * working directory, before the first file is opened. Ini [Game] Mods=0
- * turns all of it off, TexturePack=0 only the textures; a variable already
+ * turns all of it off, TexturePack=0 only the textures, ModPacks=0 the packs
+ * and the loose entries -- what the in-game Mods screen switches, so it
+ * leaves mods\build\game, which holds that screen, alone. A variable already
  * set in the environment wins.
  */
 static void mod_packs(void)
@@ -1191,12 +1197,16 @@ static void mod_packs(void)
     char overlays[2048] = "", packs[2048] = "", names[16][64];
     const char *mods = getenv("AMPED2_MODS");
     const char *tex = getenv("AMPED2_TEXTURE_PACK");
+    const char *mod_packs_on = getenv("AMPED2_MOD_PACKS");
+    int use_packs = !(mod_packs_on && *mod_packs_on == '0');
     int n = 0, i;
     FILE *f;
 
     if (mods && *mods == '0')
         return;
-    f = fopen("mods\\mods.json", "rb");
+    f = use_packs ? fopen("mods\\mods.json", "rb") : NULL;
+    if (!use_packs)
+        fprintf(stderr, "  mod packs and loose entries off (ModPacks=0)\n");
     if (f) {
         char buf[8192], *p, *end;
         size_t len = fread(buf, 1, sizeof buf - 1, f);
@@ -1232,7 +1242,7 @@ static void mod_packs(void)
     /* Loose archive entries (mod_loose.c): each pack's loose\ and then
      * mods\loose, merged into archives under mods\cache\loose, which is read
      * first. */
-    {
+    if (use_packs) {
         extern int mod_loose_build(const char *loose_roots, const char *overlays);
         char roots[2048] = "", with_cache[2048];
         for (i = 0; i < n; i++) {

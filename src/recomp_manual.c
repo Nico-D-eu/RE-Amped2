@@ -1000,12 +1000,86 @@ void sub_001EE7E0(void)
     g_esp += 8;                             /* ret 4 */
 }
 
+/* ── Menu mod: Options and Mods -> Mods ───────────────────────────────
+ *
+ * The Mods screen is the Xbox Live options screen with new rows: the menu
+ * mod (tools/mods/menus.py) drops XBOX LIVE OPTIONS from the Options list
+ * and adds MODS, which pushes the same menu, "Options_Online" (object
+ * 0x003E3CC0, vtable 0x00367C98), whose scene it rewrites. Its layout is
+ * Game Options': combo rows, each with a value list.
+ *
+ * sub_001ED950 is the menu's enter (vtable +0x18, thiscall, `ret 4`): it
+ * finds the list control ([menu+0x3C]), reads the Live settings from the
+ * profile and shows them in rows 0 and 1 with sub_002116F0 (ecx = row,
+ * eax = combo index, push the list). The wrapper lets it run and then shows
+ * the Mods values over them. Changing a value runs
+ * LiveOptions_ComboChanged(listIndex, comboItemIndex), the command
+ * sub_001EDF30 (same calling convention as GameOptions_ComboChanged),
+ * replaced here: it wrote the Live settings, which no one uses now, and the
+ * exit (sub_001ED9B0) saves those to the profile unchanged.
+ *
+ * Rows, each OFF / ON (combo 0 / 1):
+ *   0  MOD PACKS     [Game] ModPacks     (mods.json packs, mods\loose)
+ *   1  TEXTURE PACK  [Game] TexturePack  (mods\texture_pack)
+ * Both are read once at start-up (main.c mod_packs), so they apply after a
+ * restart. The environment variable is updated too, so the screen shows
+ * the new value when it is opened again.
+ */
+#define AMPED2_MODS_ROWS 2
+
+static const struct { const char *key, *var; } k_mods_rows[AMPED2_MODS_ROWS] = {
+    { "ModPacks",    "AMPED2_MOD_PACKS" },
+    { "TexturePack", "AMPED2_TEXTURE_PACK" },
+};
+
+extern void sub_001ED950_gen(void);
+
+void sub_001ED950(void)
+{
+    uint32_t menu = g_ecx, saved_ebx = g_ebx;
+    int row;
+
+    sub_001ED950_gen();                     /* the Live rows; pops our return */
+    for (row = 0; row < AMPED2_MODS_ROWS; row++) {
+        const char *v = getenv(k_mods_rows[row].var);
+        g_esp -= 4; MEM32(g_esp) = MEM32(menu + 0x3C);
+        g_esp -= 4; MEM32(g_esp) = 0;       /* return address */
+        g_ecx = (uint32_t)row;
+        g_eax = (v && *v == '0') ? 0 : 1;
+        sub_002116F0();                     /* ret 4 */
+    }
+    g_ebx = saved_ebx;
+}
+
+void sub_001EDF30(void)
+{
+    uint32_t arg = MEM32(g_esp + 4);
+    uint32_t count = MEM32(arg + 0x88), values = MEM32(arg + 0x84);
+    uint32_t row, combo;
+    char buf[64];
+
+    if (count >= 2) {
+        row = MEM32(values + 4);
+        combo = MEM32(values + 0xC + 4);
+        if (row < AMPED2_MODS_ROWS) {
+            const char *on = combo ? "1" : "0";
+            amped2_ini_set("Game", k_mods_rows[row].key, on);
+            snprintf(buf, sizeof buf, "%s=%s", k_mods_rows[row].var, on);
+            _putenv(buf);
+        }
+    }
+    SET_LO8(g_eax, 0);
+    g_esp += 8;                             /* ret 4 */
+}
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
     if (xbox_va == AMPED2_QUIT_FN_VA) return amped2_cmd_quit;
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
     if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */
+    if (xbox_va == 0x001ED950) return sub_001ED950;  /* Mods: show */
+    if (xbox_va == 0x001EDF30) return sub_001EDF30;  /* Mods: change */
 
     /*
      * TODO: Add your overrides here. Examples:

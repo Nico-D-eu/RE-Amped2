@@ -153,6 +153,7 @@ environment variable that is already set wins over the file.
 | `[Audio]` | `Volume` | `0`–`100` | `RECOMP_AUDIO_VOLUME` |
 | `[Game]` | `PlayMovies` | `1` (default), `0` skips the intro movies | `AMPED2_PLAY_MOVIES` |
 | | `Mods` | `1` (default), `0` plays the original data | `AMPED2_MODS` |
+| | `ModPacks` | `1` (default), `0` leaves out the `mods.json` packs and `mods\loose` | `AMPED2_MOD_PACKS` |
 | | `TexturePack` | `1` (default; uses `mods\texture_pack\` if present), `0` off | `RECOMP_TEXTURE_PACK` |
 | `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
 
@@ -162,7 +163,13 @@ They are built from your own data by recipe scripts in `tools/mods/`, since
 no game data is committed. The menu mod (`python tools/mods/menus.py`)
 removes "Multiplayer" from the main menu, adds QUIT GAME at the end, and
 puts WINDOW and RESOLUTION into Options -> Game Options (they read and
-write `amped2.ini`; Window applies at once, Resolution after a restart). It
+write `amped2.ini`; Window applies at once, Resolution after a restart).
+OPTIONS is renamed OPTIONS AND MODS; its list loses XBOX LIVE OPTIONS and
+CREDITS and gains MODS, the Xbox Live options screen rewritten with two
+rows, MOD PACKS and TEXTURE PACK (OFF / ON, written to `[Game] ModPacks`
+and `TexturePack`, used from the next start; wrappers of `0x001ED950` and
+`0x001EDF30`). `ModPacks=0` leaves out the packs in `mods.json` and the
+loose entries but keeps `mods\build\game`, so the Mods screen stays. It
 decompiles the original scene, edits it, writes plain Lua source into
 `mods\overrides\` (the game's Lua loads source as well as bytecode) and
 repacks with the asset toolkit. QUIT runs a new `Quit` action
@@ -207,6 +214,10 @@ keeping its 16:9 (or 4:3). On an RTX 2070, ML1 holds ~58 fps at 3× in 720p.
 
 **F3** shows a debug overlay: fps, the game's size and render scale, the
 texture pack's counts and the active mod folders.
+
+The mouse cursor is hidden over the game from the start. Moving the mouse
+shows it; it hides again after two seconds without a move
+(`RECOMP_CURSOR_HIDE_MS` under `[Advanced]`, `0` keeps it always visible).
 
 Keyboard layouts (a connected controller works alongside either):
 

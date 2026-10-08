@@ -416,6 +416,11 @@ touch generated code directly.
      picture format stay ini-only for now.
   1-2 done (2026-10-03); the QUIT item has its own label "QUIT GAME"
   since the string table was decoded (2026-10-07).
+  4. **(user request, 2026-10-08)** "Options" renamed "Options and Mods";
+     its CREDITS and XBOX LIVE OPTIONS items hidden; a MODS item added,
+     the Xbox Live options screen reused with MOD PACKS and TEXTURE PACK
+     rows (`[Game] ModPacks`, `TexturePack`). The mouse cursor hides over
+     the game window until the mouse moves (toolkit `fb_present.c`).
   Scenes are compiled Lua 5.0 beta tables; the exe carries Lua's text
   parser, so replacements can likely be source. Strings: `Base.rui`
   `StringTables/<lang>/StringTable.dat`.

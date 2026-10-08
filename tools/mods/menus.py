@@ -29,6 +29,17 @@ Edits:
      and 0x001EE7E0, GameOptions_ComboChanged). Base.rui
      Scenes/Options_Game.scene gets the rows and their value lists, and
      .sceneData binds the free item slots Item5 and Item6 to them.
+  5. OPTIONS becomes OPTIONS AND MODS (the MainMenu_Options string, which
+     is also the Options screen's title). Its list (Shell.rui
+     Scenes/Options.scene) loses XBOX LIVE OPTIONS and CREDITS and gains
+     MODS at the end.
+  6. MODS opens the Xbox Live options screen, rewritten as the Mods screen
+     (Base.rui Scenes/Options_Online.scene, which already has Game
+     Options' combo-row layout): rows MOD PACKS and TEXTURE PACK, each
+     OFF / ON. MODS keeps the old item's action, $Options_Online, so
+     Options.actions stays as it is. src/recomp_manual.c shows and saves
+     the values ([Game] ModPacks and TexturePack in amped2.ini; wrappers of
+     0x001ED950 and 0x001EDF30).
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -82,7 +93,52 @@ STRINGS = {
         "ger": "Höher ist schärfer. Wirkt nach einem Neustart."}),
     **{f"GameOptions_Resolution_{n}x": ("GameOptions_Vibration_On", {
         "eng": f"{n}x", "fre": f"{n}x", "ger": f"{n}x"}) for n in (1, 2, 3, 4)},
+    # Options and Mods (edits 5 and 6).
+    "MainMenu_Options": ("MainMenu_Options", {
+        "eng": "OPTIONS AND MODS", "fre": "OPTIONS ET MODS",
+        "ger": "OPTIONEN UND MODS"}),
+    "MainMenu_Options_Help": ("MainMenu_Options_Help", {
+        "eng": "Customize your game settings and mods.",
+        "fre": "Personnaliser les paramètres et les mods.",
+        "ger": "Spieleinstellungen und Mods anpassen."}),
+    "Options_Mods": ("Options_Cheats", {
+        "eng": "MODS", "fre": "MODS", "ger": "MODS"}),
+    "Options_Mods_Help": ("Options_Cheats_Help", {
+        "eng": "Turn the mod packs and the texture pack on or off.",
+        "fre": "Activer ou désactiver les packs de mods et de textures.",
+        "ger": "Mod-Pakete und Texturpaket ein- oder ausschalten."}),
+    "ModsOptions_Packs": ("LiveOptions_LiveVoice", {
+        "eng": "MOD PACKS", "fre": "PACKS DE MODS", "ger": "MOD-PAKETE"}),
+    "ModsOptions_Packs_Help": ("LiveOptions_LiveVoice_Help", {
+        "eng": "Mod packs and loose files. Takes effect after a restart.",
+        "fre": "Packs et fichiers de mods. Effectif au prochain lancement.",
+        "ger": "Mod-Pakete und lose Dateien. Wirkt nach einem Neustart."}),
+    "ModsOptions_Textures": ("LiveOptions_LiveVoice", {
+        "eng": "TEXTURE PACK", "fre": "TEXTURES HD", "ger": "TEXTURPAKET"}),
+    "ModsOptions_Textures_Help": ("LiveOptions_LiveVoice_Help", {
+        "eng": "The HD texture pack. Takes effect after a restart.",
+        "fre": "Le pack de textures HD. Effectif au prochain lancement.",
+        "ger": "Das HD-Texturpaket. Wirkt nach einem Neustart."}),
 }
+
+# Options list (edit 5): the items dropped, and the one added at the end,
+# per list of Scenes/Options.scene.
+OPTIONS_SCENE = "GuiPackages/Shell.rui/Scenes/Options.scene"
+OPTIONS_DROP = {"$Options_Online", "$PlayCreditsMovie", "Options_Online",
+                "Options_Online_Help", "Options_Credits", "Options_Credits_Help"}
+OPTIONS_ADD = {
+    "AButton": "$Options_Online",       # the Mods screen keeps the scene name
+    "Start": "$Options_Online",
+    "HelpTextIDs": "Options_Mods_Help",
+    "TextIDs": "Options_Mods",
+}
+
+# The Mods screen (edit 6): its rows, each with its value list (Lua controls
+# 1 and 2, bound to item slots 1 and 2 by the original .sceneData). The row
+# order is the one src/recomp_manual.c handles.
+MODS_SCENE = "GuiPackages/Base.rui/Scenes/Options_Online.scene"
+OFF_ON = ["GameOptions_Vibration_Off", "GameOptions_Vibration_On"]
+MODS_ROWS = [("ModsOptions_Packs", OFF_ON), ("ModsOptions_Textures", OFF_ON)]
 
 # The rows added to Game Options, in order (rows 4 and 5 -- recomp_manual.c
 # handles them), each with its value list. They take the two free item slots
@@ -232,6 +288,91 @@ def game_options_scene_data():
     write_override(entry, src, "Game Options: item slots 5 and 6 bound to the new rows")
 
 
+def edit_lists(src, edit):
+    """Rewrite the one-line quoted items of every list `name = { ... }`:
+    edit(name, items) returns the new items (or None to keep the list)."""
+    import re
+    lines, out, i = src.splitlines(), [], 0
+    while i < len(lines):
+        m = re.match(r"^( *)(\w+) = \{$", lines[i])
+        if not m:
+            out.append(lines[i])
+            i += 1
+            continue
+        ind, name = m.groups()
+        j = i + 1
+        while lines[j].strip().startswith('"'):
+            j += 1
+        if lines[j] not in (ind + "}", ind + "},"):
+            out.append(lines[i])            # a list of tables, not of items
+            i += 1
+            continue
+        items = [ln.strip().rstrip(",")[1:-1] for ln in lines[i + 1:j]]
+        new = edit(name, items)
+        if new is None:
+            out.extend(lines[i:j + 1])
+        else:
+            out.append(lines[i])
+            out.extend(f'{ind}  "{it}"' + ("," if k < len(new) - 1 else "")
+                       for k, it in enumerate(new))
+            out.append(lines[j])
+        i = j + 1
+    return "\r\n".join(out) + "\r\n"
+
+
+def options_scene():
+    """Options: without XBOX LIVE OPTIONS and CREDITS, MODS at the end."""
+    src = source_of(OPTIONS_SCENE)
+    done = []
+
+    def edit(name, items):
+        if name not in OPTIONS_ADD:
+            return None
+        kept = [it for it in items if it not in OPTIONS_DROP]
+        if len(kept) != len(items) - 2:
+            sys.exit(f"{OPTIONS_SCENE}: {name} lacks the Live or Credits item")
+        done.append(name)
+        return kept + [OPTIONS_ADD[name]]
+
+    src = edit_lists(src, edit)
+    if sorted(done) != sorted(OPTIONS_ADD):
+        sys.exit(f"{OPTIONS_SCENE}: lists edited: {done}")
+    write_override(OPTIONS_SCENE, src,
+                   "Options without Xbox Live and Credits, with Mods")
+
+
+def mods_scene():
+    """The Xbox Live options scene as the Mods screen: its two rows and
+    their value lists replaced, and the Mods title."""
+    src = source_of(MODS_SCENE)
+    names = [r for r, _ in MODS_ROWS]
+    value_lists = iter([v for _, v in MODS_ROWS])
+    done = []
+
+    def edit(name, items):
+        if name == "TextIDs" and items and items[0].startswith("LiveOptions_LiveVoice_"):
+            done.append("voice")
+            return next(value_lists)
+        if name == "TextIDs" and items and items[0].startswith("LiveOptions_Appear_"):
+            done.append("appear")
+            return next(value_lists)
+        if name == "TextIDs" and items == ["LiveOptions_LiveVoice", "LiveOptions_Appear"]:
+            done.append("rows")
+            return names
+        if name == "HelpTextIDs":
+            done.append("help")
+            return [n + "_Help" for n in names]
+        return None
+
+    src = edit_lists(src, edit)
+    if sorted(done) != ["appear", "help", "rows", "voice"]:
+        sys.exit(f"{MODS_SCENE}: lists edited: {done}")
+    if src.count('TitleID = "Options_Online"') != 1:
+        sys.exit(f"{MODS_SCENE}: no Options_Online title")
+    src = src.replace('TitleID = "Options_Online"', 'TitleID = "Options_Mods"')
+    write_override(MODS_SCENE, src, "the Xbox Live options as the Mods screen")
+
+
 def strings():
     """The new keys in every language's StringTable.dat."""
     with zipfile.ZipFile(GAME / "GuiPackages" / "Base.rui") as z:
@@ -251,5 +392,7 @@ if __name__ == "__main__":
     main_actions()
     game_options_scene()
     game_options_scene_data()
+    options_scene()
+    mods_scene()
     strings()
     run("repack")
