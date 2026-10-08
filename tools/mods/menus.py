@@ -45,6 +45,12 @@ Edits:
      LoadingMenu_* and Loading_Control*_TextNormal strings) are blanked.
      "LOADING ..." stays. With the texture pack off, the original controller
      picture shows without its labels.
+  8. The pause menu's Options (Game.rui Scenes/Options_InGame.scene) loses
+     XBOX LIVE OPTIONS.
+  9. The button legends ("A=Select  B=Back", "X=Xbox Live" ...; the button
+     icons are glyphs in the same strings) lose their navigation, Xbox Live
+     and Xbox demos items, in every language. Items for other actions
+     (Delete, page turns, skill points, save replay ...) stay.
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -138,6 +144,23 @@ BLANK = [f"Loading_Controller_{n}" for n in (
     f"Loading_Control{n}_TextNormal" for n in (
         "A", "AA", "B", "Back", "Pad", "RightPad", "Start", "Stick", "Stick2",
         "White", "X", "Y")]
+
+# Button legends (edit 9): each is a list of "<button glyph(s)>=<action>"
+# items. The items for plain navigation, Xbox Live and the Xbox demos go;
+# items for anything else (Delete, page turns, skill points...) stay. The
+# English text decides which items go, by position, and the same positions
+# go in every language (the translations keep the item order; some glyphs
+# differ, e.g. the French page-turn buttons). A legend left empty is blanked.
+LEGEND_ITEM = r"(?:[\x01-\x1f](?:&?[\x01-\x1f])*|BACK) ?="
+LEGEND_DROP = {"select", "back", "continue", "cancel", "unpause", "quit session",
+               "return to game", "xbox live", "xbox demos", "live options",
+               "friends", "submit", "skip instructions"}
+
+# The pause menu's Options list (edit 8): XBOX LIVE OPTIONS goes. Its
+# $Options_Online scene is the Mods screen now (edit 6), which the pause
+# menu doesn't offer.
+OPTIONS_INGAME_SCENE = "GuiPackages/Game.rui/Scenes/Options_InGame.scene"
+OPTIONS_INGAME_DROP = {"$Options_Online", "Options_Online", "Options_Online_Help"}
 
 # Options list (edit 5): the items dropped, and the one added at the end,
 # per list of Scenes/Options.scene.
@@ -359,6 +382,72 @@ def options_scene():
                    "Options without Xbox Live and Credits, with Mods")
 
 
+def options_ingame_scene():
+    """The pause menu's Options: without XBOX LIVE OPTIONS."""
+    src = source_of(OPTIONS_INGAME_SCENE)
+    done = []
+
+    def edit(name, items):
+        kept = [it for it in items if it not in OPTIONS_INGAME_DROP]
+        if len(kept) == len(items):
+            return None
+        done.append(name)
+        return kept
+
+    src = edit_lists(src, edit)
+    if sorted(done) != ["AButton", "HelpTextIDs", "Start", "TextIDs"]:
+        sys.exit(f"{OPTIONS_INGAME_SCENE}: lists edited: {done}")
+    write_override(OPTIONS_INGAME_SCENE, src, "pause Options without Xbox Live")
+
+
+def legend_items(text, loose=False):
+    """Split a legend into its items: [(start, end)] spans of the text.
+    loose: an item is any button glyph run after a space or at the start
+    (some translations leave out the "=")."""
+    import re
+    pat = r"(?:^|(?<= ))[-](?:&?[-])*" if loose else LEGEND_ITEM
+    starts = [m.start() for m in re.finditer(pat, text)]
+    return [(s, starts[k + 1] if k + 1 < len(starts) else len(text))
+            for k, s in enumerate(starts)]
+
+
+def legend_drops(eng):
+    """Positions of the items to drop, from the English legend."""
+    import re
+    drops = set()
+    for k, (s, e) in enumerate(legend_items(eng)):
+        action = re.sub(LEGEND_ITEM, "", eng[s:e], count=1).strip(" ").lower()
+        if action in LEGEND_DROP:
+            drops.add(k)
+    return drops
+
+
+def legends(tables):
+    """Edit 9 on every language's table; tables = {lang: StringTable}."""
+    eng = tables["eng"]
+    n = 0
+    for e in eng.entries:
+        items = legend_items(e.text)
+        if not items or items[0][0] > 1:
+            continue                        # not a legend (text before the first button)
+        drops = legend_drops(e.text)
+        if not drops:
+            continue
+        for lang, table in tables.items():
+            t = table.get(e.key)
+            spans = legend_items(t.text) if t else []
+            if t and len(spans) != len(items):
+                spans = legend_items(t.text, loose=True)
+            if len(spans) != len(items):
+                if t:
+                    print(f"  legend {e.key} ({lang}): item count differs, left as is")
+                continue
+            kept = "  ".join(t.text[s:e2].strip(" ") for k, (s, e2) in enumerate(spans) if k not in drops)
+            table.set(e.key, kept or " ", e.key)
+        n += 1
+    print(f"legends: {n} edited")
+
+
 def mods_scene():
     """The Xbox Live options scene as the Mods screen: its two rows and
     their value lists replaced, and the Mods title."""
@@ -392,20 +481,20 @@ def mods_scene():
 
 
 def strings():
-    """The new keys in every language's StringTable.dat."""
+    """The new keys in every language's StringTable.dat, and edits 7 and 9."""
     with zipfile.ZipFile(GAME / "GuiPackages" / "Base.rui") as z:
-        for lang in ("eng", "fre", "ger"):
-            name = f"StringTables/{lang}/StringTable.dat"
-            table = string_table.read(z.read(name))
-            for key, (like, texts) in STRINGS.items():
-                table.set(key, texts[lang], like)
-            for key in BLANK:
-                table.set(key, " ", key)
-            path = OVERRIDES / "GuiPackages" / "Base.rui" / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(string_table.write(table))
-            print(f"wrote {path.relative_to(ROOT)}")
-
+        tables = {lang: string_table.read(z.read(f"StringTables/{lang}/StringTable.dat"))
+                  for lang in ("eng", "fre", "ger")}
+    legends(tables)
+    for lang, table in tables.items():
+        for key, (like, texts) in STRINGS.items():
+            table.set(key, texts[lang], like)
+        for key in BLANK:
+            table.set(key, " ", key)
+        path = OVERRIDES / "GuiPackages" / "Base.rui" / f"StringTables/{lang}/StringTable.dat"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(string_table.write(table))
+        print(f"wrote {path.relative_to(ROOT)}")
 
 if __name__ == "__main__":
     main_menu()
@@ -413,6 +502,7 @@ if __name__ == "__main__":
     game_options_scene()
     game_options_scene_data()
     options_scene()
+    options_ingame_scene()
     mods_scene()
     strings()
     run("repack")

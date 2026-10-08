@@ -214,7 +214,11 @@ CREDITS and gains MODS, the Xbox Live options screen rewritten with two
 rows, MOD PACKS and TEXTURE PACK (OFF / ON, written to `[Game] ModPacks`
 and `TexturePack`, used from the next start; wrappers of `0x001ED950` and
 `0x001EDF30`). It also blanks the level loading screen's controller labels,
-whose pictures the texture pack replaces with the RE-Amped2 art. `ModPacks=0` leaves out the packs in `mods.json` and the
+whose pictures the texture pack replaces with the RE-Amped2 art. The pause
+menu's Options loses XBOX LIVE OPTIONS, and the button legends ("A=Select
+B=Back", "X=Xbox Live"; the button icons are glyphs in those strings) lose
+their navigation, Xbox Live and Xbox demos items in every language; items for
+other actions (Delete, page turns, skill points, Save replay) stay. `ModPacks=0` leaves out the packs in `mods.json` and the
 loose entries but keeps `mods\build\game`, so the Mods screen stays. It
 decompiles the original scene, edits it, writes plain Lua source into
 `mods\overrides\` (the game's Lua loads source as well as bytecode) and
