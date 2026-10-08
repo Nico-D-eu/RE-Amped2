@@ -1151,3 +1151,27 @@ void sub_00255202(void)
     g_eax = 0;   /* STATUS_SUCCESS */
     g_esp += 4;  /* ret */
 }
+
+/* DirectSound's DSP mailbox (sub_00292F33, a method; this in ecx). It copies
+ * a command into the mailbox block, writes the command word at block + 0x810
+ * and spins until the DSP clears it. The GP is a stub here, so the toolkit's
+ * DSP ack clears it. The block is *(*(this + 8) + 0x10) and is contiguous
+ * memory, so its address depends on every allocation before it: main.c used
+ * to name it (0x8106C810), which holds for one allocation order only and
+ * hung boot with RECOMP_GUEST_RAM_MB=128 and its upper-half test. Registered
+ * from here instead, before the first command is posted. */
+extern void sub_00292F33_gen(void);
+extern void xbox_DspAckAdd(uint32_t va);
+
+void sub_00292F33(void)
+{
+    static uint32_t known;
+    uint32_t a = MEM32(g_ecx + 8);
+    a = a ? MEM32(a + 0x10) : 0;
+    a = a ? MEM32(a) : 0;
+    if (a && a + 0x810 != known) {
+        known = a + 0x810;
+        xbox_DspAckAdd(known);
+    }
+    sub_00292F33_gen();
+}

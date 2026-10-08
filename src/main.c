@@ -549,6 +549,10 @@ static const char k_ini_default[] =
     "; Use the texture pack in mods\\texture_pack (the asset toolkit's\r\n"
     "; tex-pack) when it is there: 1 on, 0 shows the original textures.\r\n"
     ";TexturePack=1\r\n"
+    "; Console memory in MB: 64 (a retail Xbox) or 128 (a debug kit). 128\r\n"
+    "; doubles the game's heap and lets its graphics pool reach its full 60 MB\r\n"
+    "; (about 48 MB at 64): headroom for mods with bigger content.\r\n"
+    ";Memory=64\r\n"
     "\r\n"
     "[Advanced]\r\n"
     "; Any RECOMP_ switch, set as written, e.g.\r\n"
@@ -729,6 +733,7 @@ static void load_settings(void)
         { "Game",    "PlayMovies",     "AMPED2_PLAY_MOVIES" },
         { "Game",    "Mods",           "AMPED2_MODS" },
         { "Game",    "TexturePack",    "AMPED2_TEXTURE_PACK" },
+        { "Game",    "Memory",         "RECOMP_GUEST_RAM_MB" },
     };
     char path[MAX_PATH], line[1024], section[64] = "";
     FILE *f;
@@ -842,12 +847,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      *   fails and the title tears itself down right after loading its XACT
      *   banks and launches d:\Boom.xbe (its JPEG helper) instead of going on.
      *
-     * RECOMP_DSP_ACK: DirectSound then posts command 3 to the DSP mailbox
+     * DSP mailbox: DirectSound then posts command 3 to the DSP mailbox
      *   (sub_00292F33, spin at 0x0029309A) and waits for the DSP to clear it.
-     *   The GP DSP is a stub, so the word is cleared here. The address is the
-     *   runtime's contiguous allocation for that block, which is deterministic
-     *   for a given build and data set -- if boot stalls at 0x0029309A again,
-     *   the block moved: read ebx from a RECOMP_WATCHDOG_SECS dump there. */
+     *   The GP DSP is a stub, so the toolkit clears the word. The hook in
+     *   recomp_manual.c registers its address (xbox_DspAckAdd); it used to be
+     *   a fixed RECOMP_DSP_ACK=0x8106C810 here, which moved with any change
+     *   to earlier contiguous allocations. RECOMP_DSP_ACK still adds words. */
     if (!getenv("RECOMP_AC97_READY"))
         _putenv("RECOMP_AC97_READY=1");
     /* RECOMP_FORCE_RETURN: arms the forced return values the build was
@@ -894,8 +899,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         _putenv("RECOMP_ASYNC_IO=1");
     /* Mods (file overlays and texture packs): set up by mod_packs() once
      * find_game_root has made the project root the working directory. */
-    if (!getenv("RECOMP_DSP_ACK"))
-        _putenv("RECOMP_DSP_ACK=0x8106C810");
 
     printf("=== Amped 2 - Static Recompilation ===\n");
     printf("Loading XBE...\n");

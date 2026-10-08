@@ -25,9 +25,9 @@ can't be tested, and they grow the surface area we have to debug.
 - **Evening.** Done: the texture-pack runtime hook (7.3), FXAA (7.4),
   `mods.json` mod packs, and the F3 debug overlay. The full AI-upscaled
   pack is being built.
-- **Next:** more guest memory (needs the 64-128 MB physical numbering
-  and the GPU/APU range checks reworked); the free camera; loose-entry
-  overlays; overrides for the gameplay scripts.
+- **Next:** ~~more guest memory~~ (done 2026-10-08, `[Game] Memory=128`);
+  the free camera; loose-entry overlays; overrides for the gameplay
+  scripts.
 
 **Update (2026-10-03): M4 "Playable" reached; Part B (mods) starts.**
 The user called M4 after playing every unlocked level, Career, Free Ride,
@@ -350,6 +350,16 @@ touch generated code directly.
   `g_xbox_phys_lowram`, `guest_ok` in the D3D11 backend and
   `xbox_ContiguousAllocatedBytes` all assume 64 MB today. Not needed for
   M4: the level-2 out-of-memory was a leak (`4006169`).
+  **Done (2026-10-08), opt-in:** ini `[Game] Memory=128` (toolkit
+  `RECOMP_GUEST_RAM_MB=128`, `09d36c4`) gives a debug kit's layout: heap
+  48 → 112 MB, contiguous window 64 → 128 MB. The game sizes its graphics
+  pool by probing from 60 MB down in 8 KB steps (`0x0013A181`); at 64 MB it
+  settles at ~48 MB after 1571 failed tries, at 128 MB it gets the full
+  60 MB first time. More than 60 MB would need the pool code reversed.
+  Verified in ML1 at 60.1 fps, and with `RECOMP_TEST_HIGH_MEM=1` (every
+  guest allocation above 64 MB). That test found the fixed DSP-ack address
+  (`0x8106C810`) moving with the allocation order; a hook on the mailbox
+  (`sub_00292F33`) now registers it at runtime.
 - **Virtual file system overlay. Done (archive level):** the path layer
   reads `mods\build\game\` over `game\` (toolkit `RECOMP_OVERLAY_DIR`,
   ini `Mods`), and recipes in `tools/mods/` rebuild whole archives from
