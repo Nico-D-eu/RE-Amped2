@@ -84,8 +84,23 @@ recomp's D3D layer should look up each guest texture it creates:
 * Only host VRAM grows. The emulated 64 MB of guest RAM still holds the
   original small textures, so this has no memory limit.
 
-This hook isn't in xboxrecomp yet, and the recomp can't draw frames yet, so
-the pack can't be seen in-game until both exist.
+The hook is in xboxrecomp (`RECOMP_TEXTURE_PACK`, on by default through
+`amped2.ini` `TexturePack=1`).
+
+* **Freed textures.** Amped 2 draws some menu and loading-screen textures
+  after freeing them, when its pool's free-list header has replaced their
+  first 16 bytes, so their key names nothing. `tex-pack` also writes
+  `tails.txt`, the crc32 of each DXT texture's top mip past those 16 bytes,
+  and the runtime falls back to it.
+* **Misses.** `RECOMP_TEXTURE_PACK_MISSES=<file>` lists the keys a run drew
+  that the pack lacks, and `RECOMP_TEXTURE_PACK_DUMP=<dir>` writes each one's
+  top mip as `<key>.raw`. `tex-misses <dir>` decodes those into
+  `mods/textures/original/<key>__runtime.png` with manifest entries
+  (`--kind`, default `world`), so `tex-upscale --filter __runtime` and
+  `tex-pack` include them, and `tex-export` keeps them. On ML1 the remaining
+  misses are the four fonts (left out by design), a 1×1 fill, one 64×16
+  texture in format 0x3C, and a few textures drawn after their memory was
+  reused (garbage for a frame, nothing to replace).
 
 ## Textures, workflow B: back into the game's own files
 

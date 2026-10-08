@@ -19,9 +19,11 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -209,6 +211,10 @@ def cmd_tex_export(a):
                 "alpha": bool((rgba[..., 3] < 255).any()),
                 "kind": texture_kind(rel, name, label), "uses": [use],
             }
+    if MANIFEST.exists():                  # keep what tex-misses added
+        for key, m in json.loads(MANIFEST.read_text()).items():
+            if m.get("runtime") and key not in manifest:
+                manifest[key] = m
     MANIFEST.write_text(json.dumps(manifest, indent=1))
     kinds = {}
     for m in manifest.values():
@@ -216,6 +222,51 @@ def cmd_tex_export(a):
     log(f"exported {len(manifest)} unique textures to {out}  {kinds}")
     if skipped:
         log(f"not exported (unsupported layouts): {skipped}")
+
+
+def cmd_tex_misses(a):
+    """Textures the recomp drew that the pack lacks: the runtime dumps their
+    top mips (RECOMP_TEXTURE_PACK_DUMP=<dir>, one <key>.raw each, the key
+    being the pack's own), and this decodes them into textures/original with
+    manifest entries, so tex-upscale and tex-pack treat them like the rest."""
+    src = Path(a.dir)
+    out = TEX / "original"
+    out.mkdir(parents=True, exist_ok=True)
+    manifest = load_manifest() if MANIFEST.exists() else {}
+    added, skipped = 0, []
+    for raw in sorted(src.glob("*.raw")):
+        key = raw.stem
+        m = re.fullmatch(r"([0-9a-f]{8})_(\d+)x(\d+)_([0-9a-f]{2})", key)
+        if not m:
+            continue
+        w, h, code = int(m[2]), int(m[3]), int(m[4], 16)
+        if key in manifest and not a.force:
+            continue
+        if min(w, h) < 4 or w & (w - 1) or h & (h - 1):
+            skipped.append(key)            # 1x1 fills, non-power-of-two
+            continue
+        fmt = (code << 8) | (1 << 16) | ((w.bit_length() - 1) << 20) | ((h.bit_length() - 1) << 24)
+        t = xt.Texture(struct.pack("<5I", xt.COMMON_TYPE_TEXTURE, 0, 0, fmt, 0), 0)
+        if not t.supported or t.kind == "lin":
+            skipped.append(key)
+            continue
+        data = raw.read_bytes()
+        if len(data) != t.level_size(0) or t.key(data) != key:
+            skipped.append(key)
+            continue
+        rgba = xt.decode_rgba(t, data)
+        name = f"{key}__runtime"
+        Image.fromarray(rgba, "RGBA").save(out / (name + ".png"))
+        manifest[key] = {
+            "name": name, "width": w, "height": h, "format": t.format_name,
+            "mips": 1, "alpha": bool((rgba[..., 3] < 255).any()),
+            "kind": a.kind, "uses": [], "runtime": True,
+        }
+        added += 1
+    MANIFEST.write_text(json.dumps(manifest, indent=1))
+    log(f"added {added} runtime textures to {out} as <key>__runtime.png")
+    if skipped:
+        log(f"skipped (blank, unsupported format or changed): {', '.join(skipped)}")
 
 
 def bleed_transparent(rgba):
@@ -401,6 +452,31 @@ def cmd_tex_pack(a):
     (pack / "index.json").write_text(json.dumps(index, indent=1))
     mb = sum(p.stat().st_size for p in pack.glob("*.dds")) / 2**20
     log(f"pack: {len(index)} textures, {mb:.0f} MB in {pack}")
+    _write_tails(pack, index)
+
+
+def _write_tails(pack, index):
+    """tails.txt: for each DXT texture in the pack, `<crc32 of its top mip
+    past the first 16 bytes>_<w>x<h>_<fmt> <key>`. Amped 2 draws some menu
+    and loading-screen textures after freeing them, and the pool's free-list
+    header has then replaced their first block; the runtime finds the
+    replacement through this instead (xboxrecomp nv2a_d3d11.c, pack_load)."""
+    lines = []
+    for rel, name, data in game_sources():
+        c = xt.open_container(name, data)
+        if not c:
+            continue
+        for t in c.textures:
+            if not t.supported or t.kind != "dxt":
+                continue
+            level0 = c.level0(t)
+            key = t.key(level0)
+            if key in index and len(level0) > 64:
+                tail = zlib.crc32(level0[16:]) & 0xFFFFFFFF
+                lines.append(f"{tail:08x}_{t.width}x{t.height}_{t.code:02x} {key}")
+    lines = sorted(set(lines))
+    (pack / "tails.txt").write_text("\n".join(lines) + "\n")
+    log(f"tails.txt: {len(lines)} DXT textures")
 
 
 def _pow2(n):
@@ -585,6 +661,11 @@ def main():
 
     p = sub.add_parser("tex-export"); p.set_defaults(fn=cmd_tex_export)
     p.add_argument("--force", action="store_true", help="rewrite PNGs that already exist")
+
+    p = sub.add_parser("tex-misses"); p.set_defaults(fn=cmd_tex_misses)
+    p.add_argument("dir", help="the runtime's RECOMP_TEXTURE_PACK_DUMP folder of <key>.raw files")
+    p.add_argument("--kind", default="world", help="kind for the new entries (world, ui, ...)")
+    p.add_argument("--force", action="store_true", help="redo keys already in the manifest")
 
     p = sub.add_parser("tex-upscale"); p.set_defaults(fn=cmd_tex_upscale)
     p.add_argument("--model", default="ultrasharp-4x", help="Upscayl model name (see upscayl resources/models)")
