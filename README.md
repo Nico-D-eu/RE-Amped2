@@ -122,6 +122,15 @@ capture the boot trace. It will crash on first run. That is expected; see
 `xboxrecomp/docs/GETTING_STARTED.md` step 8 and
 `xboxrecomp/docs/pipeline/06-debugging.md`.
 
+## Installer (for players)
+
+`installer\build.ps1` makes `installer\dist\Amped2-Setup.exe`, a single-file
+wizard that does all of the above on a player's PC: they pick their disc
+image and a folder, it installs any missing build tools with winget,
+extracts the disc, runs `regen.ps1` and the build, adds the menu mod, and
+installs `Amped2.exe` with a desktop shortcut. It carries no game data. See
+`installer\README.md`.
+
 ## Settings (`amped2.ini`)
 
 The game reads `amped2.ini` from the folder of the `.exe` (`build\Release`).

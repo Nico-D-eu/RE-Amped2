@@ -30,11 +30,16 @@
 .PARAMETER RecompArgs
     Extra arguments passed straight to tools.recomp, e.g.
     -RecompArgs '--force-return','0x0015D780=0'
+
+.PARAMETER Python
+    The python.exe to run the toolkit with, instead of the py launcher's
+    `py -3` (the installer passes the one in its own virtual environment).
 #>
 param(
     [switch]$Ghidra,
     [switch]$SkipAnalysis,
-    [string[]]$RecompArgs = @()
+    [string[]]$RecompArgs = @(),
+    [string]$Python = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,11 +64,15 @@ function Invoke-Step([string]$Name, [scriptblock]$Body) {
     if ($LASTEXITCODE -ne 0) { throw "$Name failed (exit $LASTEXITCODE)" }
 }
 
+function Invoke-Python {
+    if ($Python) { & $Python @args } else { & py -3 @args }
+}
+
 Push-Location $Toolkit
 try {
     if (-not $SkipAnalysis) {
         Invoke-Step 'Step 2: parse XBE' {
-            py -3 -m tools.xbe_parser $Xbe --json (Join-Path $Project 'game\default_analysis.json')
+            Invoke-Python -m tools.xbe_parser $Xbe --json (Join-Path $Project 'game\default_analysis.json')
         }
         Invoke-Step 'Step 3: disassemble' {
             # Function starts only a run can see (thread routines, indirect-call
@@ -72,13 +81,13 @@ try {
             #       tools\disasm\output\functions.json --seeds <this file>
             $seedArgs = @()
             if (Test-Path $Seeds) { $seedArgs = @('--seed-functions', $Seeds) }
-            py -3 -m tools.disasm $Xbe -v @seedArgs
+            Invoke-Python -m tools.disasm $Xbe -v @seedArgs
         }
         Invoke-Step 'Step 4: identify functions' {
-            py -3 -m tools.func_id $Xbe -v
+            Invoke-Python -m tools.func_id $Xbe -v
         }
         Invoke-Step 'Step 4.5: recover calling conventions' {
-            py -3 -m tools.abi_analysis $Xbe -v
+            Invoke-Python -m tools.abi_analysis $Xbe -v
         }
 
         if ($Ghidra) {
@@ -92,7 +101,7 @@ try {
         }
         if (Test-Path 'tools\ghidra_naming\export\functions.json') {
             Invoke-Step 'Step 4.6: apply Ghidra names' {
-                py -3 tools/ghidra_naming/merge_names.py --apply
+                Invoke-Python tools/ghidra_naming/merge_names.py --apply
             }
         } else {
             Write-Host "`n(no Ghidra export cached -- skipping names; run with -Ghidra)" -ForegroundColor Yellow
@@ -113,7 +122,7 @@ try {
             Get-Content $forceFile | ForEach-Object { ($_ -split '#')[0].Trim() } |
                 Where-Object { $_ } | ForEach-Object { $manualArgs += @('--force-return', $_) }
         }
-        py -3 -m tools.recomp $Xbe --all --split 250 --game-name 'Amped 2' `
+        Invoke-Python -m tools.recomp $Xbe --all --split 250 --game-name 'Amped 2' `
             --gen-dir $GenDir `
             --exclude-manual (Join-Path $Project 'src\recomp_manual.c') `
             @manualArgs @RecompArgs

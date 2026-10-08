@@ -66,3 +66,7 @@ CHANGELOG.md
 .claude/settings.local.json
 # D3D11 compiled-shader cache (RECOMP_SHADER_CACHE)
 shader_cache/
+
+# Installer build output (installer/build.ps1)
+installer/obj/
+installer/dist/

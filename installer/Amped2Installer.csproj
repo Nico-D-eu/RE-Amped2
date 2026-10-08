@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Amped 2 installer: a WinForms wizard on the .NET Framework 4.8 that ships
+    with Windows 10 and 11, so players need no runtime. build.ps1 makes
+    obj\payload.zip (this project's sources, the toolkit, xdvdfs) first;
+    it is embedded, so the result is one self-contained .exe.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>Amped2-Setup</AssemblyName>
+    <RootNamespace>Amped2Installer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\amped2.ico</ApplicationIcon>
+    <Product>Amped 2 PC Installer</Product>
+    <Description>Builds Amped 2 for Windows from your own disc image</Description>
+    <Version>1.0.0</Version>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="obj\payload.zip" LogicalName="payload.zip" Condition="Exists('obj\payload.zip')" />
+    <EmbeddedResource Include="assets\amped2.ico" LogicalName="amped2.ico" />
+  </ItemGroup>
+
+</Project>
