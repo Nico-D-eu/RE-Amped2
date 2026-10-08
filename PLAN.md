@@ -438,10 +438,18 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    lists keys the pack lacks. **Pack built (2026-10-07):** 3376 textures
    (ultrasharp-4x, lightmaps/tiny ones Lanczos), BC7, 4.8 GB in
    `mods/texture_pack`, about an hour on the RTX 2070. In ML1: 229
-   replaced, 22 not covered, 59.2 fps, no visible artifacts. Open: the 22
-   misses (`diag/fullpack_misses.txt`: mostly 512x512 DXT3 the exporter
-   does not reach, or textures built at run time; one in format 0x3C), and
-   hand edits. Original plan: add the runtime hook the asset toolkit
+   replaced, 22 not covered, 59.2 fps, no visible artifacts. **Misses
+   resolved (2026-10-08):** they were not missing textures. The game draws
+   menu and loading-screen textures after freeing them, when the pool's
+   free-list header has replaced the first 16 bytes (a pointer, so a new
+   key each run). The runtime now matches DXT textures by the rest of the
+   top mip (toolkit `b067a1e`, `tails.txt` from `tex-pack`); the loading
+   screen shows its upscaled art for the first time. Left: four fonts (by
+   design), a 1x1 fill, one 0x3C texture, and a few textures drawn after
+   their memory was reused. `RECOMP_TEXTURE_PACK_DUMP` + `tex-misses` add
+   genuine run-time textures to a pack. Open: hand edits; a faint seam
+   between the title screen's background tiles (also without the pack).
+   Original plan: add the runtime hook the asset toolkit
    already targets: on texture create, key =
    `crc32(top mip)_WxH_fmt`, and load `mods/texture_pack/<key>.dds` (BC7,
    full mips) into host VRAM only. Pipeline: `tex-export` → `tex-upscale`
@@ -555,7 +563,7 @@ game data ships with any build.
 | Build times of 20–40 min | Slow iteration | Chunk-level rebuilds, fix the `recomp_0020` stall |
 | D3D8LTCG's non-standard shapes | Many rendering bugs | Follow the D3D8LTCG device-context doc and compare frame captures with xemu |
 | x87 precision drift in physics | Gameplay differs | Conformance tests against xemu traces |
-| The texture hash changes if a texture is modified at runtime | Pack misses | Dump missed keys, and allow alias keys in `index.json` |
+| The texture hash changes if a texture is modified at runtime | Pack misses | Done: missed keys are dumped (`RECOMP_TEXTURE_PACK_DUMP`), and freed textures are matched past their first block (`tails.txt`) |
 | Legal and distribution | Can't share the result | Never ship game data; the user brings their own disc |
 
 ## Working agreements
