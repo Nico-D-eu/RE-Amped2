@@ -53,6 +53,7 @@ file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS "src/recomp/gen/*.c")
 set(GAME_SOURCES
     src/main.c
     src/recomp_manual.c
+    src/mod_loose.c         # loose archive entries merged at start-up
     src/lua_probe.c         # hand copies of generated functions, instrumented
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c

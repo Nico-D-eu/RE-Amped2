@@ -26,8 +26,8 @@ can't be tested, and they grow the surface area we have to debug.
   `mods.json` mod packs, and the F3 debug overlay. The full AI-upscaled
   pack is being built.
 - **Next:** ~~more guest memory~~ (done 2026-10-08, `[Game] Memory=128`);
-  the free camera; loose-entry overlays; overrides for the gameplay
-  scripts.
+  the free camera; ~~loose-entry overlays~~ (done 2026-10-08); overrides
+  for the gameplay scripts.
 
 **Update (2026-10-03): M4 "Playable" reached; Part B (mods) starts.**
 The user called M4 after playing every unlocked level, Career, Free Ride,
@@ -363,8 +363,14 @@ touch generated code directly.
 - **Virtual file system overlay. Done (archive level):** the path layer
   reads `mods\build\game\` over `game\` (toolkit `RECOMP_OVERLAY_DIR`,
   ini `Mods`), and recipes in `tools/mods/` rebuild whole archives from
-  `mods/overrides/` with the asset toolkit's `repack`. Still open: loose
-  entries served without a repack (an overlay keyed by archive entry).
+  `mods/overrides/` with the asset toolkit's `repack`. ~~Still open: loose
+  entries served without a repack.~~ **Done (2026-10-08):**
+  `mods\loose\<archive>\<entry>` (and a pack's `loose\`) are merged at
+  start-up into `mods\cache\loose\<archive>` over the archive the game would
+  read, first in the overlay order, cached until a source changes
+  (`src/mod_loose.c`). Verified with a loose `StringTable.dat` in `Base.rui`
+  (main menu showed the new label), the cache reused, and removed when the
+  loose folder went away.
 - **Mod loader and config.** A `mods/mods.json` (or TOML) with enabled
   packs, load order and per-mod settings; a user-facing `amped2.ini`
   for graphics and input options. **`amped2.ini` done** (display, input,

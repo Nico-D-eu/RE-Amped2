@@ -179,6 +179,17 @@ first: `{ "packs": ["hd-snow", "menus"] }`. A pack is a folder
 from `tex-pack`). The tools' own output folders, `mods\build\game\` and
 `mods\texture_pack\`, always come last.
 
+**Loose archive entries.** One file in place of one entry of an archive,
+without a repack: put it in `mods\loose\` (or a pack's `loose\`) under a
+folder named like the archive, e.g.
+`mods\loose\GuiPackages\Base.rui\StringTables\eng\StringTable.dat` or
+`mods\loose\Gui\Textures\Textures.gfx\Controller_all.xpr`. New names are
+added to the archive. At start-up `src/mod_loose.c` merges them into
+`mods\cache\loose\` over whichever archive the game would otherwise read,
+and reuses that until a source file changes; the log says
+`[MODS] loose: ...`. Loose entries win over a repacked archive of the same
+name. Entry paths are as `tools/assets` `unpack` lists them.
+
 `RenderScale` renders the game's surfaces at that multiple: 1280×720 with
 the default `VideoModes`, so 3 renders at 3840×2160 (640×480 with
 `VideoModes=none`, so 3 is 1920×1440). The result is scaled into the window,

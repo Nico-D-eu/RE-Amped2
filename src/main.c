@@ -1176,8 +1176,9 @@ static BOOL load_xbe(const char *path, void **out_data, size_t *out_size)
  *
  * A pack is a folder mods\packs\<name>\ with game\ (files that stand in for
  * the same paths in the game dir -- archives built by the asset toolkit's
- * repack) and textures\ (<key>.dds replacements, as tex-pack writes them);
- * either may be missing. After the listed packs come the unnamed defaults
+ * repack), loose\ (single archive entries, <archive>\<entry>, see
+ * mod_loose.c) and textures\ (<key>.dds replacements, as tex-pack writes
+ * them); any may be missing. After the listed packs come the unnamed defaults
  * the tools write to: mods\build\game and mods\texture_pack. The lists go to
  * the toolkit as ';'-separated RECOMP_OVERLAY_DIR and RECOMP_TEXTURE_PACK,
  * first match wins. Relative paths: this runs once the project root is the
@@ -1228,6 +1229,23 @@ static void mod_packs(void)
     }
     strncat(overlays, "mods\\build\\game", sizeof overlays - strlen(overlays) - 1);
     strncat(packs, "mods\\texture_pack", sizeof packs - strlen(packs) - 1);
+    /* Loose archive entries (mod_loose.c): each pack's loose\ and then
+     * mods\loose, merged into archives under mods\cache\loose, which is read
+     * first. */
+    {
+        extern int mod_loose_build(const char *loose_roots, const char *overlays);
+        char roots[2048] = "", with_cache[2048];
+        for (i = 0; i < n; i++) {
+            char one[160];
+            snprintf(one, sizeof one, "mods\\packs\\%s\\loose;", names[i]);
+            strncat(roots, one, sizeof roots - strlen(roots) - 1);
+        }
+        strncat(roots, "mods\\loose", sizeof roots - strlen(roots) - 1);
+        if (mod_loose_build(roots, overlays) > 0) {
+            snprintf(with_cache, sizeof with_cache, "mods\\cache\\loose;%s", overlays);
+            snprintf(overlays, sizeof overlays, "%s", with_cache);
+        }
+    }
     if (!getenv("RECOMP_OVERLAY_DIR"))
         ini_set("RECOMP_OVERLAY_DIR", overlays);
     if (!getenv("RECOMP_TEXTURE_PACK") && !(tex && *tex == '0'))
