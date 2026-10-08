@@ -26,8 +26,8 @@ can't be tested, and they grow the surface area we have to debug.
   `mods.json` mod packs, and the F3 debug overlay. The full AI-upscaled
   pack is being built.
 - **Next:** ~~more guest memory~~ (done 2026-10-08, `[Game] Memory=128`);
-  the free camera; ~~loose-entry overlays~~ (done 2026-10-08); overrides
-  for the gameplay scripts.
+  the free camera; ~~loose-entry overlays~~ and ~~gameplay-script
+  overrides~~ (done 2026-10-08).
 
 **Update (2026-10-03): M4 "Playable" reached; Part B (mods) starts.**
 The user called M4 after playing every unlocked level, Career, Free Ride,
@@ -391,9 +391,14 @@ touch generated code directly.
   (see the clean-checkout fix, 2026-10-07).
 - **Lua script overrides. Done for GUI scenes:** the game's Lua loads
   plain source as readily as bytecode, so decompiled and edited scenes go
-  back through the overlay as source (the menu mod). Not yet tried on the
-  gameplay scripts (characters, levels, challenges), which are the main
-  content lever.
+  back through the overlay as source (the menu mod). **Gameplay scripts
+  done (2026-10-08):** a decompiled `GameInfo.res` `TrickInfo.lua` as a
+  loose entry is compiled from source (a marker error at its line 580 was
+  reported from `D:\GameInfo\TrickInfo.lua`), and an edited one (flip base
+  score 2500 → 25000) runs into ML1 with no Lua errors. The game caches
+  `gameinfo.res` on its cache partition and re-copies it when it changes.
+  The script Lua has no `error`. Not shown in game yet: the effect of a
+  changed value (the scripted test run does no tricks).
 - **Menu changes (user request, 2026-10-03)**, the first users of the
   overlay, script overrides and hook points:
   1. Hide "Multiplayer" from the main menu (`Shell.rui`

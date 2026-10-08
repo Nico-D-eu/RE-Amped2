@@ -190,6 +190,16 @@ and reuses that until a source file changes; the log says
 `[MODS] loose: ...`. Loose entries win over a repacked archive of the same
 name. Entry paths are as `tools/assets` `unpack` lists them.
 
+**Script mods.** The game's scripts are compiled Lua, but it compiles plain
+source just as well, so a decompiled and edited script (`tools/assets`
+`decompile` writes them to `mods\source\`) works as a loose entry under its
+original name, e.g. `mods\loose\GameInfo\GameInfo.res\TrickInfo.lua`. This
+holds for the gameplay scripts as well as the menus. The game copies some
+archives to its cache partition and reads them from there; it copies them
+again when they change, so edits are picked up on the next start. The
+scripts' Lua has no `error` (and no standard library to speak of); a script
+error is logged as `[LUA] ...` with the file and line.
+
 `RenderScale` renders the game's surfaces at that multiple: 1280×720 with
 the default `VideoModes`, so 3 renders at 3840×2160 (640×480 with
 `VideoModes=none`, so 3 is 1920×1440). The result is scaled into the window,
