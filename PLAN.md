@@ -513,6 +513,23 @@ Built from existing parts first, then new assets.
 - Mod pack format and docs for other modders.
 - License check: xboxrecomp's license, third-party tools (texconv, unluac,
   Upscayl models) and their redistribution terms.
+- **RE-Amped2 branding.** Drafts in `branding/drafts/` (2026-10-08). In
+  the pack: title logo `ampedLogo`, the 4 boot splashes, `Logo_Amped2`,
+  course banner `Banneramped2`, and `RegisteredTradeMark` (blanked, it
+  floated beside the new logo). Backlog:
+  - [ ] Final wordmark from the user (the R's shoulder was rebuilt where
+        the snowboard covered it); then rerun `_scripts/build_drafts.py`
+        and `tex-pack`.
+  - [ ] Check `Logo_Amped2` and the course banner in game (user).
+  - [ ] Boot splash: it is presented once, before the background pack
+        loader has its DDS, so it shows only with
+        `RECOMP_TEXTURE_PACK_SYNC=1`. Load the first frame's textures in
+        place (toolkit).
+  - [ ] Intro video `Movies\Intro.xmv`: a sharper re-encode with the new
+        logo (user's TODO).
+  - [ ] Icons: replace `installer/assets/amped2.ico` (installer, its
+        window, desktop shortcut) with the badge, simplified at 16-32 px,
+        and give `amped2_recomp.exe` an icon resource (it has none).
 
 ---
 
