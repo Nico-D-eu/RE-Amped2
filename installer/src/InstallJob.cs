@@ -457,7 +457,7 @@ namespace Amped2Installer
             r.ExePath = exe;
 
             var icon = Path.Combine(Dest, "RE-Amped2.ico");
-            using (var s = typeof(InstallJob).Assembly.GetManifestResourceStream("amped2.ico"))
+            using (var s = typeof(InstallJob).Assembly.GetManifestResourceStream("RE-Amped2.ico"))
             using (var f = File.Create(icon))
                 s.CopyTo(f);
 

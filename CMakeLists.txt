@@ -55,6 +55,7 @@ set(GAME_SOURCES
     src/recomp_manual.c
     src/mod_loose.c         # loose archive entries merged at start-up
     src/lua_probe.c         # hand copies of generated functions, instrumented
+    src/RE-Amped2.rc        # exe and window icon (branding/RE-Amped2.ico)
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c

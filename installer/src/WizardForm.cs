@@ -94,7 +94,7 @@ namespace Amped2Installer
             ClientSize = new Size(800, 600);
             try
             {
-                using (var s = typeof(WizardForm).Assembly.GetManifestResourceStream("amped2.ico"))
+                using (var s = typeof(WizardForm).Assembly.GetManifestResourceStream("RE-Amped2.ico"))
                     if (s != null) Icon = new Icon(s);
             }
             catch (Exception) { }

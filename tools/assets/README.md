@@ -57,8 +57,9 @@ python tools/assets/amped_assets.py tex-pack       # mods/texture_pack/<key>.dds
 * **Kinds.** `manifest.json` gives each texture a kind: `world`, `ui`,
   `normal`, `lightmap` or `font`. Lightmaps and anything under 16 px get
   plain Lanczos scaling, because AI models add noise to smooth gradients.
-  Normal maps are AI-upscaled and then renormalised. Fonts are left out by
-  default.
+  Normal maps are AI-upscaled and then renormalised. Fonts (glyph atlases)
+  have their alpha AI-upscaled too, since it holds the glyphs, and its edges
+  tightened, so text stays sharp.
 * **Tiling and transparency.** Before upscaling, textures are padded with
   their own wrapped edges so tiling surfaces stay seamless, and transparent
   pixels are filled with nearby colour so cut-outs (trees, fences) don't get
@@ -98,7 +99,8 @@ The hook is in xboxrecomp (`RECOMP_TEXTURE_PACK`, on by default through
   `mods/textures/original/<key>__runtime.png` with manifest entries
   (`--kind`, default `world`), so `tex-upscale --filter __runtime` and
   `tex-pack` include them, and `tex-export` keeps them. On ML1 the remaining
-  misses are the four fonts (left out by design), a 1×1 fill, one 64×16
+  misses were the four run-time fonts (now packed: `tex-misses --kind font`
+  keeps them fonts), a 1×1 fill, one 64×16
   texture in format 0x3C, and a few textures drawn after their memory was
   reused (garbage for a frame, nothing to replace).
 

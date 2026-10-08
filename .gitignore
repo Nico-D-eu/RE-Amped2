@@ -70,3 +70,6 @@ shader_cache/
 # Installer build output (installer/build.ps1)
 installer/obj/
 installer/dist/
+
+# Branding work files (drafts, 4x sources); only branding/RE-Amped2.ico is tracked
+/branding/drafts/

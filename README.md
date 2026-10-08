@@ -131,6 +131,47 @@ extracts the disc, runs `regen.ps1` and the build, adds the menu mod, and
 installs `RE-Amped2.exe` with a desktop shortcut. It carries no game data. See
 `installer\README.md`.
 
+## Branding
+
+Players see the port as **RE-Amped2**: `RE-Amped2.exe`, `RE-Amped2-Setup.exe`,
+the window title, the shortcut and new menu text ("Close RE-Amped2."). "Amped 2"
+means the original game only. Internal names stay as they are: the `amped2/`
+folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
+
+- **Icon:** `branding/RE-Amped2.ico` (16-256 px, from the user's badge). It is
+  `RE-Amped2.exe`'s icon resource (`src/RE-Amped2.rc`), which xboxrecomp's
+  game and video windows load for their title bar and taskbar button. It is
+  also the installer's icon, its window's, and the installed `RE-Amped2.ico`
+  the desktop shortcut uses.
+- **In-game art** comes through the texture pack. `tools/branding/build.py`
+  writes these into `mods/textures/edit/` under the original names, and
+  `tex-pack` packs them:
+  - the title logo (`ampedLogo`), the small sponsor-style logo (`Logo_Amped2`)
+    and the course banner (`Banneramped2`), all with the RE-Amped2 wordmark;
+  - the four boot splashes (`splash_eng/fre/ger/jan`). The game draws these
+    4:3 with side bars, so they are laid out at 4:3;
+  - the loading screen before a level. `Loading_Background` (stretched to
+    16:9) gets the splash art, and the controller pictures are blanked
+    (`LoadingScreen2`, `Loading_Controller`, `Loading_Controls`). The menu mod
+    blanks their labels (edit 7), so only the game's "LOADING ..." shows;
+  - `RegisteredTradeMark` is blanked, because the title placed its "®" for the
+    old logo.
+- **Masters** are local and git-ignored, in `branding/drafts/`: the user's art.
+  These are `reamped2_wordmark_full.png` and `..._noglow_full.png` (the logo,
+  transparent) and `work/` (4x upscales of the banner and badge, and the course
+  banner with its old logo painted out). `tools/branding/unblack.py` turns a
+  logo rendered on black into a transparent master. After editing a master:
+  `py -3.10 tools/branding/build.py`, then
+  `py -3.10 tools/assets/amped_assets.py tex-pack`.
+- **Fonts:** the six font atlases (the menu and HUD fonts, built at run time,
+  plus `Media/font.xpr` and `XprMedia/Font.xpr`) are in the texture pack. `tex-upscale` upscales
+  their alpha, which holds the glyphs, with the AI model and tightens the edges.
+  Text is sharp at any `RenderScale`. In the 16:9 mode the game stretches its
+  4:3 2D layer, text included, 1.33x wider. See PLAN Phase 9, branding.
+- **Not covered by textures:** the boot splash is presented once, before the
+  background pack loader has it. It shows with `RECOMP_TEXTURE_PACK_SYNC=1`.
+  The intro video `Movies\Intro.xmv` has the old logo baked in.
+
 ## Settings (`amped2.ini`)
 
 The game reads `amped2.ini` from the folder of the `.exe` (`build\Release`).
@@ -168,7 +209,8 @@ OPTIONS is renamed OPTIONS AND MODS; its list loses XBOX LIVE OPTIONS and
 CREDITS and gains MODS, the Xbox Live options screen rewritten with two
 rows, MOD PACKS and TEXTURE PACK (OFF / ON, written to `[Game] ModPacks`
 and `TexturePack`, used from the next start; wrappers of `0x001ED950` and
-`0x001EDF30`). `ModPacks=0` leaves out the packs in `mods.json` and the
+`0x001EDF30`). It also blanks the level loading screen's controller labels,
+whose pictures the texture pack replaces with the RE-Amped2 art. `ModPacks=0` leaves out the packs in `mods.json` and the
 loose entries but keeps `mods\build\game`, so the Mods screen stays. It
 decompiles the original scene, edits it, writes plain Lua source into
 `mods\overrides\` (the game's Lua loads source as well as bytecode) and

@@ -29,6 +29,20 @@
 - Tick off exit criteria in `PLAN.md` as they are met, and update the
   "Current status" line.
 
+## Branding
+
+- The port is **RE-Amped2** to players: build and run
+  `build\Release\RE-Amped2.exe` (not the old `amped2_recomp.exe`); the
+  installer is `RE-Amped2-Setup.exe`. Player-facing text (window, menus,
+  installer, docs for players) says RE-Amped2. "Amped 2" means the original
+  game only. Internal names stay: the `amped2/` folder, `amped2.ini`,
+  `AMPED2_*`, CMake and tool names.
+- Logo, splash, loading screen, fonts and icon: see README "Branding". The
+  icon is `branding/RE-Amped2.ico` (tracked). The art masters are in
+  `branding/drafts/` (git-ignored). Rebuild with `tools/branding/build.py`,
+  then `tex-pack`. Never `tex-pack --force` by accident: it recompresses all
+  ~3400 textures (about an hour).
+
 ## Conventions
 
 - Run the pipeline tools from inside `../xboxrecomp`. `tools/regen.ps1`

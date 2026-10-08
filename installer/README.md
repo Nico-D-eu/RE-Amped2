@@ -59,7 +59,9 @@ not ignored, so never `game\`, `mods\`, generated code or build output),
 `manifest.txt` in the payload (and `install-info.txt` after an install)
 records the commits with `+modified`. Commit both repos first for a release.
 
-`assets\make-icon.ps1` redraws `assets\amped2.ico`.
+The icon (the installer, its window, the installed `RE-Amped2.ico` and the
+desktop shortcut) is `..\branding\RE-Amped2.ico`, the same file
+`RE-Amped2.exe` embeds.
 
 ## Third-party pieces in the payload
 

@@ -513,23 +513,32 @@ Built from existing parts first, then new assets.
 - Mod pack format and docs for other modders.
 - License check: xboxrecomp's license, third-party tools (texconv, unluac,
   Upscayl models) and their redistribution terms.
-- **RE-Amped2 branding.** Drafts in `branding/drafts/` (2026-10-08). In
-  the pack: title logo `ampedLogo`, the 4 boot splashes, `Logo_Amped2`,
-  course banner `Banneramped2`, and `RegisteredTradeMark` (blanked, it
-  floated beside the new logo). Backlog:
-  - [ ] Final wordmark from the user (the R's shoulder was rebuilt where
-        the snowboard covered it); then rerun `_scripts/build_drafts.py`
-        and `tex-pack`.
-  - [ ] Check `Logo_Amped2` and the course banner in game (user).
+- **RE-Amped2 branding** (README "Branding"). In the pack: title logo
+  `ampedLogo`, the 4 boot splashes, `Logo_Amped2`, course banner
+  `Banneramped2`, `RegisteredTradeMark` (blanked), the level loading screen
+  (splash art, controller pictures and labels blanked, "LOADING ..."
+  stays), and the six font atlases. Masters in `branding/drafts/`, built by
+  `tools/branding/build.py`.
+  - [x] Final wordmark: the user's reconstruction of the R and E, made
+        transparent by `tools/branding/unblack.py` (2026-10-08).
+  - [x] Icon: `branding/RE-Amped2.ico` for the installer, the shortcut and
+        `RE-Amped2.exe` (resource + window class icon, toolkit) (2026-10-08).
+  - [x] Level loading screen with the splash art and "LOADING ..."
+        (2026-10-08, `brand8`).
+  - [x] Sharp text: the font atlases AI-upscaled, alpha included
+        (2026-10-08, `brand7`).
+  - [ ] Text stretched 1.33x wide in the 16:9 mode (the game stretches its
+        4:3 2D layer). Find the text renderer and narrow glyphs by 0.75
+        in widescreen.
+  - [ ] Check `Logo_Amped2` and the course banner in game (user; backlog).
   - [ ] Boot splash: it is presented once, before the background pack
         loader has its DDS, so it shows only with
         `RECOMP_TEXTURE_PACK_SYNC=1`. Load the first frame's textures in
-        place (toolkit).
+        place (toolkit). Fine for now (user).
   - [ ] Intro video `Movies\Intro.xmv`: a sharper re-encode with the new
         logo (user's TODO).
-  - [ ] Icons: replace `installer/assets/amped2.ico` (installer, its
-        window, desktop shortcut) with the badge, simplified at 16-32 px,
-        and give `amped2_recomp.exe` an icon resource (it has none).
+  - [ ] Optional: simpler 16 and 32 px icon frames (the badge is busy
+        there).
 
 ---
 

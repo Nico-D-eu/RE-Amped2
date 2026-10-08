@@ -342,6 +342,10 @@ def cmd_tex_upscale(a):
             pad = max(2, min(16, rgb.shape[0] // 4, rgb.shape[1] // 4))
             mode = "edge" if m["kind"] == "ui" else "wrap"
             Image.fromarray(np.pad(rgb, ((pad, pad), (pad, pad), (0, 0)), mode=mode)).save(work / "in" / (m["name"] + ".png"))
+            if m["kind"] == "font":                   # the glyphs are the alpha: upscale it with the model too
+                a3 = np.repeat(rgba[..., 3:4], 3, 2)
+                Image.fromarray(np.pad(a3, ((pad, pad), (pad, pad), (0, 0)), mode="edge")).save(
+                    work / "in" / (m["name"] + ".alpha.png"))
             pads[m["name"]] = pad
         log(f"upscaling {batch_start + 1}-{batch_start + len(batch)} of {len(ai)} ...")
         cmd = [str(exe), "-i", str(work / "in"), "-o", str(work / "out"), "-m", str(models),
@@ -366,7 +370,13 @@ def cmd_tex_upscale(a):
                 v = rgb.astype(np.float32) / 127.5 - 1.0
                 v /= np.maximum(np.linalg.norm(v, axis=2, keepdims=True), 1e-6)
                 rgb = np.clip((v + 1.0) * 127.5 + 0.5, 0, 255).astype(np.uint8)
-            if m["alpha"]:
+            if m["kind"] == "font" and (work / "out" / (m["name"] + ".alpha.png")).exists():
+                af = np.asarray(Image.open(work / "out" / (m["name"] + ".alpha.png")).convert("L"))[p:-p, p:-p]
+                af = np.asarray(Image.fromarray(af).resize(size, Image.LANCZOS)).astype(np.float32) / 255
+                af = np.clip((af - 0.5) * 1.6 + 0.5, 0, 1)    # crisp glyph edges, not Lanczos blur
+                af[af < 0.03] = 0
+                img = Image.fromarray(np.dstack([rgb, (af * 255 + 0.5).astype(np.uint8)]), "RGBA")
+            elif m["alpha"]:
                 alpha = np.asarray(src.getchannel("A").resize(size, Image.LANCZOS))
                 img = Image.fromarray(np.dstack([rgb, alpha]), "RGBA")
             else:
@@ -670,7 +680,7 @@ def main():
     p = sub.add_parser("tex-upscale"); p.set_defaults(fn=cmd_tex_upscale)
     p.add_argument("--model", default="ultrasharp-4x", help="Upscayl model name (see upscayl resources/models)")
     p.add_argument("--scale", type=int, default=4, choices=(2, 3, 4))
-    p.add_argument("--kinds", default="world,ui,normal,lightmap", help="comma list of world, ui, normal, lightmap, font")
+    p.add_argument("--kinds", default="world,ui,normal,lightmap,font", help="comma list of world, ui, normal, lightmap, font")
     p.add_argument("--min-size", type=int, default=16, help="smaller textures get plain Lanczos")
     p.add_argument("--max-size", type=int, default=4096, help="clamp the upscaled result to this")
     p.add_argument("--filter", help="only textures whose name contains this")

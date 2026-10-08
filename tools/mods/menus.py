@@ -40,6 +40,11 @@ Edits:
      Options.actions stays as it is. src/recomp_manual.c shows and saves
      the values ([Game] ModPacks and TexturePack in amped2.ini; wrappers of
      0x001ED950 and 0x001EDF30).
+  7. The loading screen before a level shows the RE-Amped2 splash art from
+     the texture pack, so its controller labels (the Loading_Controller_*,
+     LoadingMenu_* and Loading_Control*_TextNormal strings) are blanked.
+     "LOADING ..." stays. With the texture pack off, the original controller
+     picture shows without its labels.
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -72,8 +77,8 @@ STRINGS = {
     "MainMenu_Quit": ("MainMenu_ChangeBoarder", {
         "eng": "QUIT GAME", "fre": "QUITTER LE JEU", "ger": "SPIEL BEENDEN"}),
     "MainMenu_Quit_Help": ("MainMenu_ChangeBoarder_Help", {
-        "eng": "Close Amped 2.", "fre": "Fermer Amped 2.",
-        "ger": "Amped 2 beenden."}),
+        "eng": "Close RE-Amped2.", "fre": "Fermer RE-Amped2.",
+        "ger": "RE-Amped2 beenden."}),
     # Options -> Game Options: the PC settings (edit 4).
     "GameOptions_Window": ("GameOptions_Vibration", {
         "eng": "WINDOW", "fre": "FENÊTRE", "ger": "FENSTER"}),
@@ -120,6 +125,19 @@ STRINGS = {
         "fre": "Le pack de textures HD. Effectif au prochain lancement.",
         "ger": "Das HD-Texturpaket. Wirkt nach einem Neustart."}),
 }
+
+# The loading screen before a level (edit 7): the controller labels are
+# blanked (one space, in their own font) because the texture pack draws the
+# RE-Amped2 splash art there instead of the controller pictures
+# (Loading_Background, LoadingScreen2, Loading_Controller, Loading_Controls).
+# "LOADING ..." and the tip screens' text stay.
+BLANK = [f"Loading_Controller_{n}" for n in (
+    "Accelerate", "Butter", "FlipSpin", "Grabs", "JibGrind", "LipTrick", "Pause",
+    "ResetBoarder", "Turn", "andJump")] + [
+    "LoadingMenu_JibSlideRail", "LoadingMenu_LipTrick"] + [
+    f"Loading_Control{n}_TextNormal" for n in (
+        "A", "AA", "B", "Back", "Pad", "RightPad", "Start", "Stick", "Stick2",
+        "White", "X", "Y")]
 
 # Options list (edit 5): the items dropped, and the one added at the end,
 # per list of Scenes/Options.scene.
@@ -381,6 +399,8 @@ def strings():
             table = string_table.read(z.read(name))
             for key, (like, texts) in STRINGS.items():
                 table.set(key, texts[lang], like)
+            for key in BLANK:
+                table.set(key, " ", key)
             path = OVERRIDES / "GuiPackages" / "Base.rui" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(string_table.write(table))
