@@ -1072,8 +1072,84 @@ void sub_001EDF30(void)
     g_esp += 8;                             /* ret 4 */
 }
 
+/* ── Text aspect in the 16:9 mode ─────────────────────────────
+ * The GUI draws on a 640x480 canvas. A scene's root is Scale(W/640, H/480),
+ * (2.0, 1.5) at 1280x720, so text not under an AspectCorrect anchor comes
+ * out 1.33x too wide. Every string goes through Font2dStandardShader::Begin
+ * (0x00248FF0, thiscall: ecx = shader, [esp+4] = text node, [esp+8] = world
+ * with the node's scale folded in, ret 8), which hands the world matrix to
+ * the GUI device (SetWorld, 0x00247D90: a copy at [0x0038CDFC]+0x10, applied
+ * when the glyph batch is drawn). After it, a world whose x axis is longer
+ * than its y axis by the screen's stretch gets its x axis scaled back, about
+ * the node's alignment point, so layout and line breaks stay as they were.
+ * Text under an AspectCorrect anchor is already uniform and is left alone.
+ * Text node: +0x34 box left, +0x38 box right, +0x54 scale, +0x58 bits 0-2
+ * alignment (0 left, 1 centre, 2 right). GUI (G = [0x0038CDF4]): +0x1380
+ * and +0x1384 the screen size. ini [Display] TextAspect=0 turns it off;
+ * AMPED2_TEXT_ASPECT_LOG=1 logs the first strings' matrices. */
+extern void sub_00248FF0_gen(void);
+
+void sub_00248FF0(void)
+{
+    static int on = -1, log_left = -1;
+    uint32_t node = MEM32(g_esp + 4), gui = MEM32(0x0038CDF4), w;
+    float sw, sh, k, l0, l1, L, R, s, xa, t;
+    unsigned align;
+    int i;
+
+    sub_00248FF0_gen();                     /* pops our return and the 2 args */
+    if (on < 0) {
+        const char *e = getenv("AMPED2_TEXT_ASPECT");
+        on = !(e && *e == '0');
+        e = getenv("AMPED2_TEXT_ASPECT_LOG");
+        log_left = (e && *e && *e != '0') ? 400 : 0;
+    }
+    if ((!on && !log_left) || !gui || !node)
+        return;
+    sw = (float)MEM32(gui + 0x1380);
+    sh = (float)MEM32(gui + 0x1384);
+    if (sw <= 0.f || sh <= 0.f)
+        return;
+    k = (sh * 640.f) / (sw * 480.f);        /* 0.75 at 1280x720 */
+    w = MEM32(0x0038CDFC) + 0x10;
+    l0 = sqrtf(MEMF(w) * MEMF(w) + MEMF(w + 4) * MEMF(w + 4) + MEMF(w + 8) * MEMF(w + 8));
+    l1 = sqrtf(MEMF(w + 16) * MEMF(w + 16) + MEMF(w + 20) * MEMF(w + 20) + MEMF(w + 24) * MEMF(w + 24));
+    L = MEMF(node + 0x34); R = MEMF(node + 0x38); s = MEMF(node + 0x54);
+    align = MEM8(node + 0x58) & 7;
+    if (log_left > 0) {
+        static uint32_t seen[512];
+        uint32_t tag = node ^ ((uint32_t)(l0 > 0.f ? l1 / l0 * 100.f : 0.f) << 24), h = tag % 509;
+        if (seen[h] != tag) {
+            uint32_t d = MEM32(0x0038CDFC);
+            seen[h] = tag;
+            log_left--;
+            fprintf(stderr, "  [TEXT] node %08X align %u s %.3f L %.1f R %.1f x %.3f y %.3f ratio %.3f"
+                    " t %.1f %.1f | d50 %.3f %.3f %.3f %.3f d90 %.3f %.3f %.3f %.3f\n",
+                    node, align, s, L, R, l0, l1, l0 > 0.f ? l1 / l0 : 0.f, MEMF(w + 0x30), MEMF(w + 0x34),
+                    MEMF(d + 0x50), MEMF(d + 0x64), MEMF(d + 0x78), MEMF(d + 0x8C),
+                    MEMF(d + 0x90), MEMF(d + 0xA4), MEMF(d + 0xB8), MEMF(d + 0xCC));
+        }
+    }
+    if (!on || k > 0.99f)
+        return;                             /* off, or a 4:3 screen */
+    if (l0 <= 0.f || l1 / l0 > 0.5f * (1.f + k))
+        return;                             /* already uniform */
+    switch (align) {                        /* the anchor, in the node's unscaled units */
+    case 0:  xa = s != 0.f ? L / s : 0.f; break;
+    case 1:  xa = s != 0.f ? 0.5f * (L + R) / s : 0.f; break;
+    case 2:  xa = s != 0.f ? R / s : 0.f; break;
+    default: xa = 0.f;
+    }
+    t = (1.f - k) * xa;                     /* M' = T(-xa) Sx(k) T(xa) M, row vectors */
+    for (i = 0; i < 4; i++) {
+        MEMF(w + 0x30 + 4 * i) += t * MEMF(w + 4 * i);
+        MEMF(w + 4 * i) *= k;
+    }
+}
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
+    if (xbox_va == 0x00248FF0) return sub_00248FF0;  /* text aspect (vtable 0x0036E518) */
     if (xbox_va == AMPED2_QUIT_FN_VA) return amped2_cmd_quit;
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */

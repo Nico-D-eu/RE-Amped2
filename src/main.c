@@ -518,6 +518,9 @@ static const char k_ini_default[] =
     "; FXAA anti-aliasing on the finished picture: 1 on, 0 off (default).\r\n"
     "; Most useful at RenderScale=1; higher scales already smooth edges.\r\n"
     ";FXAA=1\r\n"
+    "; In the 16:9 mode the game stretches its 4:3 menus; 1 (default) draws\r\n"
+    "; their text at its own proportions, 0 leaves it stretched.\r\n"
+    ";TextAspect=1\r\n"
     "\r\n"
     "[Input]\r\n"
     "; default: arrows = d-pad, Z X A S = A B X Y, Q/E = white/black,\r\n"
@@ -728,6 +731,7 @@ static void load_settings(void)
         { "Display", "VideoModes",     "RECOMP_VIDEO_MODES" },
         { "Display", "Anisotropic",    "RECOMP_GPU_ANISO" },
         { "Display", "FXAA",           "RECOMP_GPU_FXAA" },
+        { "Display", "TextAspect",     "AMPED2_TEXT_ASPECT" },
         { "Input",   "KeyboardPreset", "RECOMP_KEYMAP_PRESET" },
         { "Input",   "KeyMap",         "RECOMP_KEYMAP" },
         { "Input",   "DeadZone",       "RECOMP_PAD_DEADZONE" },

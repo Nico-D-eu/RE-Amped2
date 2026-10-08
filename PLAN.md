@@ -527,9 +527,11 @@ Built from existing parts first, then new assets.
         (2026-10-08, `brand8`).
   - [x] Sharp text: the font atlases AI-upscaled, alpha included
         (2026-10-08, `brand7`).
-  - [ ] Text stretched 1.33x wide in the 16:9 mode (the game stretches its
-        4:3 2D layer). Find the text renderer and narrow glyphs by 0.75
-        in widescreen.
+  - [x] Text at its own proportions in the 16:9 mode (2026-10-08,
+        `text1`): wrapper of Font2dStandardShader::Begin `0x00248FF0`
+        narrows stretched text 0.75x about its alignment point (ini
+        `TextAspect`). Images (menu titles, icons) stay stretched; that
+        would need per-scene AspectCorrect anchors.
   - [ ] Check `Logo_Amped2` and the course banner in game (user; backlog).
   - [ ] Boot splash: it is presented once, before the background pack
         loader has its DDS, so it shows only with

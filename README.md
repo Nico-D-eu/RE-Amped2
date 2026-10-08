@@ -166,8 +166,11 @@ folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
 - **Fonts:** the six font atlases (the menu and HUD fonts, built at run time,
   plus `Media/font.xpr` and `XprMedia/Font.xpr`) are in the texture pack. `tex-upscale` upscales
   their alpha, which holds the glyphs, with the AI model and tightens the edges.
-  Text is sharp at any `RenderScale`. In the 16:9 mode the game stretches its
-  4:3 2D layer, text included, 1.33x wider. See PLAN Phase 9, branding.
+  Text is sharp at any `RenderScale`.
+- **Text proportions:** in the 16:9 mode the game stretches its 4:3 2D layer
+  1.33x wide. `TextAspect=1` (default) draws text at its own proportions (see
+  Bring-up notes, "Text aspect in 16:9"). Menu title images and icons stay
+  stretched.
 - **Not covered by textures:** the boot splash is presented once, before the
   background pack loader has it. It shows with `RECOMP_TEXTURE_PACK_SYNC=1`.
   The intro video `Movies\Intro.xmv` has the old logo baked in.
@@ -187,6 +190,7 @@ environment variable that is already set wins over the file.
 | | `VideoModes` | comma list of `480p`, `720p`, `1080i`, `widescreen`, or `none` | `RECOMP_VIDEO_MODES` |
 | | `Anisotropic` | `1` (off) to `16` (default) | `RECOMP_GPU_ANISO` |
 | | `FXAA` | `1` on, `0` off (default); most useful at `RenderScale=1` | `RECOMP_GPU_FXAA` |
+| | `TextAspect` | `1` (default) draws menu/HUD text at its own proportions in 16:9, `0` leaves it stretched | `AMPED2_TEXT_ASPECT` |
 | `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
 | | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
 | | `DeadZone` | `0`–`0.9` (stick dead zone for a controller) | `RECOMP_PAD_DEADZONE` |
@@ -291,6 +295,27 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x0025A120` / `0x0025A15B` — `__SEH_prolog` / `__SEH_epilog` (auto-detected by `tools.recomp`)
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
+
+### Text aspect in 16:9 (2026-10-08)
+
+The GUI lays out on a 640x480 canvas. A scene's root is `Scale(W/640, H/480)`,
+(2.0, 1.5) at 1280x720, so in the 16:9 mode text not under an `AspectCorrect`
+anchor (`RGuiAnchorNode` update `0x000B5410`) is drawn 1.33x too wide; the
+GUI camera's projection is pixel-square. All text goes through
+RGuiTextNode::Render `0x000D2070` → Font2dStandardShader::Begin `0x00248FF0`
+(thiscall, ecx shader, `[esp+4]` text node, `[esp+8]` world with the node's
+scale, ret 8), which passes the world to the GUI device (`[0x0038CDFC]`,
+SetWorld `0x00247D90` keeps a copy at +0x10, used when the glyph batch is
+drawn). `recomp_manual.c` wraps Begin: if the world's x axis is shorter than
+its y axis by less than halfway to the screen stretch (logged: 0.75 for menu
+text at 16:9, 1.0 at 4:3 and under AspectCorrect anchors), x is scaled by
+`(H*640)/(W*480)` about the node's alignment point (+0x34 box left, +0x38
+right, +0x54 scale, +0x58 bits 0-2: 0 left, 1 centre, 2 right). Layout, line
+breaks and highlight bars are unchanged. G = `[0x0038CDF4]`: +0x1380/+0x1384
+screen size. `AMPED2_TEXT_ASPECT_LOG=1` logs 400 distinct node matrices
+(`text169`/`text43` runs). Verified in `text1`: main menu, career, pause, HUD.
+Fonts: `Base.rui Fonts/*.abc` (metrics, parser `0x000C38C0`) with
+`Base.ruirr Fonts/*.xpr` atlases.
 
 ### Built-in HD and widescreen modes (2026-10-07)
 
