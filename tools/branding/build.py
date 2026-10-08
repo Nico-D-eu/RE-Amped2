@@ -1,4 +1,5 @@
-"""RE-Amped2 branding: build the game's replacement textures from the art masters.
+"""RE-Amped2 branding: build the game's replacement textures, the player pack and the
+installer art from the art masters.
 
 The masters are local (branding/drafts/, git-ignored: the user's art and 4x
 upscales): reamped2_wordmark_full.png and reamped2_wordmark_noglow_full.png
@@ -116,4 +117,87 @@ put(b1k, 1780, 860, 300, (60, 60, 70, 255))
 put(b1k, 2100, 860, 64, (60, 60, 70, 255))
 put(b1k.resize((32, 32), Image.LANCZOS).resize((128, 128), Image.NEAREST), 2100, 960, 128)
 sheet.save(OUT / "_preview_sheet.png")
+
+
+# 8. the player pack, branding/pack/ (tracked; the installer puts it in mods\packs\re-amped2):
+#    only textures made from the RE-Amped2 art, nothing derived from the game's own pixels. So
+#    the course banner is drawn from scratch here (the local one above is the original with its
+#    logo painted out), and the sharp fonts stay local. Keys are hashes of the originals.
+def course_banner_drawn(size=1024):
+    """Banneramped2's layout (black strips top and bottom, blue field, two white
+    chevrons each side pointing inwards, logo in the middle), drawn."""
+    from PIL import ImageDraw
+    s = size / 1024
+    yy = np.linspace(0, 1, size)[:, None, None]
+    field = (np.array([10, 30, 120]) * (1 - yy) + np.array([40, 90, 190]) * yy) * np.ones((1, size, 1))
+    img = Image.fromarray(field.astype(np.uint8)).convert("RGBA")
+    def chevron(points):
+        mask = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(mask).polygon([(x * s, y * s) for x, y in points], fill=255)
+        xs = np.linspace(0, 1, size)[None, :, None]
+        grad = (np.array([255, 255, 255]) * (1 - xs) + np.array([150, 185, 230]) * xs) * np.ones((size, 1, 1))
+        if points[0][0] > 512:
+            grad = grad[:, ::-1]
+        layer = Image.fromarray(grad.astype(np.uint8)).convert("RGBA")
+        layer.putalpha(mask)
+        return layer
+    for dx in (0, 135):
+        img = Image.alpha_composite(img, chevron([(dx - 10, 160), (dx + 135, 515), (dx - 10, 870), (dx + 30, 870), (dx + 175, 515), (dx + 30, 160)]))
+        img = Image.alpha_composite(img, chevron([(1034 - dx, 160), (889 - dx, 515), (1034 - dx, 870), (994 - dx, 870), (849 - dx, 515), (994 - dx, 160)]))
+    img = place(img, wm, (262 * s, 400 * s, 772 * s, 640 * s))
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, size, 135 * s), fill=(0, 0, 0, 255))
+    d.rectangle((0, 992 * s, size, size), fill=(0, 0, 0, 255))
+    return img.convert("RGB")
+
+
+import shutil, subprocess, tempfile
+PACK = AMP / "branding" / "pack"
+blank = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+pack = {   # key -> (image, top size)
+    "11078467_512x256_0e": (logo, (2048, 1024)),
+    "2db08caa_128x128_0e": (small, (512, 512)),
+    "c66a31ba_256x256_0e": (course_banner_drawn(), (1024, 1024)),
+    "5e30a78c_512x512_0e": (loading169, (2048, 2048)),
+    "d81012da_16x16_0e": (blank, (64, 64)),
+    **{k: (splash43, (1024, 1024)) for k in ("2c4ed89d_512x512_0c", "4550032c_512x512_0c",
+                                              "2907e9d5_512x512_0c", "437650b8_512x512_0c")},
+    # the loading screen's controller pictures; their labels are blanked by the menu mod, so the
+    # installer leaves these out without it (menu-mod-only.txt)
+    **{k: (blank, (64, 64)) for k in ("49571dfc_512x512_0e", "2ca17dab_512x512_0e", "7556167a_512x512_0e")},
+}
+course_banner_drawn().save(OUT / "pack_course_banner_1024.png")
+shutil.rmtree(PACK / "textures", ignore_errors=True)
+(PACK / "textures").mkdir(parents=True)
+with tempfile.TemporaryDirectory() as d:
+    d = Path(d)
+    for key, (img, size) in pack.items():
+        img.convert("RGBA").resize(size, Image.LANCZOS).save(d / f"{key}.png")
+    subprocess.run([str(AMP / "tools" / "bin" / "texconv.exe"), "-nologo", "-y", "--ignore-srgb", "-f", "BC7_UNORM",
+                    "-m", "0", "-o", str(PACK / "textures"), *[str(p) for p in sorted(d.glob("*.png"))]],
+                   check=True, stdout=subprocess.DEVNULL)
+tails = (AMP / "mods" / "texture_pack" / "tails.txt").read_text().splitlines()
+(PACK / "textures" / "tails.txt").write_text("\n".join(l for l in tails if l.split()[-1] in pack) + "\n")
+(PACK / "menu-mod-only.txt").write_text("49571dfc_512x512_0e\n2ca17dab_512x512_0e\n7556167a_512x512_0e\n")
+mb = sum(p.stat().st_size for p in (PACK / "textures").glob("*.dds")) / 2**20
+print(f"pack: {len(pack)} textures, {mb:.1f} MB in {PACK}")
+
+# 9. installer art (installer/assets/, tracked): the wizard's header, 1600x280 for 800x140 at
+#    200% scaling: the banner with its own logo painted out (work/banner_nologo.png), darkened
+#    towards the edges, the wordmark on the left; and the badge for the Done page.
+ASSETS = AMP / "installer" / "assets"
+ASSETS.mkdir(parents=True, exist_ok=True)
+nl = Image.open(WORK / "banner_nologo.png").convert("RGB")
+HW, HH, sc = 1600, 280, 0.95
+nl = nl.resize((round(nl.width * sc), round(nl.height * sc)), Image.LANCZOS)
+x0 = round(nl.width * 0.481 - HW * 0.47)                  # the rider a little left of centre
+a = np.asarray(nl.crop((x0, 0, x0 + HW, HH))).astype(np.float32)
+xs = np.linspace(0, 1, HW)[None, :, None]
+keep = 1 - 0.8 * np.clip((0.36 - xs) / 0.36, 0, 1) ** 0.7 - 0.6 * np.clip((xs - 0.64) / 0.36, 0, 1) ** 0.8
+a = a * keep + np.array([6, 18, 40], np.float32) * (1 - keep)   # the wizard's Navy
+header = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).convert("RGBA")
+s = 150 / wm.height
+header.alpha_composite(wm.resize((round(wm.width * s), 150), Image.LANCZOS), (40, 18))
+header.convert("RGB").save(ASSETS / "header.jpg", quality=92)
+b1k.resize((192, 192), Image.LANCZOS).save(ASSETS / "badge.png", optimize=True)
 print("done")

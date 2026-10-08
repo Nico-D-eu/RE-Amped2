@@ -533,10 +533,17 @@ Built from existing parts first, then new assets.
         `TextAspect`). Images (menu titles, icons) stay stretched; that
         would need per-scene AspectCorrect anchors.
   - [ ] Check `Logo_Amped2` and the course banner in game (user; backlog).
-  - [ ] Boot splash: it is presented once, before the background pack
-        loader has its DDS, so it shows only with
-        `RECOMP_TEXTURE_PACK_SYNC=1`. Load the first frame's textures in
-        place (toolkit). Fine for now (user).
+  - [x] Boot splash for players (2026-10-08, `ea1`): without the big
+        local pack, `main.c` loads packs in place, so the splash shows.
+        With `mods\texture_pack` it still needs
+        `RECOMP_TEXTURE_PACK_SYNC=1` (fine for now, user).
+  - [x] Early-access installer 0.1.0: the art in the header, the "RE-Amped2
+        look" option installs `branding/pack` as `mods\packs\re-amped2`
+        (2026-10-08).
+  - [ ] Sharp fonts for players: the pack can't carry them (upscaled from
+        the game's own). Generate them on the player's PC instead, e.g.
+        at install time with a run-time dump (`RECOMP_TEXTURE_PACK_DUMP`)
+        and a non-AI upscale.
   - [ ] Intro video `Movies\Intro.xmv`: a sharper re-encode with the new
         logo (user's TODO).
   - [ ] Optional: simpler 16 and 32 px icon frames (the badge is busy

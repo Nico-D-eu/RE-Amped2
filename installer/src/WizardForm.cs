@@ -19,10 +19,12 @@ namespace Amped2Installer
     sealed class WizardForm : Form
     {
         // ── Look ─────────────────────────────────────────────────────
-        static readonly Color Navy = Color.FromArgb(0x0F, 0x1E, 0x2E);
-        static readonly Color NavyLight = Color.FromArgb(0x1A, 0x3A, 0x5A);
-        static readonly Color HeaderSub = Color.FromArgb(0x9F, 0xB7, 0xCC);
-        static readonly Color Accent = Color.FromArgb(0x1E, 0x7F, 0xD8);
+        // From the RE-Amped2 art: the banner's night blue and the logo's glow.
+        static readonly Color Navy = Color.FromArgb(0x06, 0x12, 0x28);
+        static readonly Color NavyLight = Color.FromArgb(0x0C, 0x26, 0x4E);
+        static readonly Color HeaderSub = Color.FromArgb(0xA8, 0xD4, 0xFF);
+        static readonly Color Glow = Color.FromArgb(0x46, 0xB4, 0xFF);
+        static readonly Color Accent = Color.FromArgb(0x16, 0x7E, 0xE6);
         static readonly Color Ink = Color.FromArgb(0x1B, 0x27, 0x33);
         static readonly Color Body = Color.FromArgb(0x3C, 0x4A, 0x57);
         static readonly Color Muted = Color.FromArgb(0x6B, 0x7A, 0x88);
@@ -47,6 +49,7 @@ namespace Amped2Installer
         readonly Label[] _stepLabels = new Label[4];
         readonly Button _back, _next, _cancel;
         readonly Label _version;
+        readonly Image _headerArt, _badge;
         readonly Panel[] _pages = new Panel[4];
         int _page;
 
@@ -58,8 +61,8 @@ namespace Amped2Installer
 
         // ── Page 2: location ─────────────────────────────────────────
         TextBox _dirBox;
-        Label _spaceLabel, _existingLabel, _toolsNote;
-        CheckBox _shortcutBox, _menuBox;
+        Label _spaceLabel, _existingLabel, _toolsNote, _timeNote;
+        CheckBox _shortcutBox, _menuBox, _lookBox;
         TableLayoutPanel _toolsList;
         LinkLabel _recheck;
         Toolchain _tools;
@@ -69,7 +72,7 @@ namespace Amped2Installer
         readonly List<(Label Mark, Label Title, int Stage)> _stageRows = new List<(Label, Label, int)>();
         TableLayoutPanel _stageTable;
         ProgressBar _bar;
-        Label _detail, _elapsed;
+        Label _detail, _elapsed, _installIntro;
         LinkLabel _detailsToggle;
         TextBox _logBox;
         InstallJob _job;
@@ -91,7 +94,7 @@ namespace Amped2Installer
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(800, 600);
+            ClientSize = new Size(800, 650);   // the header art is 140 tall
             try
             {
                 using (var s = typeof(WizardForm).Assembly.GetManifestResourceStream("RE-Amped2.ico"))
@@ -99,26 +102,13 @@ namespace Amped2Installer
             }
             catch (Exception) { }
 
-            // Header: title on the left, the four steps on the right.
-            _header = new DoubleBufferedPanel { Dock = DockStyle.Top, Height = 96 };
+            _headerArt = LoadImage("header.jpg");
+            _badge = LoadImage("badge.png");
+
+            // Header: the RE-Amped2 art (logo on the left; PaintHeader adds the
+            // early-access tag and subtitle under it), the four steps on the right.
+            _header = new DoubleBufferedPanel { Dock = DockStyle.Top, Height = 140 };
             _header.Paint += PaintHeader;
-            var title = new Label
-            {
-                Text = "RE-AMPED2",
-                Font = new Font("Segoe UI Black", 22f, FontStyle.Italic),
-                ForeColor = Color.White,
-                BackColor = Color.Transparent,
-                AutoSize = true,
-                Location = new Point(26, 14),
-            };
-            var subtitle = new Label
-            {
-                Text = "PC installer \u00B7 builds the game from your own disc",
-                ForeColor = HeaderSub,
-                BackColor = Color.Transparent,
-                AutoSize = true,
-                Location = new Point(30, 60),
-            };
             var steps = new FlowLayoutPanel
             {
                 AutoSize = true,
@@ -140,11 +130,10 @@ namespace Amped2Installer
                 _stepLabels[i].Paint += PaintStepUnderline;
                 steps.Controls.Add(_stepLabels[i]);
             }
-            _header.Controls.Add(title);
-            _header.Controls.Add(subtitle);
             _header.Controls.Add(steps);
             _header.Layout += (s, e) =>
-                steps.Location = new Point(_header.ClientSize.Width - steps.Width - 22, 38);
+                steps.Location = new Point(_header.ClientSize.Width - steps.Width - 22,
+                                           (_header.ClientSize.Height - steps.Height) / 2);
 
             // Footer: Back / Next / Cancel.
             _footer = new Panel { Dock = DockStyle.Bottom, Height = 56, BackColor = FooterBg };
@@ -165,7 +154,7 @@ namespace Amped2Installer
             buttons.Controls.AddRange(new Control[] { _cancel, _next, _back });
             _version = new Label
             {
-                Text = "v" + typeof(WizardForm).Assembly.GetName().Version.ToString(3),
+                Text = "v" + typeof(WizardForm).Assembly.GetName().Version.ToString(3) + " · Early Access",
                 ForeColor = Muted,
                 Font = _small,
                 AutoSize = true,
@@ -236,6 +225,8 @@ namespace Amped2Installer
             Add(page, _isoAdvice);
 
             AddFill(page);
+            Add(page, Para("Early access: RE-Amped2 is a work in progress, so expect bugs and rough edges. " +
+                           "Tell us what you run into on Patreon; the last page has the link.", Body, _small));
             Add(page, Para("No game files come with this installer: it needs your own legally owned copy of the game. " +
                            "You can also drag the disc image onto this window.", Muted, _small));
             return Wrap(page);
@@ -322,13 +313,22 @@ namespace Amped2Installer
             Add(page, _shortcutBox);
             _menuBox = new CheckBox
             {
-                Text = "Add the menu improvements (Quit Game in the main menu, Window and Resolution in Game Options)",
+                Text = "Add the RE-Amped2 menus (Quit Game, Window and Resolution settings, a Mods screen, no button hints)",
                 Checked = true,
                 AutoSize = true,
                 Margin = new Padding(0, 2, 0, 12),
             };
             _menuBox.CheckedChanged += (s, e) => { ShowTools(); UpdateButtons(); };
             Add(page, _menuBox);
+            _lookBox = new CheckBox
+            {
+                Text = "Use the RE-Amped2 look (new logo, start-up splash and loading screen)",
+                Checked = true,
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 12),
+            };
+            Add(page, _lookBox);
+            _menuBox.Margin = new Padding(0, 2, 0, 2);
 
             var toolsHead = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 0, 4) };
             toolsHead.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -348,8 +348,8 @@ namespace Amped2Installer
             Add(page, _toolsNote);
 
             AddFill(page);
-            Add(page, Para("Installing takes from about 10 minutes to an hour, depending on your PC; most of it is compiling. " +
-                           "You can keep using your PC meanwhile, though it will be busy.", Muted, _small));
+            _timeNote = Para(TimeNote(null), Muted, _small);
+            Add(page, _timeNote);
             return Wrap(page);
         }
 
@@ -440,9 +440,20 @@ namespace Amped2Installer
             }, TaskScheduler.FromCurrentSynchronizationContext());
         }
 
+        /// <summary>The install-time estimate for this PC, from the tools still missing.</summary>
+        int EstimateMinutes() =>
+            InstallJob.EstimateMinutes(_tools == null ? Enumerable.Empty<ToolStatus>()
+                                                      : _tools.Describe(_menuBox.Checked).Where(t => !t.Found && t.CanInstall));
+
+        string TimeNote(int? minutes) =>
+            (minutes == null ? "Installing takes about 10 to 25 minutes, depending on your PC"
+                             : $"Installing takes about {minutes} minutes on this PC") +
+            "; most of it is compiling. You can keep using your PC meanwhile, though it will be busy.";
+
         void ShowTools()
         {
             if (_tools == null || _detecting) return;
+            _timeNote.Text = TimeNote(EstimateMinutes());
             _toolsList.SuspendLayout();
             _toolsList.Controls.Clear();
             _toolsList.RowStyles.Clear();
@@ -578,8 +589,8 @@ namespace Amped2Installer
         {
             var page = NewPage();
             Add(page, Heading("Installing RE-Amped2"));
-            Add(page, Para("Sit back: the installer is building RE-Amped2 from your disc image, right here on your PC. " +
-                           "This takes a while; the compiling step is the longest."));
+            _installIntro = Para("");
+            Add(page, _installIntro);
 
             _stageTable = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 0, 12) };
             _stageTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 26));
@@ -632,7 +643,10 @@ namespace Amped2Installer
                 InstallDir = _dirBox.Text.Trim(),
                 DesktopShortcut = _shortcutBox.Checked,
                 MenuMod = _menuBox.Checked,
+                Look = _lookBox.Checked,
             };
+            _installIntro.Text = "Sit back: the installer is building RE-Amped2 from your disc image, right here on your PC. " +
+                                 $"Approx. {EstimateMinutes()} minutes, please be patient; the compiling step is the longest.";
             try
             {
                 using (var k = Registry.CurrentUser.CreateSubKey(RegKey))
@@ -762,7 +776,20 @@ namespace Amped2Installer
 
             if (r.Success)
             {
-                Add(page, Heading("RE-Amped2 is ready to ride"));
+                var title = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Margin = new Padding(0, 0, 0, 6) };
+                if (_badge != null)
+                    title.Controls.Add(new PictureBox
+                    {
+                        Image = _badge,
+                        SizeMode = PictureBoxSizeMode.Zoom,
+                        Size = new Size(56, 56),
+                        Margin = new Padding(0, 0, 12, 0),
+                    }, 0, 0);
+                var heading = Heading("RE-Amped2 is ready to ride");
+                heading.Anchor = AnchorStyles.Left;
+                heading.Margin = new Padding(0);
+                title.Controls.Add(heading, 1, 0);
+                Add(page, title);
                 var summary = new LinkLabel { AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, ForeColor = Body, Margin = new Padding(0, 0, 0, 12) };
                 string head = $"Built from your Amped 2 ({_disc.RegionName}) disc in {Minutes(r.Duration)} and {(r.WasUpdate ? "updated in" : "installed to")} ";
                 summary.Text = head + r.InstallDir + ".";
@@ -779,8 +806,9 @@ namespace Amped2Installer
                     "Play with an Xbox-style controller or the keyboard: arrow keys steer, Z X A S are the A B X Y buttons, Enter is Start.",
                     "F11 or Alt+Enter switches between a window and full screen.",
                     r.MenuModInstalled
-                        ? "Options \u203A Game Options has Window and Resolution settings, and the main menu has Quit Game."
+                        ? "Options and Mods \u203A Game Options has Window and Resolution settings, and the main menu has Quit Game."
                         : "More settings (window size, resolution, controls) are in amped2.ini in the install folder, created when the game first starts.",
+                    "This is an early-access build: expect bugs. If something goes wrong, the install folder's amped2.log helps us find out why.",
                     "Your career progress is saved in the game\\UDATA folder inside the install folder. Running this installer again keeps it.",
                     "README.txt in the install folder has all of this to look up later.",
                 };
@@ -790,9 +818,9 @@ namespace Amped2Installer
                 foreach (var tip in tips)
                     Add(page, Bullet(tip));
 
-                Add(page, PatreonBox("Enjoying the ride?",
-                    "Follow the project on Patreon for updates, news and help from the community. " +
-                    "Donations keep the work going, but they're entirely optional."));
+                Add(page, PatreonBox("Tell us how it rides",
+                    "Early-access feedback goes to Patreon: bugs, crashes, anything that looks off. It's also where " +
+                    "updates and news appear. Donations keep the work going, but they're entirely optional."));
 
                 _launchBox = new CheckBox { Text = "Start RE-Amped2 now", Checked = true, AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
                 Add(page, _launchBox);
@@ -885,7 +913,7 @@ namespace Amped2Installer
                 _pages[p].Visible = p == i;
             for (int s = 0; s < 4; s++)
             {
-                _stepLabels[s].ForeColor = s == i ? Color.White : s < i ? Color.FromArgb(0x7F, 0xD1, 0xA8) : Color.FromArgb(0x6E, 0x83, 0x96);
+                _stepLabels[s].ForeColor = s == i ? Color.White : s < i ? Color.FromArgb(0x7F, 0xD1, 0xA8) : Color.FromArgb(0x8A, 0xA4, 0xC0);
                 _stepLabels[s].Font = s == i ? _bold : _base;
                 _stepLabels[s].Invalidate();
             }
@@ -1064,17 +1092,55 @@ namespace Amped2Installer
             var r = _header.ClientRectangle;
             using (var bg = new LinearGradientBrush(r, Navy, NavyLight, LinearGradientMode.Horizontal))
                 g.FillRectangle(bg, r);
-            // A snowy ridge along the bottom edge.
+            if (_headerArt != null)
+            {
+                // tools/branding/build.py makes it 1600x280, for 800x140 at 200%: scale to cover.
+                float s = Math.Max(r.Width / (float)_headerArt.Width, r.Height / (float)_headerArt.Height);
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.DrawImage(_headerArt, 0, 0, _headerArt.Width * s, _headerArt.Height * s);
+            }
+            using (var p = new Pen(Glow, 2)) g.DrawLine(p, 0, r.Height - 1, r.Width, r.Height - 1);
+
+            // Under the logo: an EARLY ACCESS tag and the subtitle.
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            float w = r.Width, h = r.Height;
-            var far = new[] { new PointF(0, h), new PointF(w * 0.18f, h * 0.62f), new PointF(w * 0.30f, h * 0.80f),
-                              new PointF(w * 0.47f, h * 0.45f), new PointF(w * 0.63f, h * 0.78f), new PointF(w * 0.80f, h * 0.38f),
-                              new PointF(w, h * 0.70f), new PointF(w, h) };
-            var near = new[] { new PointF(0, h), new PointF(w * 0.10f, h * 0.88f), new PointF(w * 0.36f, h * 0.70f),
-                               new PointF(w * 0.55f, h * 0.92f), new PointF(w * 0.74f, h * 0.66f), new PointF(w, h * 0.90f),
-                               new PointF(w, h) };
-            using (var b = new SolidBrush(Color.FromArgb(18, Color.White))) g.FillPolygon(b, far);
-            using (var b = new SolidBrush(Color.FromArgb(30, Color.White))) g.FillPolygon(b, near);
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            float scale = r.Height / 140f, x = 22 * scale, y = 94 * scale;
+            using (var tagFont = new Font("Segoe UI", 7.5f, FontStyle.Bold))
+            {
+                const string tag = "EARLY ACCESS";
+                var size = g.MeasureString(tag, tagFont);
+                var box = new RectangleF(x, y, size.Width + 8 * scale, size.Height + 2 * scale);
+                using (var path = Rounded(box, 4 * scale))
+                using (var b = new SolidBrush(Glow))
+                    g.FillPath(b, path);
+                using (var b = new SolidBrush(Navy))
+                    g.DrawString(tag, tagFont, b, x + 4 * scale, y + 1 * scale);
+                using (var b = new SolidBrush(HeaderSub))
+                    g.DrawString("Builds the game from your own disc", _small, b, x - 1 * scale, box.Bottom + 3 * scale);
+            }
+        }
+
+        static GraphicsPath Rounded(RectangleF r, float radius)
+        {
+            var p = new GraphicsPath();
+            float d = radius * 2;
+            p.AddArc(r.X, r.Y, d, d, 180, 90);
+            p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            p.CloseFigure();
+            return p;
+        }
+
+        static Image LoadImage(string name)
+        {
+            try
+            {
+                using (var s = typeof(WizardForm).Assembly.GetManifestResourceStream(name))
+                    return s == null ? null : new Bitmap(Image.FromStream(s));
+            }
+            catch (Exception) { return null; }
         }
 
         void PaintStepUnderline(object sender, PaintEventArgs e)
@@ -1082,7 +1148,7 @@ namespace Amped2Installer
             var label = (Label)sender;
             int i = Array.IndexOf(_stepLabels, label);
             if (i != _page) return;
-            using (var b = new SolidBrush(Color.FromArgb(0x3F, 0xA9, 0xF5)))
+            using (var b = new SolidBrush(Glow))
                 e.Graphics.FillRectangle(b, 0, label.Height - 3, label.Width, 3);
         }
 
@@ -1092,6 +1158,8 @@ namespace Amped2Installer
             {
                 _timer.Dispose();
                 foreach (var f in new[] { _base, _bold, _h1, _small, _mono }) f.Dispose();
+                _headerArt?.Dispose();
+                _badge?.Dispose();
             }
             base.Dispose(disposing);
         }

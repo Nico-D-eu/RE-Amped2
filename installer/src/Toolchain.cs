@@ -95,7 +95,7 @@ namespace Amped2Installer
                 list.Add(new ToolStatus
                 {
                     Name = "Java",
-                    Purpose = "needed only for the menu improvements",
+                    Purpose = "needed only for the RE-Amped2 menus",
                     Found = JavaExe != null,
                     FoundAs = JavaExe != null ? "Java" : null,
                     CanInstall = winget,
@@ -321,7 +321,7 @@ namespace Amped2Installer
             }
             if (wantJava && again.JavaExe == null)
             {
-                status("Installing Java (for the menu improvements)");
+                status("Installing Java (for the RE-Amped2 menus)");
                 try
                 {
                     Winget(again, "Microsoft.OpenJDK.21", "", log, ct);

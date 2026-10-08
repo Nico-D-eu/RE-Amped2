@@ -40,7 +40,10 @@
 - Logo, splash, loading screen, fonts and icon: see README "Branding". The
   icon is `branding/RE-Amped2.ico` (tracked). The art masters are in
   `branding/drafts/` (git-ignored). Rebuild with `tools/branding/build.py`,
-  then `tex-pack`. Never `tex-pack --force` by accident: it recompresses all
+  then `tex-pack`. `build.py` also writes the player pack `branding/pack/`
+  and the installer art `installer/assets/` (both tracked; commit them with
+  art changes). Only RE-Amped2 art goes in `branding/pack/`, nothing
+  derived from the game's pixels: the installer ships it. Never `tex-pack --force` by accident: it recompresses all
   ~3400 textures (about an hour).
 
 ## Conventions

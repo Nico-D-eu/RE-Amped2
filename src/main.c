@@ -1264,6 +1264,13 @@ static void mod_packs(void)
         ini_set("RECOMP_OVERLAY_DIR", overlays);
     if (!getenv("RECOMP_TEXTURE_PACK") && !(tex && *tex == '0'))
         ini_set("RECOMP_TEXTURE_PACK", packs);
+    /* Without the big local pack (mods\texture_pack: thousands of large DDS,
+     * which the toolkit loads off the render thread) only small packs are
+     * left, such as the installer's RE-Amped2 pack. Load those in place, so
+     * textures drawn for a single frame -- the boot splash -- show too. */
+    if (!getenv("RECOMP_TEXTURE_PACK_SYNC")
+            && GetFileAttributesA("mods\\texture_pack") == INVALID_FILE_ATTRIBUTES)
+        ini_set("RECOMP_TEXTURE_PACK_SYNC", "1");
 }
 
 /*

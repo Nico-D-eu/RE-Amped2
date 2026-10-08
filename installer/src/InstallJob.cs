@@ -17,6 +17,7 @@ namespace Amped2Installer
         public string InstallDir;
         public bool DesktopShortcut;
         public bool MenuMod;
+        public bool Look;            // the RE-Amped2 texture pack (branding\pack)
     }
 
     sealed class InstallResult
@@ -25,7 +26,7 @@ namespace Amped2Installer
         public string FailedStage, Error, Advice;
         public TimeSpan Duration;
         public string InstallDir, ExePath, LogPath;
-        public bool ShortcutCreated, MenuModInstalled;
+        public bool ShortcutCreated, MenuModInstalled, LookInstalled;
         public string MenuModNote;                       // why the menu improvements were skipped
         public List<string> Warnings = new List<string>();
     }
@@ -56,7 +57,7 @@ namespace Amped2Installer
             "Preparing the recompiler",
             "Translating the game's code for Windows",
             "Compiling the game",
-            "Adding the menu improvements",
+            "Adding the RE-Amped2 menus",
             "Finishing up",
         };
 
@@ -125,6 +126,7 @@ namespace Amped2Installer
                 StageBuild();
                 StageMenuMod(r);
                 StageFinish(r);
+                InstallLook(r);
                 r.Success = true;
                 Log("Installation finished.");
             }
@@ -187,7 +189,7 @@ namespace Amped2Installer
             Log($"CMake:   {_tools.CMakeExe} ({_tools.CMakeGenerator})");
             Log($"Java:    {_tools.JavaExe ?? "(none)"}");
             if (_o.MenuMod && _tools.JavaExe == null)
-                r.MenuModNote = "Java couldn't be installed, so the menu improvements were left out.";
+                r.MenuModNote = "Java couldn't be installed, so the RE-Amped2 menus were left out.";
         }
 
         void StageExtract()
@@ -405,7 +407,7 @@ namespace Amped2Installer
                 return;   // MenuModNote already says why
             if (!_menuPackages)
             {
-                r.MenuModNote = "The menu tools couldn't be downloaded, so the menu improvements were left out.";
+                r.MenuModNote = "The menu tools couldn't be downloaded, so the RE-Amped2 menus were left out.";
                 return;
             }
 
@@ -422,7 +424,7 @@ namespace Amped2Installer
             var built = Path.Combine(Amped2, @"mods\build\game");
             if (code != 0 || !Directory.Exists(built))
             {
-                r.MenuModNote = "The menu improvements couldn't be added (the install log has the details).";
+                r.MenuModNote = "The RE-Amped2 menus couldn't be added (the install log has the details).";
                 return;
             }
 
@@ -485,15 +487,63 @@ namespace Amped2Installer
             SetFraction(1);
         }
 
+        /// <summary>
+        /// The RE-Amped2 look: branding\pack\textures (replacements made from the
+        /// RE-Amped2 art only, keyed by the originals' hashes) as the mod pack
+        /// mods\packs\re-amped2, listed in mods\mods.json. The loading screen's
+        /// controller pictures are blanked only together with their labels, which
+        /// the menu mod blanks (menu-mod-only.txt). Unticked, an update removes it.
+        /// </summary>
+        void InstallLook(InstallResult r)
+        {
+            const string name = "re-amped2";
+            var packDir = Path.Combine(Dest, @"mods\packs", name);
+            var json = Path.Combine(Dest, @"mods\mods.json");
+            var packs = new List<string>();
+            if (File.Exists(json))
+                foreach (Match m in Regex.Matches(File.ReadAllText(json), "\"([^\"]+)\""))
+                    if (m.Groups[1].Value != "packs" && m.Groups[1].Value != name)
+                        packs.Add(m.Groups[1].Value);
+            if (Directory.Exists(packDir))
+                Directory.Delete(packDir, true);
+            try
+            {
+                if (_o.Look)
+                {
+                    var src = Path.Combine(Amped2, @"branding\pack");
+                    CopyDirectory(Path.Combine(src, "textures"), Path.Combine(packDir, "textures"));
+                    var only = Path.Combine(src, "menu-mod-only.txt");
+                    if (!r.MenuModInstalled && File.Exists(only))
+                        foreach (var key in File.ReadAllLines(only).Where(k => k.Trim().Length > 0))
+                            TryDelete(Path.Combine(packDir, "textures", key.Trim() + ".dds"));
+                    packs.Insert(0, name);
+                    r.LookInstalled = true;
+                }
+                Directory.CreateDirectory(Path.GetDirectoryName(json));
+                File.WriteAllText(json, "{ \"packs\": [" + string.Join(", ", packs.Select(n => "\"" + n + "\"")) + "] }\r\n");
+            }
+            catch (Exception e)
+            {
+                Log("RE-Amped2 look failed: " + e);
+                r.Warnings.Add("The RE-Amped2 look couldn't be added; the game shows its original logo and splash.");
+            }
+        }
+
         // ── Files ────────────────────────────────────────────────────
 
         void WriteReadme()
         {
             var text = new StringBuilder()
-                .AppendLine("RE-AMPED2: Amped 2 for Windows")
-                .AppendLine("==============================")
+                .AppendLine("RE-AMPED2: Amped 2 for Windows (early access)")
+                .AppendLine("=============================================")
                 .AppendLine()
                 .AppendLine("Start the game with RE-Amped2.exe (or the desktop shortcut).")
+                .AppendLine()
+                .AppendLine("Early access")
+                .AppendLine("  This is a test build of a work in progress: expect bugs and rough edges.")
+                .AppendLine("  Report problems on Patreon (link below). Say what you were doing, and")
+                .AppendLine("  attach amped2.log from this folder; it is rewritten on every start, so")
+                .AppendLine("  copy it before starting the game again.")
                 .AppendLine()
                 .AppendLine("Controls")
                 .AppendLine("  An Xbox-style controller works out of the box.")
@@ -504,7 +554,10 @@ namespace Amped2Installer
                 .AppendLine("  F3 shows the frame rate.")
                 .AppendLine()
                 .AppendLine("Settings")
-                .AppendLine("  Options > Game Options has WINDOW and RESOLUTION (with the menu improvements).")
+                .AppendLine("  Options and Mods > Game Options has WINDOW and RESOLUTION (with the RE-Amped2")
+                .AppendLine("  menus), and Options and Mods > Mods turns the mod packs and textures on or off.")
+                .AppendLine("  The RE-Amped2 look (logo, splash, loading screen) is the mod pack in")
+                .AppendLine("  mods\\packs\\re-amped2, listed in mods\\mods.json.")
                 .AppendLine("  amped2.ini in this folder holds every setting; it is created the first time")
                 .AppendLine("  the game starts. Remove the ; in front of a line to use it.")
                 .AppendLine()
@@ -615,7 +668,7 @@ namespace Amped2Installer
             Log($"RE-Amped2 installer {typeof(InstallJob).Assembly.GetName().Version}, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             Log($"Windows {Environment.OSVersion.Version}, {Environment.ProcessorCount} cores, {TotalRamGb():0.#} GB RAM");
             Log($"Disc image: {_o.Disc.IsoPath} ({_o.Disc.Title}, {_o.Disc.RegionName})");
-            Log($"Install to: {Dest}  shortcut={_o.DesktopShortcut} menus={_o.MenuMod}");
+            Log($"Install to: {Dest}  shortcut={_o.DesktopShortcut} menus={_o.MenuMod} look={_o.Look}");
         }
 
         void Log(string line)
@@ -642,6 +695,23 @@ namespace Amped2Installer
         static string PowerShellExe => Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
 
         /// <summary>Parallel compiler jobs for the generated chunks: one per core, about 3 GB of RAM each, 2 to 8.</summary>
+        /// <summary>
+        /// Rough install time in minutes for this PC, rounded up to 5. Measured
+        /// 2026-10-08 on 16 cores / 32 GB with every tool present: 6 minutes
+        /// (disc and setup 0.5, translating 2.5, compiling 3 with 8 jobs). An
+        /// average tester's PC is taken as 1.5x slower per job; compiling scales
+        /// with the jobs CompileJobs allows. Tools to download add their time
+        /// (Visual Studio Build Tools is the big one).
+        /// </summary>
+        public static int EstimateMinutes(IEnumerable<ToolStatus> missing)
+        {
+            const double slower = 1.5;
+            double m = 0.5 + 2.5 * slower + 3.0 * 8.0 / CompileJobs() * slower;
+            foreach (var t in missing)
+                m += t.Name.StartsWith("Visual Studio") ? 15 : 3;
+            return Math.Max(10, (int)Math.Ceiling(m / 5) * 5);
+        }
+
         static int CompileJobs()
         {
             int byRam = (int)(TotalRamGb() / 3);

@@ -156,6 +156,18 @@ folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
     blanks their labels (edit 7), so only the game's "LOADING ..." shows;
   - `RegisteredTradeMark` is blanked, because the title placed its "®" for the
     old logo.
+- **For players:** `branding/pack/` (tracked, 15 MB) holds the same art as
+  `<key>.dds` and `tails.txt`. It contains only textures made from the
+  RE-Amped2 art. The course banner in it is drawn from scratch, since the
+  local one is Microsoft's texture with its logo painted out, and the sharp
+  fonts stay local because they are upscaled from the game's own. The
+  installer puts the pack in `mods\packs\re-amped2` and lists it in
+  `mods.json` (the "RE-Amped2 look" checkbox). Without `mods\texture_pack`,
+  `main.c` sets `RECOMP_TEXTURE_PACK_SYNC=1`: with only small packs, loading
+  in place costs nothing, and the boot splash, drawn for one frame, then
+  shows too. `build.py` also makes the installer's header and badge
+  (`installer/assets/`). After changing the art, rebuild and commit
+  `branding/pack/` and `installer/assets/`.
 - **Masters** are local and git-ignored, in `branding/drafts/`: the user's art.
   These are `reamped2_wordmark_full.png` and `..._noglow_full.png` (the logo,
   transparent) and `work/` (4x upscales of the banner and badge, and the course
@@ -171,8 +183,9 @@ folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
   1.33x wide. `TextAspect=1` (default) draws text at its own proportions (see
   Bring-up notes, "Text aspect in 16:9"). Menu title images and icons stay
   stretched.
-- **Not covered by textures:** the boot splash is presented once, before the
-  background pack loader has it. It shows with `RECOMP_TEXTURE_PACK_SYNC=1`.
+- **Not covered by textures:** with the big local pack, the boot splash is
+  presented once, before the background loader has it. It shows with
+  `RECOMP_TEXTURE_PACK_SYNC=1` (automatic without `mods\texture_pack`).
   The intro video `Movies\Intro.xmv` has the old logo baked in.
 
 ## Settings (`amped2.ini`)
