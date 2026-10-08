@@ -1,6 +1,6 @@
-# Amped 2 installer
+# RE-Amped2 installer
 
-`Amped2-Setup.exe` is the player-facing way to get the recomp: a four-step
+`RE-Amped2-Setup.exe` is the player-facing way to get the recomp: a four-step
 wizard that builds the game on the player's PC from their own disc image.
 No game code or data is in it; it carries this project's sources, the
 xboxrecomp toolkit and xdvdfs (3.8 MB in all).
@@ -10,7 +10,7 @@ xboxrecomp toolkit and xdvdfs (3.8 MB in all).
 1. **Disc.** Pick the `.iso`/`.xiso` (or drop it on the window or on the
    `.exe`). The image is checked with `xdvdfs`: it must list, and its
    `default.xbe` must carry title ID `0x4D530041`. USA and Europe both pass.
-2. **Location.** Install folder (default `C:\Games\Amped 2`, or the last
+2. **Location.** Install folder (default `C:\Games\RE-Amped2`, or the last
    one used), a desktop-shortcut checkbox and a menu-improvements checkbox.
    The page lists the build tools: found, will be installed (winget), or
    missing with a download link. Folders under Program Files or Windows are
@@ -34,7 +34,7 @@ All work happens in `<install>\_install_temp`, removed at the end.
 | Translate | `tools\regen.ps1 -Python <venv python>` (steps 2–5; no Ghidra, so no FidDb names, which the build does not need). |
 | Compile | `cmake -G "<that VS>" -A x64 -DCMAKE_GENERATOR_INSTANCE=... -DAMPED2_MP_JOBS=<cores, RAM/3 GB, 2..8>`, then `cmake --build --config Release --parallel`. |
 | Menu mod | `tools\mods\menus.py` with Java on PATH; `mods\build\game` is copied to `<install>\mods\build\game`. A failure here only skips the mod. |
-| Finish | `Amped2.exe` (+ `amped2_recomp.pdb` for the crash handler), `Amped2.ico`, `README.txt`, `install-info.txt` (sources' commits), desktop shortcut. |
+| Finish | `RE-Amped2.exe` (+ `RE-Amped2.pdb` for the crash handler), `RE-Amped2.ico`, `README.txt`, `install-info.txt` (sources' commits), desktop shortcut. An install from before the rename to RE-Amped2 loses its `Amped2.exe`, `Amped2.ico`, `amped2_recomp.pdb` and `Amped 2` desktop shortcut. |
 
 Cleanup removes the junction on its own first and checks it is gone before
 deleting the work folder, so the delete can never reach `game\`.
@@ -55,7 +55,7 @@ It packs `obj\payload.zip` from the working trees of `amped2` (minus
 `installer\` and `.claude\`) and `..\xboxrecomp` (git-tracked plus untracked,
 not ignored, so never `game\`, `mods\`, generated code or build output),
 `tools\bin\unluac.jar` and `..\xdvdfs.exe`, then builds
-`installer\dist\Amped2-Setup.exe`. Uncommitted changes are included;
+`installer\dist\RE-Amped2-Setup.exe`. Uncommitted changes are included;
 `manifest.txt` in the payload (and `install-info.txt` after an install)
 records the commits with `+modified`. Commit both repos first for a release.
 

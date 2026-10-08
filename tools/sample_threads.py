@@ -1,5 +1,5 @@
 """
-Where is each thread of a running amped2_recomp.exe spending its time?
+Where is each thread of a running RE-Amped2.exe spending its time?
 
 A poor man's profiler for hangs: start the exe (or attach to a running one),
 wait, then repeatedly suspend every thread, read its host RIP, and map it
@@ -26,7 +26,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXE = os.path.join(ROOT, "build", "Release", "amped2_recomp.exe")
+EXE = os.path.join(ROOT, "build", "Release", "RE-Amped2.exe")
 
 k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 dbg = ctypes.WinDLL("dbghelp", use_last_error=True)

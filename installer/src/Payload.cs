@@ -41,7 +41,7 @@ namespace Amped2Installer
             {
                 if (_scratch == null)
                 {
-                    _scratch = Path.Combine(Path.GetTempPath(), "Amped2Setup-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                    _scratch = Path.Combine(Path.GetTempPath(), "RE-Amped2-Setup-" + Guid.NewGuid().ToString("N").Substring(0, 8));
                     Directory.CreateDirectory(_scratch);
                 }
                 return _scratch;

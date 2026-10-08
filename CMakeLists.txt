@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 # ============================================================================
-# Amped 2 (Europe, Australia) - Static Recompilation
+# RE-Amped2 - Static Recompilation of Amped 2 (USA; Europe, Australia)
 #
 # Title ID 0x4D530041, XDK 5558, built 2003-10-03 (Microsoft Game Studios).
 # Built on the xboxrecomp toolkit, cloned next to this directory.
@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.20)
 # src/recomp_manual.c instead.
 # ============================================================================
 
-project(amped2_recomp C)
+project(RE-Amped2 C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

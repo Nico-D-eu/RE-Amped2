@@ -38,7 +38,16 @@ namespace Amped2Installer
     /// </summary>
     sealed class InstallJob
     {
-        public const string ExeName = "Amped2.exe";
+        public const string ExeName = "RE-Amped2.exe";
+
+        /// <summary>The game's files before the rename to RE-Amped2; an update removes them.</summary>
+        public const string LegacyExeName = "Amped2.exe";
+        static readonly string[] LegacyFiles = { LegacyExeName, "Amped2.ico", "amped2_recomp.pdb" };
+        const string LegacyShortcut = "Amped 2.lnk";
+
+        /// <summary>Whether <paramref name="dir"/> holds an install, under either name.</summary>
+        public static bool IsInstalledIn(string dir) =>
+            File.Exists(Path.Combine(dir, ExeName)) || File.Exists(Path.Combine(dir, LegacyExeName));
 
         public static readonly string[] StageTitles =
         {
@@ -105,7 +114,7 @@ namespace Amped2Installer
             try
             {
                 Directory.CreateDirectory(Dest);
-                r.WasUpdate = File.Exists(Path.Combine(Dest, ExeName));
+                r.WasUpdate = IsInstalledIn(Dest);
                 OpenLog();
                 SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);   // no sleep mid-build
 
@@ -376,7 +385,7 @@ namespace Amped2Installer
                     if (error.IsMatch(line) && errors.Count < 10)
                         errors.Add(line.Trim());
                 }, Ct, env);
-            var exe = Path.Combine(BuildDir, @"Release\amped2_recomp.exe");
+            var exe = Path.Combine(BuildDir, "Release", ExeName);
             if (code != 0 || !File.Exists(exe))
             {
                 if (errors.Count > 0)
@@ -431,20 +440,23 @@ namespace Amped2Installer
             var exe = Path.Combine(Dest, ExeName);
             try
             {
-                File.Copy(Path.Combine(BuildDir, @"Release\amped2_recomp.exe"), exe, true);
+                File.Copy(Path.Combine(BuildDir, "Release", ExeName), exe, true);
             }
             catch (IOException e) when (IsLocked(e))
             {
-                throw new UserFacingException("Amped 2 is still running.", "Close the game, then run the installer again.", e);
+                throw new UserFacingException("RE-Amped2 is still running.", "Close the game, then run the installer again.", e);
             }
             // The crash handler names guest functions from the .pdb, found by
             // the name the linker recorded.
-            var pdb = Path.Combine(BuildDir, @"Release\amped2_recomp.pdb");
+            var pdbName = Path.ChangeExtension(ExeName, ".pdb");
+            var pdb = Path.Combine(BuildDir, "Release", pdbName);
             if (File.Exists(pdb))
-                File.Copy(pdb, Path.Combine(Dest, "amped2_recomp.pdb"), true);
+                File.Copy(pdb, Path.Combine(Dest, pdbName), true);
+            foreach (var old in LegacyFiles)
+                TryDelete(Path.Combine(Dest, old));
             r.ExePath = exe;
 
-            var icon = Path.Combine(Dest, "Amped2.ico");
+            var icon = Path.Combine(Dest, "RE-Amped2.ico");
             using (var s = typeof(InstallJob).Assembly.GetManifestResourceStream("amped2.ico"))
             using (var f = File.Create(icon))
                 s.CopyTo(f);
@@ -459,8 +471,9 @@ namespace Amped2Installer
                 Detail = "Creating the desktop shortcut";
                 try
                 {
-                    Shortcut.Create(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Amped 2.lnk"),
-                                    exe, Dest, icon, "Amped 2");
+                    var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                    Shortcut.Create(Path.Combine(desktop, "RE-Amped2.lnk"), exe, Dest, icon, "RE-Amped2");
+                    TryDelete(Path.Combine(desktop, LegacyShortcut));   // pointed at the old exe
                     r.ShortcutCreated = true;
                 }
                 catch (Exception e)
@@ -477,10 +490,10 @@ namespace Amped2Installer
         void WriteReadme()
         {
             var text = new StringBuilder()
-                .AppendLine("AMPED 2 for Windows")
-                .AppendLine("===================")
+                .AppendLine("RE-AMPED2: Amped 2 for Windows")
+                .AppendLine("==============================")
                 .AppendLine()
-                .AppendLine("Start the game with Amped2.exe (or the desktop shortcut).")
+                .AppendLine("Start the game with RE-Amped2.exe (or the desktop shortcut).")
                 .AppendLine()
                 .AppendLine("Controls")
                 .AppendLine("  An Xbox-style controller works out of the box.")
@@ -596,10 +609,10 @@ namespace Amped2Installer
             }
             catch (Exception)
             {
-                _logPath = Path.Combine(Path.GetTempPath(), "Amped2-install.log");
+                _logPath = Path.Combine(Path.GetTempPath(), "RE-Amped2-install.log");
                 _log = new StreamWriter(_logPath, false, Encoding.UTF8) { AutoFlush = true };
             }
-            Log($"Amped 2 installer {typeof(InstallJob).Assembly.GetName().Version}, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            Log($"RE-Amped2 installer {typeof(InstallJob).Assembly.GetName().Version}, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             Log($"Windows {Environment.OSVersion.Version}, {Environment.ProcessorCount} cores, {TotalRamGb():0.#} GB RAM");
             Log($"Disc image: {_o.Disc.IsoPath} ({_o.Disc.Title}, {_o.Disc.RegionName})");
             Log($"Install to: {Dest}  shortcut={_o.DesktopShortcut} menus={_o.MenuMod}");
@@ -646,7 +659,7 @@ namespace Amped2Installer
             else if (e is UnauthorizedAccessException)
             {
                 r.Error = "The installer isn't allowed to write to the install folder.";
-                r.Advice = "Choose a folder you own, such as C:\\Games\\Amped 2 or one in your user folder.";
+                r.Advice = "Choose a folder you own, such as C:\\Games\\RE-Amped2 or one in your user folder.";
             }
             else
             {

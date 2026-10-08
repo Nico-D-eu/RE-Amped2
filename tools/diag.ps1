@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    One diagnostic run of amped2_recomp.exe with a set of runtime switches.
+    One diagnostic run of RE-Amped2.exe with a set of runtime switches.
 
 .DESCRIPTION
     Sets the given RECOMP_* environment variables for this run only, runs the
@@ -32,8 +32,8 @@ param(
     # use their unlocks without the run's autosaves changing their progress.
     [switch]$KeepSave,
     # Another build of the exe in build\Release, e.g. a copy taken so a rebuild
-    # can relink amped2_recomp.exe while this run is going.
-    [string]$ExeName = 'amped2_recomp.exe'
+    # can relink RE-Amped2.exe while this run is going.
+    [string]$ExeName = 'RE-Amped2.exe'
 )
 
 $ErrorActionPreference = 'Stop'

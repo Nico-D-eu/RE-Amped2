@@ -1,6 +1,6 @@
-# Amped 2 — Static Recompilation
+# RE-Amped2 — Static Recompilation of Amped 2
 
-A static recompilation of **Amped 2** (Microsoft Game Studios / Indie Built,
+**RE-Amped2** is a static recompilation of **Amped 2** (Microsoft Game Studios / Indie Built,
 2003) for the original Xbox, built on the
 [xboxrecomp](https://github.com/sp00nznet/xboxrecomp) toolkit. The XBE's x86
 code is lifted to C and compiled into a native Windows executable that links the
@@ -18,7 +18,7 @@ recompilation/
 ├── Ghidra/                Ghidra 12.0.3 (+ ghidra-xbe in the user profile), for naming
 ├── xdvdfs.exe             disc extractor
 └── amped2/                ← this project
-    ├── CMakeLists.txt     builds amped2_recomp.exe, add_subdirectory(../xboxrecomp)
+    ├── CMakeLists.txt     builds RE-Amped2.exe, add_subdirectory(../xboxrecomp)
     ├── tools/regen.ps1    runs the whole pipeline and regenerates src/recomp/gen
     ├── src/
     │   ├── main.c         host entry: loads the XBE, boots kernel/memory, calls the guest
@@ -82,7 +82,7 @@ Things worth knowing going in:
 | 5 Recompile | `tools.recomp --split 250 --exclude-manual` | 14,714 generated + 1 hand-written, 0 failed; 2.06M lines in 59 chunks (~78 MB); 109 unresolved call targets stubbed |
 | — Health | `tools/doctor.py` | 348 unimplemented instructions (`outsb`, `das`, `popal`, `bound`, `arpl`…), mostly data decoded as code; each is a `RECOMP_UNIMPL` no-op that logs if reached |
 | 6 Project | template customised | entry point + paths set in `main.c` |
-| 7 Build | CMake + MSVC 19.51 (VS 2026) | builds `amped2_recomp.exe` + `.pdb`, 0 errors, ~20 min full rebuild |
+| 7 Build | CMake + MSVC 19.51 (VS 2026) | builds `RE-Amped2.exe` + `.pdb`, 0 errors, ~20 min full rebuild |
 
 ## Regenerating
 
@@ -106,7 +106,7 @@ x64 + Windows SDK) and CMake 3.20+.
 ```powershell
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64
 cmake --build build --config Release --parallel
-.\build\Release\amped2_recomp.exe 2> stderr.txt   # run from this directory
+.\build\Release\RE-Amped2.exe 2> stderr.txt   # run from this directory
 ```
 
 Release builds carry a `.pdb` (`/Zi /DEBUG`), which the crash handler needs to
@@ -124,11 +124,11 @@ capture the boot trace. It will crash on first run. That is expected; see
 
 ## Installer (for players)
 
-`installer\build.ps1` makes `installer\dist\Amped2-Setup.exe`, a single-file
+`installer\build.ps1` makes `installer\dist\RE-Amped2-Setup.exe`, a single-file
 wizard that does all of the above on a player's PC: they pick their disc
 image and a folder, it installs any missing build tools with winget,
 extracts the disc, runs `regen.ps1` and the build, adds the menu mod, and
-installs `Amped2.exe` with a desktop shortcut. It carries no game data. See
+installs `RE-Amped2.exe` with a desktop shortcut. It carries no game data. See
 `installer\README.md`.
 
 ## Settings (`amped2.ini`)
@@ -337,8 +337,8 @@ names the loop:
 Next diagnostics, each a single run:
 
 ```powershell
-$env:RECOMP_WATCHDOG_SECS=8; $env:RECOMP_PB_EXEC=1;      .\build\Release\amped2_recomp.exe 2> stderr.txt
-$env:RECOMP_WATCHDOG_SECS=8; $env:RECOMP_AC97_READY=1;   .\build\Release\amped2_recomp.exe 2> stderr.txt
+$env:RECOMP_WATCHDOG_SECS=8; $env:RECOMP_PB_EXEC=1;      .\build\Release\RE-Amped2.exe 2> stderr.txt
+$env:RECOMP_WATCHDOG_SECS=8; $env:RECOMP_AC97_READY=1;   .\build\Release\RE-Amped2.exe 2> stderr.txt
 ```
 
 Note: the watchdog calls `_exit(3)` after its dump, so a watchdog run ending

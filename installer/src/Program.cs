@@ -19,14 +19,14 @@ namespace Amped2Installer
             {
                 if (!first)
                 {
-                    MessageBox.Show("The Amped 2 installer is already running.", "Amped 2 Installer",
+                    MessageBox.Show("The RE-Amped2 installer is already running.", "RE-Amped2 Installer",
                                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
                 }
                 if (!Payload.Available)
                 {
                     MessageBox.Show("This installer is incomplete: its built-in files are missing. Please download it again.",
-                                    "Amped 2 Installer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                                    "RE-Amped2 Installer", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 try
@@ -47,7 +47,7 @@ namespace Amped2Installer
         static void Fail(Exception e)
         {
             MessageBox.Show("Something unexpected went wrong in the installer:\n\n" + e?.Message,
-                            "Amped 2 Installer", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                            "RE-Amped2 Installer", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

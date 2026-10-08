@@ -85,7 +85,7 @@ namespace Amped2Installer
         public WizardForm()
         {
             SuspendLayout();
-            Text = "Amped 2 Installer";
+            Text = "RE-Amped2 Installer";
             Font = _base;
             BackColor = Color.White;
             FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -104,7 +104,7 @@ namespace Amped2Installer
             _header.Paint += PaintHeader;
             var title = new Label
             {
-                Text = "AMPED 2",
+                Text = "RE-AMPED2",
                 Font = new Font("Segoe UI Black", 22f, FontStyle.Italic),
                 ForeColor = Color.White,
                 BackColor = Color.Transparent,
@@ -303,7 +303,7 @@ namespace Amped2Installer
         Panel BuildLocationPage()
         {
             var page = NewPage();
-            Add(page, Heading("Where should Amped 2 go?"));
+            Add(page, Heading("Where should RE-Amped2 go?"));
             Add(page, Para("Choose a folder you own. The game keeps its saves and settings in this folder, " +
                            "so folders inside Program Files won't work."));
 
@@ -362,14 +362,14 @@ namespace Amped2Installer
                         return previous;
             }
             catch (Exception) { }
-            return Path.Combine(Path.GetPathRoot(Environment.SystemDirectory), @"Games\Amped 2");
+            return Path.Combine(Path.GetPathRoot(Environment.SystemDirectory), @"Games\RE-Amped2");
         }
 
         void BrowseDir()
         {
             using (var dlg = new FolderBrowserDialog
             {
-                Description = "Choose the folder to install Amped 2 in. A folder named \"Amped 2\" is created inside it.",
+                Description = "Choose the folder to install RE-Amped2 in. A folder named \"RE-Amped2\" is created inside it.",
                 ShowNewFolderButton = true,
             })
             {
@@ -383,10 +383,11 @@ namespace Amped2Installer
                 catch (Exception) { }
                 if (dlg.ShowDialog(this) != DialogResult.OK) return;
                 var chosen = dlg.SelectedPath;
-                // Picking C:\Games means C:\Games\Amped 2, unless it already is one.
-                if (!File.Exists(Path.Combine(chosen, InstallJob.ExeName)) &&
-                    !Path.GetFileName(chosen.TrimEnd('\\')).StartsWith("Amped", StringComparison.OrdinalIgnoreCase))
-                    chosen = Path.Combine(chosen, "Amped 2");
+                // Picking C:\Games means C:\Games\RE-Amped2, unless it already is one
+                // (or an "Amped 2" folder from before the rename).
+                if (!InstallJob.IsInstalledIn(chosen) &&
+                    Path.GetFileName(chosen.TrimEnd('\\')).IndexOf("Amped", StringComparison.OrdinalIgnoreCase) < 0)
+                    chosen = Path.Combine(chosen, "RE-Amped2");
                 _dirBox.Text = chosen;
             }
         }
@@ -408,13 +409,13 @@ namespace Amped2Installer
                 var drive = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(dir)));
                 _spaceLabel.ForeColor = drive.AvailableFreeSpace >= NeededBytes() ? Muted : Bad;
                 _spaceLabel.Text = $"Needs about {InstallJob.Gb(NeededBytes())} \u00B7 {InstallJob.Gb(drive.AvailableFreeSpace)} free on {drive.Name.TrimEnd('\\')}";
-                if (File.Exists(Path.Combine(dir, InstallJob.ExeName)))
-                    _existingLabel.Text = "Amped 2 is already installed here. It will be updated; your saves and settings are kept.";
+                if (InstallJob.IsInstalledIn(dir))
+                    _existingLabel.Text = "RE-Amped2 is already installed here. It will be updated; your saves and settings are kept.";
             }
             catch (Exception)
             {
                 _spaceLabel.ForeColor = Bad;
-                _spaceLabel.Text = "Enter a full folder path, such as C:\\Games\\Amped 2.";
+                _spaceLabel.Text = "Enter a full folder path, such as C:\\Games\\RE-Amped2.";
             }
             UpdateButtons();
         }
@@ -507,12 +508,12 @@ namespace Amped2Installer
             }
             catch (Exception)
             {
-                Warn("Please enter a full folder path, such as C:\\Games\\Amped 2.");
+                Warn("Please enter a full folder path, such as C:\\Games\\RE-Amped2.");
                 return false;
             }
             if (dir.Length <= 3)
             {
-                Warn("Please choose a folder, not the top of a drive (for example " + Path.Combine(dir, "Games\\Amped 2") + ").");
+                Warn("Please choose a folder, not the top of a drive (for example " + Path.Combine(dir, "Games\\RE-Amped2") + ").");
                 return false;
             }
             foreach (var special in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86, Environment.SpecialFolder.Windows })
@@ -521,16 +522,16 @@ namespace Amped2Installer
                 if (sp.Length > 0 && dir.StartsWith(sp, StringComparison.OrdinalIgnoreCase))
                 {
                     Warn("The game saves its progress and settings in its own folder, which Windows doesn't allow inside " + sp +
-                         ".\n\nPlease choose another folder, such as C:\\Games\\Amped 2.");
+                         ".\n\nPlease choose another folder, such as C:\\Games\\RE-Amped2.");
                     return false;
                 }
             }
 
-            bool existing = File.Exists(Path.Combine(dir, InstallJob.ExeName));
+            bool existing = InstallJob.IsInstalledIn(dir);
             if (!existing && Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any() &&
                 !File.Exists(Path.Combine(dir, @"game\default.xbe")))
             {
-                if (MessageBox.Show(this, $"The folder {dir} isn't empty.\n\nInstall Amped 2 into it anyway?", "Amped 2 Installer",
+                if (MessageBox.Show(this, $"The folder {dir} isn't empty.\n\nInstall RE-Amped2 into it anyway?", "RE-Amped2 Installer",
                                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                     return false;
             }
@@ -544,7 +545,7 @@ namespace Amped2Installer
             }
             catch (Exception)
             {
-                Warn("The installer can't write to " + dir + ".\n\nPlease choose a folder you own, such as C:\\Games\\Amped 2.");
+                Warn("The installer can't write to " + dir + ".\n\nPlease choose a folder you own, such as C:\\Games\\RE-Amped2.");
                 return false;
             }
 
@@ -560,9 +561,10 @@ namespace Amped2Installer
             }
             catch (Exception) { }
 
-            if (Process.GetProcessesByName(Path.GetFileNameWithoutExtension(InstallJob.ExeName)).Length > 0)
+            if (Process.GetProcessesByName(Path.GetFileNameWithoutExtension(InstallJob.ExeName)).Length > 0 ||
+                Process.GetProcessesByName(Path.GetFileNameWithoutExtension(InstallJob.LegacyExeName)).Length > 0)
             {
-                Warn("Amped 2 is running. Close the game first, then click Install again.");
+                Warn("RE-Amped2 is running. Close the game first, then click Install again.");
                 return false;
             }
 
@@ -575,8 +577,8 @@ namespace Amped2Installer
         Panel BuildInstallPage()
         {
             var page = NewPage();
-            Add(page, Heading("Installing Amped 2"));
-            Add(page, Para("Sit back: the installer is building Amped 2 from your disc image, right here on your PC. " +
+            Add(page, Heading("Installing RE-Amped2"));
+            Add(page, Para("Sit back: the installer is building RE-Amped2 from your disc image, right here on your PC. " +
                            "This takes a while; the compiling step is the longest."));
 
             _stageTable = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 0, 12) };
@@ -709,7 +711,7 @@ namespace Amped2Installer
         {
             if (_page == 2 && _job != null && _job.Result == null)
             {
-                if (MessageBox.Show(this, "Stop the installation?\n\nYou can run the installer again later.", "Amped 2 Installer",
+                if (MessageBox.Show(this, "Stop the installation?\n\nYou can run the installer again later.", "RE-Amped2 Installer",
                                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                     return;
                 _cancelRequested = true;
@@ -727,7 +729,7 @@ namespace Amped2Installer
             {
                 e.Cancel = true;
                 if (_cancelRequested) return;
-                if (MessageBox.Show(this, "Stop the installation and close the installer?", "Amped 2 Installer",
+                if (MessageBox.Show(this, "Stop the installation and close the installer?", "RE-Amped2 Installer",
                                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 {
                     _cancelRequested = true;
@@ -760,7 +762,7 @@ namespace Amped2Installer
 
             if (r.Success)
             {
-                Add(page, Heading("Amped 2 is ready to ride"));
+                Add(page, Heading("RE-Amped2 is ready to ride"));
                 var summary = new LinkLabel { AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, ForeColor = Body, Margin = new Padding(0, 0, 0, 12) };
                 string head = $"Built from your Amped 2 ({_disc.RegionName}) disc in {Minutes(r.Duration)} and {(r.WasUpdate ? "updated in" : "installed to")} ";
                 summary.Text = head + r.InstallDir + ".";
@@ -772,7 +774,7 @@ namespace Amped2Installer
                 var tips = new List<string>
                 {
                     r.ShortcutCreated
-                        ? "Start the game with the Amped 2 shortcut on your desktop."
+                        ? "Start the game with the RE-Amped2 shortcut on your desktop."
                         : $"Start the game with {InstallJob.ExeName} in the install folder.",
                     "Play with an Xbox-style controller or the keyboard: arrow keys steer, Z X A S are the A B X Y buttons, Enter is Start.",
                     "F11 or Alt+Enter switches between a window and full screen.",
@@ -792,16 +794,16 @@ namespace Amped2Installer
                     "Follow the project on Patreon for updates, news and help from the community. " +
                     "Donations keep the work going, but they're entirely optional."));
 
-                _launchBox = new CheckBox { Text = "Start Amped 2 now", Checked = true, AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
+                _launchBox = new CheckBox { Text = "Start RE-Amped2 now", Checked = true, AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
                 Add(page, _launchBox);
             }
             else if (r.Cancelled)
             {
                 Add(page, Heading("Installation cancelled"));
                 Add(page, Para(r.WasUpdate
-                    ? "The installation was stopped before it finished. Your existing Amped 2 and its saves are still there; " +
+                    ? "The installation was stopped before it finished. Your existing RE-Amped2 and its saves are still there; " +
                       "run the installer again whenever you like to update it."
-                    : "The installation was stopped before it finished, so Amped 2 isn't ready to play yet. " +
+                    : "The installation was stopped before it finished, so RE-Amped2 isn't ready to play yet. " +
                       $"Run the installer again to finish, or delete {r.InstallDir} if you've changed your mind."));
                 AddLogLink(page, r);
             }
@@ -1054,7 +1056,7 @@ namespace Amped2Installer
             return b;
         }
 
-        void Warn(string text) => MessageBox.Show(this, text, "Amped 2 Installer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        void Warn(string text) => MessageBox.Show(this, text, "RE-Amped2 Installer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 
         void PaintHeader(object sender, PaintEventArgs e)
         {

@@ -1,5 +1,5 @@
 /**
- * Amped 2 - Recompiled Game Entry Point
+ * RE-Amped2 - Recompiled Game Entry Point
  *
  * This is the Windows executable that hosts the recompiled game code.
  * It performs the following initialization sequence:
@@ -493,7 +493,7 @@ void amped2_stderr_drain(void)
  * still override any of them. Written with its defaults (all commented out)
  * the first time the game starts without one. */
 static const char k_ini_default[] =
-    "; Amped 2 settings. Lines starting with ; are comments; remove the ; to\r\n"
+    "; RE-Amped2 settings. Lines starting with ; are comments; remove the ; to\r\n"
     "; change a setting. Restart the game to apply.\r\n"
     "\r\n"
     "[Display]\r\n"
@@ -836,7 +836,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (!getenv("RECOMP_GPU_ANISO"))
         _putenv("RECOMP_GPU_ANISO=16");
     if (!getenv("RECOMP_WINDOW_TITLE"))
-        _putenv("RECOMP_WINDOW_TITLE=Amped 2");
+        _putenv("RECOMP_WINDOW_TITLE=RE-Amped2");
 
     /* Runtime switches Amped 2 cannot boot without, as defaults. They must be
      * set before xbox_MemoryLayoutInit, which reads them. Anything already in
@@ -900,7 +900,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Mods (file overlays and texture packs): set up by mod_packs() once
      * find_game_root has made the project root the working directory. */
 
-    printf("=== Amped 2 - Static Recompilation ===\n");
+    printf("=== RE-Amped2 - Static Recompilation of Amped 2 ===\n");
     printf("Loading XBE...\n");
 
     /* Install VEH handler (first handler in chain) */
@@ -1088,7 +1088,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
  * working directory once fixes all of them together. The current directory
  * is tried first, so an explicit launch from anywhere with its own game\
  * still wins; then the .exe's directory and up to four of its parents, which
- * covers build\Release\amped2_recomp.exe finding amped2\game.
+ * covers build\Release\RE-Amped2.exe finding amped2\game.
  *
  * `searched` receives the directories tried, one per line, for the error.
  */

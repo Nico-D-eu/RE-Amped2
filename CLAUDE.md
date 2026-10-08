@@ -1,4 +1,4 @@
-# Amped 2 recomp: working rules for Claude
+# RE-Amped2: working rules for Claude
 
 ## Git
 

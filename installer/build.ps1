@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Builds installer\dist\Amped2-Setup.exe, the player-facing installer.
+    Builds installer\dist\RE-Amped2-Setup.exe, the player-facing installer.
 
 .DESCRIPTION
     1. Packs obj\payload.zip:
@@ -103,6 +103,6 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed' }
 
 $dist = Join-Path $Installer 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
-Copy-Item (Join-Path $Installer 'bin\Release\Amped2-Setup.exe') $dist -Force
-$exe = Join-Path $dist 'Amped2-Setup.exe'
+Copy-Item (Join-Path $Installer 'bin\Release\RE-Amped2-Setup.exe') $dist -Force
+$exe = Join-Path $dist 'RE-Amped2-Setup.exe'
 Write-Host ("`nBuilt {0} ({1:N1} MB)" -f $exe, ((Get-Item $exe).Length / 1MB)) -ForegroundColor Green

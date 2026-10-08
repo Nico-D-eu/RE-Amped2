@@ -1,4 +1,4 @@
-# Amped 2 recompilation: project plan
+# RE-Amped2: project plan
 
 **Goal:** a native Windows build of *Amped 2* (USA disc since 2026-10-07; the EU
 one works too; `0x4D530041`) that plays
