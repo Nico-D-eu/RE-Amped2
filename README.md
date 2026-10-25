@@ -195,6 +195,9 @@ and the result stays there.
 
 - [Developer guide](docs/DEVELOPING.md): the recompilation pipeline,
   building from source, the installer, and the bring-up notes.
+- [Nico-D-eu/xboxrecomp](https://github.com/Nico-D-eu/xboxrecomp), branch
+  `amped2-fixes`: the toolkit fork with RE-Amped2's changes. The build
+  expects it in a sibling folder, `../xboxrecomp`.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to help. The one rule is never to
   submit game files or anything made from them.
 - [AGENTS.md](AGENTS.md): rules for AI coding agents.
