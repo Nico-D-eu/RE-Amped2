@@ -52,7 +52,7 @@ $GenDir  = Join-Path $Project 'src\recomp\gen'
 $Seeds   = Join-Path $Project 'config\seed_functions.json'
 
 if (-not (Test-Path $Xbe)) {
-    throw "No XBE at $Xbe -- extract the disc first (see README.md)."
+    throw "No XBE at $Xbe -- extract the disc first (see docs/DEVELOPING.md)."
 }
 
 function Invoke-Step([string]$Name, [scriptblock]$Body) {

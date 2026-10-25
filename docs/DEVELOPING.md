@@ -1,0 +1,1236 @@
+# RE-Amped2: developer guide
+
+How the recompilation is built, how the pipeline and the installer work, and
+the bring-up notes: what was found, at which address, and how it was fixed.
+For playing, see the [README](../README.md). For the rules on contributing,
+see [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md).
+
+## Layout
+
+```
+recompilation/
+├── xboxrecomp/            toolkit (libraries + Python pipeline), sibling of this dir
+├── Ghidra/                Ghidra 12.0.3 (+ ghidra-xbe in the user profile), for naming
+├── xdvdfs.exe             disc extractor
+└── amped2/                ← this project
+    ├── CMakeLists.txt     builds RE-Amped2.exe, add_subdirectory(../xboxrecomp)
+    ├── tools/regen.ps1    runs the whole pipeline and regenerates src/recomp/gen
+    ├── src/
+    │   ├── main.c         host entry: loads the XBE, boots kernel/memory, calls the guest
+    │   ├── recomp_manual.c hand-written overrides + ICALL diagnostics
+    │   └── recomp/gen/    generated C (git-ignored)
+    └── game/              extracted disc (git-ignored)
+```
+
+## Title facts
+
+From `py -3 -m tools.xbe_parser` (full output in `game/default_analysis.json`):
+
+| | |
+|---|---|
+| Release | **USA** (since 2026-10-07); Europe, Australia (En, Fr, De) also works |
+| Title ID | `0x4D530041` — retail, DVD_X2 |
+| Built | 2003-10-03, XDK **1.0.5558** — internal codename *Yeti* (`c:\depot\yeti\...\YetiGame\Default.exe`) |
+| Image | base `0x00010000`, size `0x003E9520` |
+| Entry point | **`0x00254899`** |
+| Kernel thunks | `0x00336DE0`, 158 kernel imports |
+| `.text` | `0x00011000`, 2.49 MB |
+| XDK code sections | DSOUND, XONLINE, XNET, XMV, WMADEC, XACTENG, XGRPH, D3D, XPP, DOLBY, XON_RD |
+| Libraries | XAPILIB, LIBCMT, DSOUND, XONLINES, XVOICE, XMV, D3D8LTCG, XGRAPHCL, XACTENLT |
+
+**Either disc works.** The USA and PAL XBEs are the same build: same entry
+point, layout, imports and code, apart from one byte (at `0x0025543A`),
+and all 720 data files are identical. The certificates differ (region
+`0x1` vs `0x4`, ratings, keys). The port runs from extracted files and has
+no disc drive, so XAPI's start-up drive check `sub_00255202` is answered
+directly in `recomp_manual.c`. That way `game/` can hold either disc and
+`regen.ps1` works from either `default.xbe`. The exe prints which one it
+loaded (`XBE region: ...`).
+
+Other executables on the disc (`Boom.xbe`, `cdx.xbe`, `update.xbe`,
+`dashupdate.xbe`) are not part of the port; only `default.xbe` is recompiled.
+
+Things worth knowing going in:
+
+- **Custom engine, not RenderWare.** `func_id` finds no RW modules, so the
+  RenderWare-specific tooling does not apply.
+- **D3D8LTCG.** The D3D library is link-time-code-generated, so its functions do
+  not have the standard XDK shapes. See
+  `xboxrecomp/docs/technical/d3d8ltcg-device-context.md`.
+- **Xbox Live and networking** (XONLINE, XNET, XVOICE) are linked in. Expect to
+  stub or force-return the online paths during bring-up.
+- **XACT audio engine and WMA decoder** (XACTENG, WMADEC) are present alongside
+  DSOUND. Audio is likely a later-stage problem.
+- **XMV video** is used for FMVs (`Movies/`); see `tools.xmv`.
+
+## Pipeline status
+
+| Step | Tool | Result |
+|---|---|---|
+| 1 Extract | `xdvdfs unpack` | 719 files, 4.25 GB → `game/` |
+| 2 Parse | `tools.xbe_parser` | `game/default_analysis.json` |
+| 3 Disassemble | `tools.disasm` (all code sections) + `config/seed_functions.json` | 14,715 functions |
+| 4 Identify | `tools.func_id` | 17,843 classified; 11 CRT, 0 RW, 7,407 unknown |
+| 4.5 ABI | `tools.abi_analysis` | 14,714 entries, 2,590 thiscall |
+| 4.6 Names | Ghidra headless + `merge_names.py` | 190 FidDb CRT/XDK names, all on function starts |
+| 5 Recompile | `tools.recomp --split 250 --exclude-manual` | 14,714 generated + 1 hand-written, 0 failed; 2.06M lines in 59 chunks (~78 MB); 109 unresolved call targets stubbed |
+| — Health | `tools/doctor.py` | 348 unimplemented instructions (`outsb`, `das`, `popal`, `bound`, `arpl`…), mostly data decoded as code; each is a `RECOMP_UNIMPL` no-op that logs if reached |
+| 6 Project | template customised | entry point + paths set in `main.c` |
+| 7 Build | CMake + MSVC 19.51 (VS 2026) | builds `RE-Amped2.exe` + `.pdb`, 0 errors, ~20 min full rebuild |
+
+## Regenerating
+
+From PowerShell in this directory:
+
+```powershell
+.\tools\regen.ps1                 # steps 2-5, reusing the cached Ghidra export
+.\tools\regen.ps1 -Ghidra         # also re-run the headless Ghidra analysis
+.\tools\regen.ps1 -SkipAnalysis   # only re-run the recompiler
+.\tools\regen.ps1 -SkipAnalysis -RecompArgs '--force-return','0x00123456=0'
+```
+
+The disassembler rewrites `functions.json` from scratch each time, which drops
+the Ghidra names; the script re-applies them after step 3 for that reason.
+
+## Building
+
+Requires Visual Studio with the **Desktop development with C++** workload (MSVC
+x64 + Windows SDK) and CMake 3.20+.
+
+```powershell
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+cmake --build build --config Release --parallel
+.\build\Release\RE-Amped2.exe 2> stderr.txt   # run from this directory
+```
+
+Release builds carry a `.pdb` (`/Zi /DEBUG`), which the crash handler needs to
+name the faulting guest function. The generated chunks compile 4 at a time
+(`/MP4`); raise it with `-DAMPED2_MP_JOBS=8` if you have memory to spare. Peak
+use at 4 stayed under ~1 GB of the 16 GB machine this was built on.
+
+The `.exe` finds `game\default.xbe` itself. It tries the working directory
+first, then the `.exe`'s folder and its parents, so a double-click in
+`build\Release` finds `amped2\game`. It is a GUI-subsystem app, so a
+double-click shows no log. Run it from a terminal with `2> stderr.txt` to
+capture the boot trace. It will crash on first run. That is expected; see
+`xboxrecomp/docs/GETTING_STARTED.md` step 8 and
+`xboxrecomp/docs/pipeline/06-debugging.md`.
+
+## Installer (for players)
+
+`installer\build.ps1` makes `installer\dist\RE-Amped2-Setup.exe`, a single-file
+wizard that does all of the above on a player's PC: they pick their disc
+image and a folder, it installs any missing build tools with winget,
+extracts the disc, runs `regen.ps1` and the build, adds the menu mod, and
+installs `RE-Amped2.exe` with a desktop shortcut. It carries no game data. See
+`installer\README.md`.
+
+## Branding
+
+Players see the port as **RE-Amped2**: `RE-Amped2.exe`, `RE-Amped2-Setup.exe`,
+the window title, the shortcut and new menu text ("Close RE-Amped2."). "Amped 2"
+means the original game only. Internal names stay as they are: the `amped2/`
+folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
+
+- **Icon:** `branding/RE-Amped2.ico` (16-256 px, from the RE-Amped2 badge). It is
+  `RE-Amped2.exe`'s icon resource (`src/RE-Amped2.rc`), which xboxrecomp's
+  game and video windows load for their title bar and taskbar button. It is
+  also the installer's icon, its window's, and the installed `RE-Amped2.ico`
+  the desktop shortcut uses.
+- **In-game art** comes through the texture pack. `tools/branding/build.py`
+  writes these into `mods/textures/edit/` under the original names, and
+  `tex-pack` packs them:
+  - the title logo (`ampedLogo`), the small sponsor-style logo (`Logo_Amped2`)
+    and the course banner (`Banneramped2`), all with the RE-Amped2 wordmark;
+  - the four boot splashes (`splash_eng/fre/ger/jan`). The game draws these
+    4:3 with side bars, so they are laid out at 4:3;
+  - the loading screen before a level. `Loading_Background` (stretched to
+    16:9) gets the splash art, and the controller pictures are blanked
+    (`LoadingScreen2`, `Loading_Controller`, `Loading_Controls`). The menu mod
+    blanks their labels (edit 7), so only the game's "LOADING ..." shows;
+  - `RegisteredTradeMark` is blanked, because the title placed its "®" for the
+    old logo.
+- **For players:** `branding/pack/` (tracked, 15 MB) holds the same art as
+  `<key>.dds` and `tails.txt`. It contains only textures made from the
+  RE-Amped2 art. The course banner in it is drawn from scratch, since the
+  local one is Microsoft's texture with its logo painted out, and the sharp
+  fonts stay local because they are upscaled from the game's own. The
+  installer puts the pack in `mods\packs\re-amped2` and lists it in
+  `mods.json` (the "RE-Amped2 look" checkbox). Without `mods\texture_pack`,
+  `main.c` sets `RECOMP_TEXTURE_PACK_SYNC=1`: with only small packs, loading
+  in place costs nothing, and the boot splash, drawn for one frame, then
+  shows too. `build.py` also makes the installer's header and badge
+  (`installer/assets/`). After changing the art, rebuild and commit
+  `branding/pack/` and `installer/assets/`.
+- **Masters** are local and git-ignored, in `branding/drafts/`: the project's art, composed with AI image tools from screenshots of the game (see `NOTICE.md`).
+  These are `reamped2_wordmark_full.png` and `..._noglow_full.png` (the logo,
+  transparent) and `work/` (4x upscales of the banner and badge, and the course
+  banner with its old logo painted out). `tools/branding/unblack.py` turns a
+  logo rendered on black into a transparent master. After editing a master:
+  `py -3.10 tools/branding/build.py`, then
+  `py -3.10 tools/assets/amped_assets.py tex-pack`.
+- **Fonts:** the six font atlases (the menu and HUD fonts, built at run time,
+  plus `Media/font.xpr` and `XprMedia/Font.xpr`) are in the texture pack. `tex-upscale` upscales
+  their alpha, which holds the glyphs, with the AI model and tightens the edges.
+  Text is sharp at any `RenderScale`.
+- **Text proportions:** in the 16:9 mode the game stretches its 4:3 2D layer
+  1.33x wide. `TextAspect=1` (default) draws text at its own proportions (see
+  Bring-up notes, "Text aspect in 16:9"). Menu title images and icons stay
+  stretched.
+- **Not covered by textures:** with the big local pack, the boot splash is
+  presented once, before the background loader has it. It shows with
+  `RECOMP_TEXTURE_PACK_SYNC=1` (automatic without `mods\texture_pack`).
+  The intro video `Movies\Intro.xmv` has the old logo baked in.
+
+## Settings (`amped2.ini`)
+
+The game reads `amped2.ini` from the folder of the `.exe` (`build\Release`).
+It writes the file with every setting commented out the first time it starts
+without one. Remove the `;` in front of a line to use it, then restart. An
+environment variable that is already set wins over the file.
+
+| Section | Setting | Values | Switch |
+|---|---|---|---|
+| `[Display]` | `WindowSize` | `1280x960`, `1920x1080`, … (client area) | `RECOMP_WINDOW_SIZE` |
+| | `WindowMode` | `windowed`, `borderless` (F11 / Alt+Enter toggles) | `RECOMP_WINDOW_MODE` |
+| | `RenderScale` | `1`–`8`, or `720p` (2), `1080p`/`1440p` (3), `4k` (5) | `RECOMP_GPU_SCALE` |
+| | `VideoModes` | comma list of `480p`, `720p`, `1080i`, `widescreen`, or `none` | `RECOMP_VIDEO_MODES` |
+| | `Anisotropic` | `1` (off) to `16` (default) | `RECOMP_GPU_ANISO` |
+| | `FXAA` | `1` on, `0` off (default); most useful at `RenderScale=1` | `RECOMP_GPU_FXAA` |
+| | `TextAspect` | `1` (default) draws menu/HUD text at its own proportions in 16:9, `0` leaves it stretched | `AMPED2_TEXT_ASPECT` |
+| `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
+| | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
+| | `DeadZone` | `0`–`0.9` (stick dead zone for a controller) | `RECOMP_PAD_DEADZONE` |
+| | `Rumble` | `1`, `0` | `RECOMP_RUMBLE` |
+| `[Audio]` | `Volume` | `0`–`100` | `RECOMP_AUDIO_VOLUME` |
+| `[Game]` | `PlayMovies` | `1` (default), `0` skips the intro movies | `AMPED2_PLAY_MOVIES` |
+| | `Mods` | `1` (default), `0` plays the original data | `AMPED2_MODS` |
+| | `ModPacks` | `1` (default), `0` leaves out the `mods.json` packs and `mods\loose` | `AMPED2_MOD_PACKS` |
+| | `TexturePack` | `1` (default; uses `mods\texture_pack\` if present), `0` off | `RECOMP_TEXTURE_PACK` |
+| `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
+
+**Mods.** The runtime reads `mods\build\game\` over `game\`
+(`RECOMP_OVERLAY_DIR`), so modded archives never touch your game files.
+They are built from your own data by recipe scripts in `tools/mods/`, since
+no game data is committed. The menu mod (`python tools/mods/menus.py`)
+removes "Multiplayer" from the main menu, adds QUIT GAME at the end, and
+puts WINDOW and RESOLUTION into Options -> Game Options (they read and
+write `amped2.ini`; Window applies at once, Resolution after a restart).
+OPTIONS is renamed OPTIONS AND MODS; its list loses XBOX LIVE OPTIONS and
+CREDITS and gains MODS, the Xbox Live options screen rewritten with two
+rows, MOD PACKS and TEXTURE PACK (OFF / ON, written to `[Game] ModPacks`
+and `TexturePack`, used from the next start; wrappers of `0x001ED950` and
+`0x001EDF30`). It also blanks the level loading screen's controller labels,
+whose pictures the texture pack replaces with the RE-Amped2 art. The pause
+menu's Options loses XBOX LIVE OPTIONS, and the button legends ("A=Select
+B=Back", "X=Xbox Live"; the button icons are glyphs in those strings) lose
+their navigation, Xbox Live and Xbox demos items in every language; items for
+other actions (Delete, page turns, skill points, Save replay) stay. `ModPacks=0` leaves out the packs in `mods.json` and the
+loose entries but keeps `mods\build\game`, so the Mods screen stays. It
+decompiles the original scene, edits it, writes plain Lua source into
+`mods\overrides\` (the game's Lua loads source as well as bytecode) and
+repacks with the asset toolkit. QUIT runs a new `Quit` action
+(`tools/assets/rui_actions.py` edits the GUI `.actions` format), which
+calls `QuitGame()`, a shell command `recomp_manual.c` registers. That
+command closes the window. New labels go into the game's string table
+(`tools/assets/string_table.py`). `Mods=0` turns all of it off. The recipe
+needs the toolkit's Python packages: `py -3.10 tools/mods/menus.py` here.
+
+**Mod packs.** `mods\mods.json` lists the packs to use, highest priority
+first: `{ "packs": ["hd-snow", "menus"] }`. A pack is a folder
+`mods\packs\<name>\` with `game\` (files that stand in for the same paths in
+`game\`, e.g. repacked archives) and/or `textures\` (`<key>.dds` replacements
+from `tex-pack`). The tools' own output folders, `mods\build\game\` and
+`mods\texture_pack\`, always come last.
+
+**Loose archive entries.** One file in place of one entry of an archive,
+without a repack: put it in `mods\loose\` (or a pack's `loose\`) under a
+folder named like the archive, e.g.
+`mods\loose\GuiPackages\Base.rui\StringTables\eng\StringTable.dat` or
+`mods\loose\Gui\Textures\Textures.gfx\Controller_all.xpr`. New names are
+added to the archive. At start-up `src/mod_loose.c` merges them into
+`mods\cache\loose\` over whichever archive the game would otherwise read,
+and reuses that until a source file changes; the log says
+`[MODS] loose: ...`. Loose entries win over a repacked archive of the same
+name. Entry paths are as `tools/assets` `unpack` lists them.
+
+**Script mods.** The game's scripts are compiled Lua, but it compiles plain
+source just as well, so a decompiled and edited script (`tools/assets`
+`decompile` writes them to `mods\source\`) works as a loose entry under its
+original name, e.g. `mods\loose\GameInfo\GameInfo.res\TrickInfo.lua`. This
+holds for the gameplay scripts as well as the menus. The game copies some
+archives to its cache partition and reads them from there; it copies them
+again when they change, so edits are picked up on the next start. The
+scripts' Lua has no `error` (and no standard library to speak of); a script
+error is logged as `[LUA] ...` with the file and line.
+
+`RenderScale` renders the game's surfaces at that multiple: 1280×720 with
+the default `VideoModes`, so 3 renders at 3840×2160 (640×480 with
+`VideoModes=none`, so 3 is 1920×1440). The result is scaled into the window,
+keeping its 16:9 (or 4:3). On an RTX 2070, ML1 holds ~58 fps at 3× in 720p.
+
+**F3** shows a debug overlay: fps, the game's size and render scale, the
+texture pack's counts and the active mod folders.
+
+The mouse cursor is hidden over the game from the start. Moving the mouse
+shows it; it hides again after two seconds without a move
+(`RECOMP_CURSOR_HIDE_MS` under `[Advanced]`, `0` keeps it always visible).
+
+Keyboard layouts (a connected controller works alongside either):
+
+- **default:** arrows = d-pad, Z X A S = A B X Y, Q/E = white/black, 1/3 =
+  triggers, numeric pad = left stick, I J K L = right stick, Enter = Start,
+  Backspace = Back, Shift/Ctrl = stick clicks.
+- **wasd:** W A S D = left stick, Space = A, J K L = B X Y, U/O =
+  white/black, Q/E = triggers, arrows = right stick, numeric pad = d-pad,
+  Enter or Esc = Start, Backspace or Tab = Back.
+
+`KeyMap` targets: `UP DOWN LEFT RIGHT START BACK LTHUMB RTHUMB A B X Y WHITE
+BLACK LT RT LX- LX+ LY- LY+ RX- RX+ RY- RY+`. A key is a letter or digit, a
+name (`SPACE`, `RETURN`, `ESCAPE`, `TAB`, `SHIFT`, `CTRL`, `ALT`, `UP`…,
+`F1`–`F24`, `NUMPAD0`–`NUMPAD9`, `HOME`, `END`, `PAGEUP`, `PAGEDOWN`,
+`INSERT`, `DELETE`, `COMMA`, `PERIOD`), or a virtual-key code (`0x41`). Up to
+three keys per target, joined with `|`.
+
+For unattended runs, `RECOMP_PAD_SCRIPT="ms:mask[:hold],…"` presses a
+button mask at a time after the first pad poll. Mask bits 16–19 push the
+left stick down, up, left and right. A mask of 0 holds
+`RECOMP_PAD_PRESS` pulses off for its hold time. For example,
+`14000:0:16000,16000:0x02:250,17000:0x02:250,18500:0x100` opens Tutorials.
+
+## Bring-up notes
+
+Record addresses, identified functions and overrides here as they are found.
+
+- `0x00254899` — XBE entry point (`xbe_entry_point`)
+- `0x0025A120` / `0x0025A15B` — `__SEH_prolog` / `__SEH_epilog` (auto-detected by `tools.recomp`)
+- `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
+- Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
+
+### Text aspect in 16:9 (2026-10-08)
+
+The GUI lays out on a 640x480 canvas. A scene's root is `Scale(W/640, H/480)`,
+(2.0, 1.5) at 1280x720, so in the 16:9 mode text not under an `AspectCorrect`
+anchor (`RGuiAnchorNode` update `0x000B5410`) is drawn 1.33x too wide; the
+GUI camera's projection is pixel-square. All text goes through
+RGuiTextNode::Render `0x000D2070` → Font2dStandardShader::Begin `0x00248FF0`
+(thiscall, ecx shader, `[esp+4]` text node, `[esp+8]` world with the node's
+scale, ret 8), which passes the world to the GUI device (`[0x0038CDFC]`,
+SetWorld `0x00247D90` keeps a copy at +0x10, used when the glyph batch is
+drawn). `recomp_manual.c` wraps Begin: if the world's x axis is shorter than
+its y axis by less than halfway to the screen stretch (logged: 0.75 for menu
+text at 16:9, 1.0 at 4:3 and under AspectCorrect anchors), x is scaled by
+`(H*640)/(W*480)` about the node's alignment point (+0x34 box left, +0x38
+right, +0x54 scale, +0x58 bits 0-2: 0 left, 1 centre, 2 right). Layout, line
+breaks and highlight bars are unchanged. G = `[0x0038CDF4]`: +0x1380/+0x1384
+screen size. `AMPED2_TEXT_ASPECT_LOG=1` logs 400 distinct node matrices
+(`text169`/`text43` runs). Verified in `text1`: main menu, career, pause, HUD.
+Fonts: `Base.rui Fonts/*.abc` (metrics, parser `0x000C38C0`) with
+`Base.ruirr Fonts/*.xpr` atlases.
+
+### Built-in HD and widescreen modes (2026-10-07)
+
+The game has its own 720p and widescreen modes; it never saw them enabled.
+Its video setup `sub_00139640` (called from `sub_0002B740` with mode 4,
+"best available") reads `XGetVideoFlags` (`sub_00263799`):
+
+- 720p flag, pack HDTV, language not Japanese -> **1280x720**, progressive
+  (`0x40`), widescreen (`0x10`).
+- Otherwise 640x480, progressive if the 480p flag is set, widescreen if the
+  widescreen flag is set.
+- Refresh 60 Hz is requested only for PAL-I with the PAL60 flag; NTSC is
+  60 Hz anyway.
+
+`XGetVideoFlags` returns `(XC_VIDEO >> 16) & 0x5F`, and clears the HD bits
+unless `XGetAVPack` (`sub_00263BEA`, which reads `HalBootSMCVideoMode`) is 1
+(HDTV) and the standard (`XC_FACTORY_AV_REGION` byte 1) is not PAL-I. The
+toolkit stored the flags in the low bits (`0x3`) and left
+`HalBootSMCVideoMode` at 0, so the game always saw 0: 480i, 4:3. Toolkit
+change: `RECOMP_VIDEO_MODES` (kernel_xbox.c, kernel_bridge.c) reports the
+flags in the EEPROM layout, an HDTV pack and NTSC-M, and folds them into
+the `AvSendTVEncoderOption` AV-pack word, where D3D's mode lookup reads the
+allowed HD modes (`avpack & 0xE0000` at `0x00322CFE` for an HDTV pack;
+without it CreateDevice failed and the title tore down to `Boom.xbe`).
+Unset, nothing changes. `main.c` defaults it to `480p,720p,widescreen`
+(ini `VideoModes`; `none` gives the old 640x480 4:3). Verified on both XBEs:
+title screen and level ML1 at 1280x720 x3, HUD at the edges, 58.6 fps.
+This is the same in the PAL XBE; the USA disc is not needed for it. The
+60 fps was never a PAL/NTSC matter here either: the runtime has always
+reported NTSC 60 Hz, so the PAL XBE never ran at 50 Hz.
+
+`[0x3CE228]` is the game's display object: `+0xC` width (`0x3CE234`),
+`+0x10` height (`0x3CE238`), `+0x34` present flags (`0x3CE25C`). Code at
+`0x0002C862` and elsewhere branches on height 720 / 1080.
+
+### First boot (2026-09-28)
+
+Boot reached guest code without crashing: memory layout, all 158 kernel thunks
+bridged, and a first system thread started. The log shows the title reading
+`\Device\Harddisk0\partition0` and opening
+`UDATA\4d530041\TitleImage.xbx`. Within 45 s it settled into
+`KeDelayExecutionThread` (ordinal 99) at ~120 calls/s from one stack position,
+meaning a wait loop. Two failed indirect calls came first, and both were fixed:
+
+- **`0x00259939` is a thread routine** handed to `PsCreateSystemThreadEx`
+  through the XAPI trampoline at `0x00252D12`, but the disassembler had folded
+  it into `sub_0025992F`. That worker thread could never start, which is the
+  likely reason the main thread waits forever. Seeded via
+  `tools.seed_from_log` into `config/seed_functions.json`, along with the first
+  thread's start context `0x00254825`.
+- **`0x00259000` is CRT `memmove`**, and its jump-table arms (from `0x002592A4`)
+  sit past its recorded end, so the lifted copy dropped its unaligned tails.
+  Replaced natively in `recomp_manual.c` (`sub_00259000`) and excluded from
+  codegen. The seed for `0x002592A4` was correctly rejected, since it is a
+  table arm and not a function.
+
+**Second boot, with both fixes:** no crash and no failed indirect calls until
+D3D init. The worker thread starts, and the title reads its own data off the
+disc: `image.res`, `guipackages/packagehierarchy.dat` and all 17 GUI packages
+(`legal`, `base`, `shell`, `multiplayer`, HUDs, loading tips, each as
+`.ruirr` + `.rui`), then `gameinfo/gameinfo.res` and `levels/levels.res`. It
+stops in D3D8LTCG device creation: `KeConnectInterrupt` vector 3 → `0x003220C0`,
+then `out dx, al` at `0x00321731` and `wbinvd` at `0x0031FFEF` (both no-ops
+here), then a call through a table of NV2A init routines
+(`0x0031C660`…`0x0031CE70`) to **`0x0031CB60`, which is not a detected
+function**. Next step: seed it the same way and look at what the D3D init
+expects from the GPU:
+
+```powershell
+cd ..\xboxrecomp
+py -3 -m tools.seed_from_log ..\amped2\stderr.txt ..\amped2\game\default.xbe --functions tools\disasm\output\functions.json --seeds ..\amped2\config\seed_functions.json
+cd ..\amped2
+.\tools\regen.ps1
+cmake --build build --config Release --parallel
+```
+
+**Third boot, with `0x0031CB60` seeded:** that call resolves. It is one of 30
+entries in D3D's NV2A handler table at `0x003297F8`–`0x0032986C`, and the only
+one that was missing. D3D init completes, and the GPU pushbuffer is submitted
+and consumed three times (`DMA_PUT` = `DMA_GET` = `0x00709000` → `0x00709280`
+→ `0x00709AD8`), then nothing more is submitted. There is no crash, no failed
+call and no further log output: the title spins. `RECOMP_WATCHDOG_SECS=8`
+names the loop:
+
+- the chain is `sub_0002B740` → `sub_00027490` → `sub_0028592A` →
+  `sub_00139640` → **`sub_001455C0`**, all game code in `.text`;
+- `sub_001455C0` calls `sub_00029AB0` / `sub_00029A80` over and over. Those go
+  to kernel thunk slots 1 and 2, which are `RtlLeaveCriticalSection` and
+  `RtlEnterCriticalSection`;
+- so the loop polls a shared value under a lock and waits for something that
+  never happens. Candidates, in order: a GPU interrupt or vblank that the
+  vector-3 ISR at `0x003220C0` would deliver (the runtime raises no NV2A
+  interrupts by default), a second game thread that never starts, or a
+  device probe that failed quietly (see "Runs, Never Draws a Frame" in
+  `xboxrecomp/docs/pipeline/06-debugging.md`).
+
+Next diagnostics, each a single run:
+
+```powershell
+$env:RECOMP_WATCHDOG_SECS=8; $env:RECOMP_PB_EXEC=1;      .\build\Release\RE-Amped2.exe 2> stderr.txt
+$env:RECOMP_WATCHDOG_SECS=8; $env:RECOMP_AC97_READY=1;   .\build\Release\RE-Amped2.exe 2> stderr.txt
+```
+
+Note: the watchdog calls `_exit(3)` after its dump, so a watchdog run ending
+by itself is expected.
+
+Build note: `recomp_0020.c` took ~31 min to compile in this build, against
+~20 min for the whole game target before. If that repeats, find the
+function in that chunk that is stalling the optimiser.
+
+**Diagnostic runs** (`tools/diag.ps1`, logs in `diag/`):
+
+| Run | Switches | Result |
+|---|---|---|
+| `vblank` | `RECOMP_VBLANK` | vblank → GPU ISR `0x003220C0` claims it → `KeInsertQueueDpc` at ~60 Hz, and the DPCs run. The main thread does not move. |
+| `vblank_pbexec` | + `RECOMP_PB_EXEC` | executor handles 419 methods and sets up a 640×480 target at `0x0098C000`. 0 clears, 0 draws. No change. |
+| `vblank_pbexec_ac97` | + `RECOMP_AC97_READY` | APU and XAudio2 come up. No change. |
+
+None of the switches was the gate. `tools/sample_threads.py` (host RIP → PDB →
+generated line → `loc_` label) put the main thread at 100% on guest
+**`0x0031E901`** in D3D's `sub_0031E7E0`. That is a self-throttle that spins
+until `submitted - completed <= 2`, where *submitted* is `[device+0x2C]` (9)
+and *completed* is the semaphore that `[device+0x30]` points at
+(`0x80708000`, stuck at 3). Only the GPU advances it. The device pointer is at
+`0x0032CEF8` (device `0x0032AA60`), confirmed live with `RECOMP_PEEK`.
+
+**Fix:** `main.c` registers `xbox_Nv2aMirrorFence(0x0032CEF8, 0x2C, 0x30)`,
+the runtime's mechanism for exactly this (Wreckless has the same fence).
+
+**After the fence fix**, with no switches: boot continues to 61 distinct disc
+files. Additions are the XACT audio banks (`audio/XACTdata/*.xsb`/`.xwb`,
+English streams), `characters/boarder/MedHiResCharacter.gfx` and
+`shaders/shaders.res`. Open problems:
+
+1. **Access violation** in `sub_000DC0F0+0x42A`, reading `0xAFAFAA17` through
+   `ebx = 0xAFAFAB2B`, right after `shaders.res` is read in 16 KB chunks. The
+   runtime has no `0xAF` fill, so the pointer comes from the title's own
+   data or allocator. Caller chain: `0x000DE958`, `0x0002F36D`, `0x000DBC09`, ...
+2. **Contiguous-memory probe:** the title asks `MmAllocateContiguousMemory`
+   for 60 MB and retries 8 KB smaller each time (1,567 failures) until it gets
+   what is left of the 64 MB arena, about 47 MB with 16.8 MB already used. It
+   keeps that as a pool, so later 4–8 KB contiguous requests fail. On
+   hardware the probe would see the whole console's free memory. Here the XBE
+   image and the 48 MB heap live outside the arena, so the numbers differ. This
+   is a candidate cause of (1).
+3. **Two undetected XPP (controller library) functions**, reached indirectly:
+   `0x0032E3A4` (inside `sub_0032E208`) and `0x0032EDAB`. They pass
+   `seed_from_log`'s checks and are ready to seed from
+   `diag/fence_default.txt`.
+
+**After seeding the XPP functions and fixing the contiguous allocator:**
+
+- *Toolkit fix* (local change in `xboxrecomp/`, worth upstreaming):
+  `MmFreeContiguousMemory` handed contiguous blocks to `xbox_HeapFree`, which
+  does not own them, so every free was silently lost. The contiguous
+  allocator (`xbox_ContiguousAlloc` in `src/kernel/xbox_memory_layout.c`) now
+  tracks blocks: frees are honoured, neighbours coalesce, the top block
+  rewinds, and allocation is first-fit before bump. A standalone test of the
+  exact code passes (probe-then-free, split, coalesce, rewind, alignment
+  gaps, double free, zeroing). The probe now gets its ~50 MB back, and the
+  later 4–8 KB failures and the `0xAFAF…` crash in `sub_000DC0F0` are gone.
+- **`d:\Boom.xbe` hand-off.** With no crash left, the title tore down on
+  purpose (`sub_0002B740` → cleanup `sub_00026A30` →
+  `sub_00252E25("d:\Boom.xbe", 0)` → `HalReturnToFirmware`). `Boom.xbe` is
+  the title's own JPEG helper (libjpeg strings, jumps back to
+  `D:\default.xbe`), and 39 code paths launch it. The first trigger was
+  **audio**: with the AC'97 codec not ready, audio init fails and the title
+  gives up. `RECOMP_AC97_READY=1` moves past it.
+- **DSP mailbox.** DirectSound (`sub_00292F33`) then writes command `3` to
+  `0x8105C810` and spins at `0x0029309A` until the DSP clears it. The GP DSP
+  is a stub. `RECOMP_DSP_ACK=0x8105C810` clears it (the same pattern the
+  runtime documents for DDS9).
+- Both are now **defaults in `main.c`**; an environment variable that is
+  already set wins. With no switches the title reads **111 distinct disc
+  files**, through the XACT banks, `Audio/DSP/yetidsp.bin` and the sound
+  effects (`Audio/SoundFX/*.wav`), starts a second worker, then launches
+  `Boom.xbe` again. Just before, a worker waits on an XACT-engine lock at
+  `0x003188E0`, gets it, and exits. **Next:** find which of the 39 launch
+  sites fires now and what it tested. Candidates are another audio/XACT
+  result, or a missing save or photo prerequisite that `Boom.xbe` exists to
+  create.
+
+`RECOMP_VBLANK` and `RECOMP_PB_EXEC` made no difference to how far boot gets.
+
+### Overnight session (2026-09-28/29)
+
+**Why the second `Boom.xbe` launch:** it is not out-of-memory. `sub_0002B6C0`
+is the title's fatal handler. It shuts down and launches `Boom.xbe`, and it
+is registered as the allocator's OOM callback (`0x0038CE1C`, `0x003A7B98`).
+It is also called directly from five places. A deeper exit dump (the toolkit
+dump is now 1,024 dwords, not 200) put the caller at `sub_0014ED70`, a
+script-running loop. It calls `sub_000F37E0`, which is **`lua_pcall`**
+(`sub_000F24F0` = `luaD_rawrunprotected` with setjmp, `sub_000F24C0` =
+`luaD_throw` with longjmp), and treats any status other than 0 (or a
+retryable 2) as fatal.
+
+**The Lua error:** hand copies of both functions in `src/lua_probe.c`,
+listed in `config/manual_functions.json`, log the error object at the throw:
+
+```
+[LUA] throw #1: errcode 1 ... message: ../Image/SessionDetails.lua:21: table index is NaN
+```
+
+**Root cause, a lifter bug** (fixed in `xboxrecomp/tools/recomp/lifter.py`):
+Lua's `luaH_set` checks a numeric key with MSVC's P6 idiom
+`fucomip; lahf; test ah, 44h; jnp`. `lahf` lifted to a comment, so AH held
+stale eax, parity came out wrong, and **every number used as a table key was
+reported as NaN**. `lahf` is now lifted from the tracked flag setter via the
+same conditions the jcc use. The FPU compare conditions are also now
+unordered-correct: `g_fp_cmp == 2` sets ZF, PF and CF as on hardware, where
+before it read as not-equal, not-below and `jp` never taken. There is a new
+regression test, `tools/recomp/test_lahf_fcomi.py`, which compiles the lifted
+expressions and checks all four compare outcomes. Suite: 454 passed.
+
+**After the `lahf` fix:** no Lua error, and `AvSetDisplayMode` (640×480,
+`fb=0x0098C000`) is called. A worker thread then crashed in the allocator
+`sub_000DC0F0`: TLS slot 0 pointed at a 64-byte scratch area while the
+title reads TLS offset `0xA8`. Fixed in the toolkit (the slot now points
+at the thread's own copy of the 272-byte template).
+
+**First frame:** with `RECOMP_VBLANK=1 RECOMP_PB_EXEC=1 RECOMP_FB_WINDOW=1`
+the title draws its **title splash** (two textured triangles) into the
+framebuffer window. `RECOMP_FB_DUMP=diag\x.bmp` saves it. The main thread
+then sits in `app->Run()`: `[0x003ACD2C]` vtable slot 1, called from
+`sub_0002B740`. The image never changes and no flip is logged, so the next
+problem is why the loop stalls after one frame. An XNet worker
+(`sub_002BEE4D`) spins polling link status at raised IRQL; there is no NIC.
+
+**After the splash**, three more blockers, all fixed:
+
+1. **Deadlock on the global lock `0x0038C890`.** Network startup
+   `sub_001BE680` holds it while looping on `XNetGetTitleXnAddr` until an
+   address arrives. With no NIC that never happens. Fixed by forcing
+   `sub_002BEE4D` to return `XNET_GET_XNADDR_NONE` (1),
+   `config/force_return.txt`.
+2. **Ke\* waits on inline-initialised events.** A toolkit fix in
+   `kernel_bridge.c` (`ke_dispatcher_handle`, event-state mirroring).
+   Before it, the movie worker and D3D's vblank wait spun through tens of
+   millions of failed or instantly-satisfied waits.
+3. **The intro movie never ended,** so movies were skipped
+   (`sub_00150E80` hand copy). They have played since 2026-10-02; see
+   "FMV" below. `AMPED2_PLAY_MOVIES=0` still skips them.
+
+The title then reaches its **front end**: 150 disc files, 6 threads,
+continuous rendering. The UI is drawn **wrong**: squashed into the top-left
+~320×256, textures sampled at a constant v, most triangles off-surface. That
+is the next thing to fix, in the pushbuffer executor's vertex/viewport path.
+
+**Title screen (2026-09-29).** Four toolkit changes made it render: a
+vertex-program interpreter for the pushbuffer executor
+(`src/kernel/nv2a_vp.c`), the viewport scale/offset constants
+(`XFCTX_VPSCL`/`VPOFF` = c[58]/c[59]), general blend factors, and texture
+× vertex colour. The front end now shows the copyright text, "PRESS START
+TO BEGIN" and the ESRB notice correctly (`diag/title_screen_2026-09-29.png`).
+
+**Input (works).** `main.c` calls `xbox_OhciInit()` and routes OHCI
+register faults, which nothing did before. With the toolkit's bus-address
+fix in `src/usb/ohci.c`, the pad enumerates: GET_DESCRIPTOR, SET_ADDRESS,
+GET_DESCRIPTOR(config), SET_CONFIGURATION. Seeding the XPP class-driver
+step `0x003306DF` and the report routine `0x0032FC8B` completes the XID
+handshake (`C1 06`, `A1 01`) and the endpoint-1 polling. A PC controller,
+or the keyboard with the game window focused (Enter = START, arrows = d-pad,
+Z X A S = A B X Y, Backspace = BACK), is player 1. `RECOMP_PAD_PRESS=0x10`
+pulses START for unattended runs, and `RECOMP_USB_TRACE=1` shows the USB
+traffic.
+
+**Menus (2026-09-29).** Pressing START walks the front end to the career
+event select (`diag/menu_event_select_2026-09-29.png`: Millicent 1,
+Breckenridge, Bear Mtn., Mt. Hood, Laax, Challenges To Do). The title
+starts loading `LEVELS\ML1\ML1.gfx`. Rendering artefacts remain (doubled
+text, grey streaks).
+
+**Menu rendering status.** Near-plane clipping in the toolkit removed the
+streaks from background layers rotating past the camera, and boarder
+creation renders cleanly (`diag/menu_create_boarder_2026-09-29.png`). The
+menus still stack over earlier screens: the title redraws a 3D background
+each frame instead of clearing colour, and the executor has no depth
+buffer or fixed-function T&L to draw it. That's the next rendering work
+(see PLAN.md, Phase 2).
+
+**Do not seed `0x002C8DAD`** (XNET). Making it callable enables the network
+card's deferred-interrupt path, which crashes with no NIC. The seeder will
+suggest it again from any log.
+
+Default runtime switches now set in `main.c`: `RECOMP_AC97_READY`,
+`RECOMP_DSP_ACK`, `RECOMP_FORCE_RETURN`, `RECOMP_VBLANK`, `RECOMP_PB_EXEC`,
+`RECOMP_FB_WINDOW`, `RECOMP_USB`, `RECOMP_KEYBOARD`. A variable that is already set in the environment wins.
+
+**Build time:** `sub_00148D80`, a one-shot render-state table setup, took
+2,121 s of `recomp_0020.c`'s 2,133 s code generation (MSVC `/d2cgsummary`).
+It is now compiled with `#pragma optimize("", off)`: `config/no_optimize.txt`,
+applied by `regen.ps1`. **Full rebuild: ~7.5 min, was ~27.**
+
+**Also noted:**
+- The toolkit's "wrap" (`sub_X_gen`) rewrites direct callers *and* the
+  dispatch entry to the generated body, so a wrapper only sees calls from
+  hand code and from `recomp_lookup_manual`. That is surprising, and worth
+  raising upstream. `lua_probe.c` uses full hand copies instead.
+- `recomp_funcs.h` declares guest functions under Ghidra names like
+  `flushall`, which collide with `<stdio.h>`. A file using the
+  generated-code dialect must not include CRT headers.
+- After the protected call returns, the error object at `L->top - 1` reads as
+  nil (`0xFDFDFDFD` value), although the throw carried a string. Not
+  blocking; possibly how this Lua build's `luaD_pcall` places the message.
+- `Audio/SoundFX/{ConcreteCrash00,GlassWall Collide02,QuickRip2}.wav` are
+  genuinely missing from the disc.
+
+Build note: `recomp_0020.c` took ~30 min again (reproducible), 27 min of a
+~27 min build at `/MP6`. To find the function, compile that file alone with
+MSVC's `/d2cgsummary`.
+
+**Why no window opens yet:** the framebuffer window needs `RECOMP_FB_WINDOW=1`,
+and it only opens once the title calls `AvSetDisplayMode` or, with
+`RECOMP_PB_EXEC=1`, clears a surface. Amped 2 has not reached either point yet.
+
+Other things seen in those runs, not yet looked at:
+
+- `NtFsControlFile(0x90020)` is a runtime stub and returns `0xC00000BB`
+  (not supported) while the title checks a partition. The title carried on.
+- One file open failed with `ERROR_PATH_NOT_FOUND` (`0xC000003A`).
+
+### 3D rendering and the menu camera (2026-09-29)
+
+**Executor:** the toolkit's software rasteriser (`nv2a_pb_exec.c`) now has
+a host-side depth buffer per zeta offset, Gouraud colour, colour and UVs
+that are perspective-correct through 1/w, and alpha test. Vertex-program
+vertices carry `oPos.z/w` and `oD0` through the near clip. In the menus
+none of this changes the picture, because every menu batch runs vertex
+program mode `0x6` with **depth test off** and SRC_ALPHA/INV_SRC_ALPHA
+blending (see `RECOMP_BATCH_TRACE`).
+
+**USB:** the OHCI thread gave up after 30 s if the driver had not yet
+started the controller. Amped 2 starts it at 28–33 s, so the pad was
+missing on roughly half of all runs. It now waits indefinitely.
+
+**Why the menus stack:** the menu sprites' composite matrix `c[96..99]`
+has an x row of (0,0,s,0). Every vertex lands on screen x = 320.5 and
+most get w < 0, so the near clip drops them. Tracing it back:
+
+- The heap holds the matrix stack at `0x015D9CF0`: world, **view**
+  (`0x015D9D30`), projection (RH, x scale 1.9445, y scale 2.5927, zn 0.5),
+  then the composites.
+- The view is written by `sub_0002DFFA` (LookAtRH: eye in edi, at and up
+  on the stack, out in esi), called from the camera method `sub_00247DE0`
+  and that from `sub_000B5030` (camera update). Three GUI cameras run
+  every frame:
+  - `0x017CF790`: identity node
+  - `0x01861350`: correct; eye (0.5,−0.5,623.25), at (0.5,−0.5,0)
+  - `0x017D17A0`: at (1,−1,623.25), a view along (1,−1,0)
+- Camera 3's local target is (0.0143,−0.0143,0) = world (0.5,−0.5,0)/35.
+  `sub_000B4F50` (camera init from script: reads `target`, inverts the
+  node matrix built by `sub_000BE610`, transforms the target) ran while
+  the node's translation at `this+0x44` was still 0.
+- The translation (z = 623.252 at `this+0x4C`) is written later by
+  `0x000BDFDB` from the scene-graph animation pass (`0x002FCD65`,
+  recursive `0x000BD6C9`), after a 747-byte ZIP member is read.
+- Checked and correct: the lifted inverse `sub_0002D884` (against a
+  double-precision reference, including this exact matrix), LookAt,
+  cross product `sub_0002D4D3` (computes ecx × eax), normalize
+  `sub_0002D68C`, subtract `sub_0002D51C`, TransformCoord `sub_0002D6FC`
+  and `SetVertexShaderConstant` `sub_00323C40`.
+
+So the remaining bug is ordering in title logic: the animation pass runs
+after the camera init. It still has to be found why that order differs
+from hardware.
+
+**Tools used** (all opt-in):
+
+- `RECOMP_BATCH_TRACE=<n>[,<from>[,<stride>]]` prints per-batch state and
+  `c[96..99]`.
+- `RECOMP_FIND_FLOAT=<v>` (with `RECOMP_FIND_FLOAT_CTX=<rows>`) finds
+  matrices in guest RAM by value.
+- `RECOMP_WATCH=<va>` (toolkit, page-protection) gives the writer's guest
+  call chain.
+- `amped2_diag()` in `recomp_manual.c` is a stderr printf for probes
+  pasted temporarily into generated code, which cannot include
+  `stdio.h`.
+- `tools/check_lifted_inverse.py` runs a lifted function over a copy of
+  the XBE and compares it against a reference.
+
+### Menus fixed, level-load crash fixed, in game (2026-09-29, midday)
+
+**Menu camera: a lifter bug, not ordering.** `ucomiss x, 0; lahf; test
+ah, 44h; jp` ("is this float non-zero") lifted `lahf` to a comment,
+because the comiss branch of the lifter's condition table had no `js`.
+`sub_000BD8E0` (scene-graph node transform) uses the idiom for
+position, rotation and scale, so camera `0x017D17A0` randomly lost its
+translation. Fixed in toolkit `1d8eb21`; 60 of 61 sites are lifted now.
+
+**Level-load crash: page 0.**
+- XAPI's USB driver keeps its device extensions in physical page 0,
+  with no allocation. Its private pool, `sub_0033195B`, returns
+  `0x80001000` minus what it has used. The KDPC was at `0x80000D04`.
+- The toolkit's contiguous allocator started at physical 0, so the
+  title's first 14 MB pool began on that page.
+- Loading ML1, the title draws a depth-only pass with colour offset 0
+  and colour mask 0, which the executor rasterised anyway into page 0.
+- The results: a DPC routine pointer of `0x00200020` (UTF-16 spaces), a
+  CString crash inside the USB DPC, `XInputGetState` reading garbage,
+  and OHCI giving up.
+- Fixed by reserving the bottom 64 KB of the window (`36a9fed`) and by
+  honouring `SET_COLOR_MASK` (`b58a7a6`). Both allocators are locked
+  now too.
+- Because every contiguous block moved up by 0x10000, the DSP mailbox
+  default in `main.c` is now `0x8106C810`.
+
+**How it was found:** a raw stack dump in the crash handler, the current
+DPC routine (`g_xbox_current_dpc`), `RECOMP_DPC_TRACE`, `RECOMP_WATCH` on
+the KDPC's routine field (which now names a host writer by exe offset),
+dbghelp on that offset (`put_pixel`), `RECOMP_CONTIG_TRACE`, and
+disassembling the driver's pool routine.
+
+**Seeds:** `0x00103840` and `0x00014760` (level load). `0x001C8C20` is
+still unresolved in game.
+
+**Unattended walks:** `tools\diag.ps1 -FreshSave` moves the saved
+profiles (`game\UDATA\4d530041\<id>`) aside, so a walk creates a player
+instead of looping on "That player already exists. Overwrite?"
+(default No).
+
+### Register combiners (2026-09-29, afternoon)
+
+The black terrain was the executor's pixel model. It did texture 0 ×
+diffuse, and ML1's terrain has a 2048×2048 lightmap in stage 0 (found by
+dumping textures with `RECOMP_TEX_DUMP`), with its snow detail in another
+stage. `RECOMP_TEX_STATE` showed all four stages enabled, and the top
+unhandled methods had been the combiner registers all along.
+
+Toolkit `b3a9121` adds a software register combiner
+(`src/kernel/nv2a_combiner.c`, using Xbox D3D's `PS_*` encodings),
+per-stage texture state, and oD1 plus oT0–oT3 carried per vertex. The
+menus now match the game, including the rider portraits that used to be
+dark, and ML1 renders snow, forest, lifts, sky and the HUD.
+`RECOMP_NO_COMBINERS=1` switches back to the old path.
+
+### GPU backend (2026-09-29, evening)
+
+Toolkit `292382f` draws on D3D11. It's on by default (`main.c` sets
+`RECOMP_GPU=d3d11`; `RECOMP_GPU=software` gets the software path back).
+The executor still decodes the pushbuffer; only draws, clears and flips
+change. Vertex programs and combiners become HLSL (`nv2a_hlsl.c`), and
+textures and surfaces are cached on the GPU by guest address. Finished
+frames are read back into the same window, so `RECOMP_FB_DUMP` and
+`RECOMP_FB_WINDOW_DUMP_EVERY` still work. The front end runs at 60–90 fps
+and ML1 at about 46 fps on the RTX 2070 (`diag/gpu3`, `diag/prof2`).
+
+Switches: `RECOMP_GPU_DEBUG` (D3D11 debug layer), `RECOMP_GPU_ADAPTER=default`
+(don't pick the high-performance GPU), `RECOMP_GPU_CULL` (backface culling;
+off until the winding has been checked on screen), `RECOMP_FLIP_INTERVAL=<n>`
+and `RECOMP_FLIP_NOWAIT` (flip pacing), `RECOMP_DVD_SPEED=<KB/s>` (reads take
+disc time), and `RECOMP_GUEST_CPU=<n>` (all guest threads on one CPU).
+
+In game, the main thread spends about 40% of its time in `sub_0031EC30`. That
+function sets PFIFO `0x100410` bit 16 and spins until the executor clears it,
+which is D3D's CPU/GPU sync point. So frame time is roughly game time plus
+executor time. Per frame in ML1: about 800 draws, 2.9 MB of vertex copies,
+3.3 MB of texture hashing, and 5 ms inside `nv2a_d3d11_draw`.
+
+**Level-load race (fixed, toolkit `8fc426a`).** With the GPU backend the ML1
+load failed about half the time, and every time at disc speed. The title's
+out-of-memory handler (`0x0002B6C0`, reached from `0x000DC1D6`) launched
+`d:\Boom.xbe` when the boarder's 41,000-byte `"SkeletonData"` sub-heap
+(created at `0x0017C83A` by `sub_000DBE50(parent, 0xA028, 1, 0)`) ran out.
+
+Timestamped probes (`amped2_race`, pasted into the generated code) showed
+the order. The loader thread starts loading the front-end preview boarder
+(`sub_0017C780`), creates its heaps, and is still loading 11 s later. By
+then leaving the menu has run the teardown (`sub_0017BF20` at
+`0x0017BFAD`, called from `0x0017BFE0`), which destroys those heaps under
+it. The native profile of the loader explained the 11 s: 71% `WriteFile`.
+`bridge_NtReadFile` printed and flushed a `[READ]` line per read, and the
+skeleton loader (`0x0015D710`, recursive) reads a node at a time. The
+software rasteriser's slow menus had always left the load enough time.
+With the per-read trace opt-in (`RECOMP_READ_TRACE=1`), 4/4 loads reach the
+level, disc speed included (`diag/fx1`–`fx4`).
+
+Ruled out on the way: flips at 30 fps, one guest CPU
+(`RECOMP_GUEST_CPU`, which also hangs), and priority boosts. Found on the
+way: new threads copied the main thread's live TLS block (current-heap
+stack included). They now copy a snapshot taken at load (`852b217`).
+**Lesson:** per-call logging on the file path changes the title's timing
+enough to lose its races. Keep hot-path traces opt-in.
+
+To trace allocations again, paste
+`amped2_alloc_probe(edi, MEM32(esp + 0x28), eax, MEM32(esp + 0x24))` into
+the generated `sub_000DC0F0` at `loc_000DC1B8`. The out-of-memory wrapper
+then prints callers by heap and thread, and `RECOMP_AP_HEAP=<object>` logs
+one heap's allocations.
+
+### Missing rider torso (fixed, toolkit `965bcf6`)
+
+In game only the rider's legs, board and hair rendered, on both draw
+paths. `RECOMP_VP_BAD` (toolkit `586b589`) found the torso batches
+collapsed to one point with w ≈ −974. `tools/vp_disasm.py` shows their
+program is 4-bone skinning:
+- `a0 = v3*c[168].x`, with `c[168].x` = 256;
+- the rows are `c[a0+0..2]`;
+- oPos = `r5·c[164..167]`, the view-projection.
+
+At the draw, the palette rows in the executor's constant memory were
+identity, so the vertices stayed in model space and ended up behind the
+camera.
+
+The CPU was right. Probes in the palette upload (`sub_0014D5D0`: it
+multiplies inverse-bind `[obj+0x30]` by bone world `bone+0x30` with
+`sub_0002D786`, transposes with SSE, and uploads with `sub_00323C40`
+starting at register −96) showed world-placed rows, for example bone 2
+translated to (1214.45, 459.5, 0.75). **The upload never reached the
+executor.** `nv2a_pb_scan` ended a segment at any jump and skipped calls,
+so pushbuffers D3D runs from outside the ring (`RunPushBuffer`, recorded
+buffers) were never executed. It now follows jumps out of the ring until
+one lands back in it, plus one level of call/return: about 23,500 per
+140 s run. The rider renders whole (`diag/fb_jmp1.bmp`).
+
+### Render thread and pacing (2026-09-29, night)
+
+D3D11 calls run on a render thread (toolkit `2b5c475`). The executor queues
+packets, and the display paces at 60 Hz with up to
+`RECOMP_GPU_FRAMES_AHEAD` (2) frames queued. ML1 runs at about 50–55 fps
+paced and about 70 unpaced (`RECOMP_FLIP_NOWAIT=1`).
+
+### Sound heap out of memory and the APU freeze (fixed, 2026-09-29/30)
+
+**The out-of-memory was a lifter bug.** XACT's track state machine
+`sub_00316595` joins a 16-bit `cmp word [esi+30h],7` and a 32-bit
+`cmp eax,7` at one `jne` (`0x003165E3`).
+- The translator refused to merge compares of different widths, so the
+  `jne` became the `_flags` fallback, which is always false.
+- As a result, every transition into track states 3–6 was "illegal". The
+  track start `0x0031449F` returned E_FAIL, and every SoundBank Play
+  (`0x00310369`) failed.
+- Play's error path (`0x00310343`) stops the cue. That frees the track's
+  reference but not the cue's own, so each sound the game played leaked a
+  64-byte cue (refcount 1, flags 4, no tracks) plus a chunk of the size-class
+  pool (`0x0001304D`). The pool never returns chunks to the heap.
+
+The fix is toolkit `ea41161`: mixed-width joins merge into a marker that
+answers only the width-independent conditions.
+
+How it was found:
+- A free probe showed 0 heap frees of the chunks.
+- Object tracking at `operator new`/`delete` (`sub_0002CFD0`/`sub_0002D040`)
+  found 4,091 cues and 30 deletes.
+- A cue lifecycle trace showed play → new → stop from the error path.
+- `setst 1→5` returned 0, which the original code allows.
+
+The probes are kept in `src/recomp_manual.c`: `amped2_new_probe`/
+`amped2_delete_probe`, and `amped2_cue_event` with
+`RECOMP_CUE_TRACE=<lines>`. Paste them into gen as the comments say.
+
+**With sounds playing, the game then froze after 1–4 min.** The APU frame
+thread spun forever in `voice_process`:
+- A persist stream voice with no SSLs left makes `voice_get_samples`
+  answer -1 with a notification. `voice_resample` turned that into 0, and
+  the caller loops until it gets a negative count. The frame thread spun
+  with `d->lock` held and wrote tens of millions of notifications.
+- The next DirectSound `VOICE_LOCK` write (`sub_0029694E`, through the MMIO
+  VEH) then waited on `d->lock` while holding the title's DirectSound lock.
+
+The fix is toolkit `ed3d319`, which also makes the frame thread hand the
+lock to queued writers. `RECOMP_APU_STATS=1` prints voice, notification and
+frame-rate counters every 5 s.
+
+Now the default: the APU reads the contiguous window (`AMPED2_APU_PHYS=0`
+restores the old silent base). In-game audio plays throughout
+(`diag/audio_fixed.wav`). `soak4` ran 15 min in ML1 at about 51 fps.
+
+### Locked 60 fps in ML1 (2026-09-30, night)
+
+Paced ML1 ran at 53–55 fps, though the game can do 80 unpaced
+(`RECOMP_FLIP_NOWAIT=1`). A deeper frame queue (`RECOMP_GPU_FRAMES_AHEAD`
+3 or 4) made no difference. `RECOMP_PACE_TRACE=1` shows the cause: steady
+state was fine, with the render thread waiting about 12 ms per flip, and
+the rate was lost in hitches.
+
+- **Every 2 s, about 100 ms:** the kernel-call summary. It is now opt-in
+  with `RECOMP_KERNEL_SUMMARY`.
+- **Every 10 s, about 430 ms:** the GPU report on the executor thread. Each
+  `fprintf(stderr)` cost 12–15 ms with stderr redirected to a file by
+  `diag.ps1`. `main.c` now sends stderr through a 1 MB pipe drained by a
+  writer thread. `RECOMP_SYNC_STDERR=1` restores the synchronous stderr;
+  the pipe is drained at exit, in the crash reporter, and through the
+  toolkit's `g_xbox_flush_logs` before ExitProcess and `_exit`.
+- **80–300 ms whenever a vertex program is seen for the first time:**
+  `D3DCompile` of the generated HLSL (500+ lines) on the render thread.
+  Even with optimization skipped it takes about 110 ms. The game keeps
+  meeting new programs for minutes into a level, as it builds them from
+  material and light state. Shaders now compile on a worker thread, and the
+  draws that need one are skipped for the frame or two until it's ready
+  (`RECOMP_GPU_ASYNC_SHADERS=0` restores blocking). They're also cached on
+  disk in `shader_cache/` (`RECOMP_SHADER_CACHE`).
+
+Result: 600 flips in 10.00 s, repeatedly, with zero resyncs, from a cold
+cache (`diag/async3`). Only level loading still hitches. A screenshot shows
+nothing missing (`diag/async_game.png`).
+
+**Lesson:** logging is not free here. Anything printed from the executor,
+render, APU or guest threads has to be rare or go through the pipe.
+
+### Soundtrack (fixed, toolkit `4a99fcf`, 2026-09-30)
+
+The jukebox builds its playlist by listing `d:\Audio\Music`, then each
+genre directory, with `NtQueryDirectoryFile` and an empty pattern (a
+buffer of length 0). The Windows implementation searched `dir\` for that,
+found nothing, and answered STATUS_NO_MORE_FILES straight away. The game
+only ever opened the six hardcoded probe tracks (a 4-byte ASF check), and
+music never played.
+
+An empty pattern now means `*`. The menus open a song
+(`HardCore\HEAVENS TO MURGATROID.wma`), and front-end audio starts at 20 s
+instead of at level start (`diag/audio_music1.wav`). `RECOMP_DIR_TRACE=1`
+logs each query.
+
+### Crashes on entering an untested mode: missed vtable methods (2026-10-02)
+
+The photo-shoot challenge (`0x00123F30`) and a Pro challenge (`0x00124BA0`,
+`0x001A2D10`) crashed the first time they ran. The log shows
+`[ICALL] Failed to resolve VA ...` just before the fault. Each was a
+vtable method the static analysis never found. The fix is a seed in
+`config/seed_functions.json` (never `0x002C8DAD`) and a regen.
+
+To catch the rest before a player does, a scan of the data sections
+(`.rdata` is flagged executable here, so treat only `.text` and the XDK
+library sections as code) looks for vtable runs whose entries are neither
+known functions nor inside one. It found six more, now seeded. Two of
+them follow a switch's jump tables with no prologue, and the disassembler
+rejected them until toolkit `0426dc4` (an aligned seed after int3 padding
+counts as a boundary).
+
+### FMV (fixed, 2026-10-02)
+
+The boot movies (`MGS.xmv`, `XSN.xmv`, `Intro.xmv`) play with sound and the
+game reaches the title screen. They play by default; `PlayMovies=0` skips
+them. Four things were missing, all in the toolkit:
+
+- **XMV's clock is D3D's vblank count** (`dev+0x1DD8`, miniport `+0x1C0`,
+  read by GetDisplayFieldStatus 0x0031AE50). It stood at 2–4. The NV2A ISR
+  0x003220C0 only masks PMC_INTR_EN and queues a DPC. The DPC 0x003221E0
+  calls the vblank handler 0x00322390 (count++) only if PMC_INTR_0 still
+  shows PCRTC, and our ack thread had zeroed it by then. The tick now writes
+  PCRTC_INTR_0 = 0x80000001; the bits stay pending until the title's
+  acknowledge drops the marker, and a vblank-only thread then clears them at
+  once (toolkit `125b24c`). (0x0031C2E0, which counts only on a field parity
+  match, is the mode-set path, not this one.)
+- **XMV starts only on an even field.** GetNextFrame sets its start time
+  (0x002CE2D5) only when the field is not ODD. In interlaced modes the field
+  comes from `in al, dx` at port 0x80C0 (bit 5, the TV encoder's field pin)
+  in the ISR (0x0032213C) and the handler (0x0032240D). The lifter left `in`
+  unimplemented. It now lifts port I/O to `xbox_PortIn/xbox_PortOut`, and
+  0x80C0 follows the vblank parity (toolkit `94b6738`; needs a regen).
+- **The picture is the NV2A video overlay** (PVIDEO, registers at
+  0xFD008000; D3D UpdateOverlay 0x00329240). The D3D11 backend reads it at
+  present time and draws the YUY2 surface (BT.601) into its destination
+  rect, presenting every 16 ms while the player does not flip.
+- **The end of a movie:** EnableOverlay(FALSE) (0x003293B0) writes
+  PVIDEO_STOP and spins until PVIDEO_BUFFER reads 0, which hardware does on
+  STOP. Plain memory never did, so the first movie never ended.
+
+XMV opens movies for overlapped reads. With them completed synchronously it
+gets fewer packets ahead and the intro plays late, so `main.c` makes
+`RECOMP_ASYNC_IO=1` the default (gameplay and music unchanged in a BR1 run).
+The diagnostics: `AMPED2_XMV_TRACE=1` (GetNextFrame state, `[DSPAUSE]`),
+`RECOMP_PVIDEO_TRACE=1`, `RECOMP_GPU_SHOT_PRESENT=<prefix>` (the presented
+picture, overlay included). `xbox_VideoPlayFile` is the host-side `.wmv`
+player (`RECOMP_FMV_HOST`) and is not involved.
+
+### Sound breaks up after a while: dead voices in the APU lists (fix under test, 2026-10-02)
+
+After 10–30 minutes of play the sound could go bad and the game lag behind
+it, for good. [HEALTH] showed it: APU 250–500 of 1500 frames/s, an APU
+interrupt every timer pass, thousands of trapped-front-end waits.
+
+- About 25 idle voices were still linked in the APU's voice lists. The VP
+  traps the front end for each idle voice in a list (SE2FE_IDLE_VOICE),
+  and the last one in the frame (0x7D) is reported in FEDECPARAM.
+  DirectSound's trap service 0x00293D39 → 0x002936B5 acts only on a voice
+  it still owns (`this[0x88 + v*4]`, the object's current handle == v).
+  0x00295B4B then unlinks it by rewriting the predecessor's link word
+  (+0x7C) from its own copy of the list order.
+- The two copies of the order had drifted apart. At dispatch-lock level 1
+  the timer thread ran DPCs without the lock, so DirectSound's trap DPC
+  could run beside a game thread inserting voices. Each DPC now holds the
+  lock (bounded at 20 ms), and the APU wakes the timer thread when it
+  raises its line, so a trap is serviced at once (toolkit `ec8ad24`).
+- [HEALTH] now ends with "N idle voices linked"; a steady count above a
+  handful is this failure.
+- Separately, the kernel call counter wrapped at 2^31 calls and logged
+  every kernel call from then on (135 MB in ten minutes), fixed in toolkit
+  `a8cfbed`.
+
+### Pad dead in game, hissing sound effects, rumble (fixed, 2026-09-30)
+
+- **Pad input stopped a few seconds into every level** (toolkit
+  `158105c`). Rumble starts in game as HID SET_REPORT on the control pipe.
+  The OHCI model published the control list's done list over the periodic
+  list's in the same tick, so a pad report's completion was lost, and the
+  driver never polled again. All lists now share one done list per tick.
+  The DPC queue is also locked, since the OHCI and timer threads both
+  insert into it. Measured with `RECOMP_INPUT_DIAG`.
+- **Sound effects hissed; music inaudible** (toolkit `28d2626`). Low RAM
+  and the contiguous window are separate storage with overlapping physical
+  offsets. XACT keeps its wave banks in the ordinary heap, and DirectSound
+  maps them with `MmGetPhysicalAddress`, but the APU read every page from
+  the window, so every ADPCM voice decoded noise.
+  - `MmGetPhysicalAddress` now records each page's store
+    (`g_xbox_phys_lowram`), and the APU follows that record.
+  - A soft knee above 0.8 replaces hard clipping.
+  - `RECOMP_APU_STATS` lists every voice with its RMS, DC and Nyquist
+    level.
+- **Rumble**: the pad's output report goes to XInput. `RECOMP_RUMBLE=0`
+  turns it off.
+- **Still open (renderer)** (the rider and the terrain were fixed on
+  2026-10-01, see below):
+  - the rider is a black silhouette on the Career menu;
+  - the loading screen's controller picture is missing (the text draws);
+  - terrain sometimes draws without ground after pause/resume.
+  
+  These happen with async shaders on or off, and `RECOMP_GPU_LOWRAM_PAGES`
+  doesn't change them. `RECOMP_GPU_SHOT=<prefix>` saves the renderer's own
+  frames for checking them.
+
+### Renderer glitches, game-wide crackle (2026-10-01, overnight)
+
+- **Terrain without ground, garbage state** (toolkit `e76cfce`,
+  `7caae46`). Two pushbuffer-walker bugs:
+  - D3D sets PUT in the middle of a long method, and the walker dropped
+    the rest of it. The unfinished method is now carried over.
+  - Ring wraps were handled as segments bounded by the lowest and highest
+    PUT ever seen. Amped 2 writes past the old PUT and jumps back to the
+    ring start wherever it runs out, sometimes from inside a recorded buffer
+    (RunPushBuffer). The walker now keeps one GET position and follows
+    every jump, as the GPU does (`nv2a_pb_run`).
+
+  D3D doesn't use calls, so a call word, or a word with low bits 3, means
+  the walk is reading data. It then resyncs at PUT instead of executing it.
+  The D3D11 backend range-checks every guest read (`guest_ok`). Result:
+  240 s in ML1 with pause/resume, no bad state, no crash, 58 fps.
+- **Black rider on the menus** (toolkit `96fe19f`): cube maps and the
+  dot-product texture modes (DOT_PRODUCT, DOT_ST, DOT_RFLCT_*,
+  DOT_STR_CUBE) with PS_INPUTTEXTURE and PS_DOTMAPPING. The rider has a
+  reflective look.
+- **Crackle/hiss in game** (toolkit `87d77e3`): voices were played at
+  48 kHz whatever their pitch. Slower streams ran dry mid-frame, so each
+  32-sample frame could end in a step. A per-voice linear resampler cut the
+  steps on frame boundaries from 1901 to 22 a minute.
+- **Still open:**
+  - **Loading screen black.** Its background and controller picture are
+    one quad sampling two 512×512 DXT3 textures (0x81FFD080, 0x8203D100)
+    whose memory is all zero while drawn. There are no CPU writes to the
+    back buffer and no 2D blits. Tools: `RECOMP_TEX_LOG`,
+    `RECOMP_GPU_SHOT_MEM`.
+  - **Walker resyncs.** A reused recorded buffer (0x8264A580) has its jump
+    back re-patched for a later call before the walk follows it. The fence
+    mirror reports D3D's submitted count, not what was executed.
+    `RECOMP_FENCE_EXACT` reports the executed release (NV097 0x1D70), but
+    boot stalls at frame 306 with it.
+
+### Second level crashed: memory never freed (fixed, 2026-10-01)
+
+Loading a second level ran the 48 MB guest heap out. `NtFreeVirtualMemory`
+handed the guest's pointer to the host's `VirtualFree`, which always failed,
+so the level pools Amped 2 gets from `NtAllocateVirtualMemory` were never
+released (toolkit `4006169`). The heap's block reuse now also splits and
+coalesces properly. Three scripted Leave Mountain/reload cycles of ML1 run
+clean (`reload3`). One run crashed once in the USB driver's DPC
+(`sub_00334BA5`) after a reload; this has not been reproduced.
+
+### Level-2 glitches: the recorded-pushbuffer race (fixed, 2026-10-01)
+
+D3D re-patches recorded pushbuffers (RunPushBuffer) several times a frame:
+the jump back into the ring and the per-call fixup data. On the console it
+patches from the CPU only when the GPU has finished with the buffer.
+Otherwise it patches from the NOP-interrupt handler when the GPU gets there.
+Our fence mirror always reports the GPU as done, so D3D patched while the
+pushbuffer walker was still behind. The walker then followed later calls'
+jumps and ran earlier calls with later fixups. In level 2 this caused garbage
+state that persisted into the menus.
+
+`recomp_manual.c` now wraps the patcher (`sub_003285F0`). Before patching,
+it sets PUT to D3D's write pointer and waits until the walker has consumed
+it (amped2 `66f5be1`). Walker resyncs dropped to zero, and level 2
+(Breckenridge) plays clean.
+
+The faithful alternative is exact fences plus a model of the NOP
+software-method interrupt (PGRAPH trap registers 0x400704/0x400708, with
+write-1-to-clear on 0x400100). That is a later toolkit item
+(`RECOMP_FENCE_EXACT` gets as far as that interrupt).
+
+### Loading screen black (fixed, 2026-10-01)
+
+The loading screen's background and controller picture are one textured
+quad. Amped 2 frees that package while the screen is still up. Our
+`MmAllocateContiguousMemory` zeroed reused memory (the console doesn't), so
+the level's first allocations wiped the textures. Reused memory is now
+handed out unzeroed (toolkit; `RECOMP_CONTIG_ZERO=1` restores the old
+behaviour).
+
+### Level 3 black screen and in-level audio noise (fixed, 2026-10-01)
+
+- **Level 3 (Event 1, BR1)** calls a virtual method (`0x0012F7D0`) that
+  static analysis missed. The unresolved call blacked out the picture, and
+  it's now seeded (amped2 `4e3f064`). A USB DPC crash in the same run was
+  OHCI raising StartOfFrame before its list walk (toolkit `b321282`).
+- **Audio noise a few minutes into a level:** freeing `NtFreeVirtualMemory`
+  regions straight away (the level-2 memory fix) let the heap recycle memory
+  the sound engine was still reading. Those regions are now held until the
+  heap actually runs out, which happens at a level load (toolkit `e550168`).
+
+### Competition-stage crash; night level too dark (2026-10-01)
+
+- **Crash:** the game's rumble update calls `XInputSetState`
+  (`sub_0032F339`) while the pad's device pointer (handle+0xA3) still holds
+  XPP's fresh-block fill 0xCCCCCCCC. A wrapper in `recomp_manual.c` now
+  returns "not connected" in that window (amped2 `c3c8563`). Held heap
+  regions are also released oldest-first, only as far as needed (toolkit
+  `b8b4008`). A full competition then ran to the ranking screen with clean
+  audio.
+- **Crash, second site (amped2, `sub_0032F2C6` wrapper):** run `l3t0`
+  crashed in `XInputGetState` the same way: the handle block at 0x80000080
+  (XPP's page-0 pool) was refilled with 0xCC mid-level. The pool counter
+  `[0x32E2C8]` only moved at boot in `l3watchc` (0xFE0 down to 0x25C, five
+  allocations), and handle+0xA3 was only written at boot in a 5-minute
+  watch, so the writer is still unknown. The one run that crashed was also
+  the only one with a `[NV2A] ring walk … lost` line. GetState now answers
+  "not connected" for such a handle, like SetState.
+- **Night level (fixed, toolkit `236f6fd`):** the near terrain (pixel
+  shader `c585d542…`) blends each pixel between lit, `(v0 + t0)·t2`, and
+  "in shadow", `v1·t2`, which is dark blue. The blend factor is t0.a
+  (baked floodlight mask, from the 1024×2048 atlas at 0x81118400) times
+  t1.b. Stage 1 is a 512×512 Y16 shadow map at 0x80D20000 (format 0x30)
+  that the game renders the rider and props into, sampled with
+  SET_SHADOW_DEPTH_FUNC 6 (GEQUAL). We read it as colour from guest memory
+  that never receives our depth, so it returned 0 and the whole level sat
+  "in shadow". Depth textures now sample our own depth surface at that
+  address and compare in the shader. 0x81F3FE00 turned out to be a
+  32×64×32 3D volume (trees, some slopes), now uploaded as Texture3D.
+  - The distant terrain (shader `d6ca92e0…`) fogs through a 256×256 ramp at
+    0x80DA4000: alpha by distance/2087, near-black colour.
+  - Its stage-2 texture 0x81114200 is a 32×32 all-transparent DXT1 that
+    turns off a night tint (factor0 0x243748).
+  - Tools used: `RECOMP_DRAW_DUMP`, `RECOMP_SKIP_PS`/`RECOMP_SKIP_BLEND`,
+    and `RECOMP_GPU_PS_DEBUG` 13 (what each stage has bound) and 18 (each
+    pixel shader in its own colour, matching the DRAWDUMP tag).
+
+### Night-stage lights and audio break-up (fixed, 2026-10-01 evening)
+
+- **Lights (toolkit `937d8f6`):** floodlight glows and lens flares are
+  gated by D3D visibility tests:
+  - Begin pushes `0x817C8 1 1` (game code at 0x13A1CB); End (D3D
+    0x31ADF0) pushes `0x817CC 0 <report>`.
+  - Both were ignored, so flares drew through hills and the rider. They
+    are now D3D11 occlusion queries.
+  - GET_REPORT's parameter is `(slot & 0x0EFFFFFF) | 1<<24`, so with our
+    report page above 16 MB bits 24-27 are address bits.
+  - The report is completed at once with that slot's last count, because
+    the title reads results a frame later than our GPU delivers them.
+- **Audio (toolkit `2a27569`):** DirectSound traps the APU front end
+  (SE2FE_IDLE_VOICE) until its ISR/DPC run. The frame thread used to emit
+  silent sub-frames meanwhile: 224-sample holes, dozens a second. It now
+  waits instead. The throttle also makes up lost time and steers by the
+  XAudio2 queue depth.
+
+### Mixbin downmix (toolkit `45dd9aa`, 2026-10-01)
+
+The DSP is a stub, so the mixbins are folded to stereo on the host. Amped 2
+routes:
+- music to bins 0/1 (front), 3 (LFE, as loud as the fronts) and 4/5
+  (back);
+- 3D effects to 6/7 (crosstalk front);
+- some voices to 2 (centre), active on the night stage;
+- reverb sends to bin 10 (I3DL2), heavy on the night stage.
+
+The old even/odd sum put centre and the reverb send left only and LFE
+right at full level. The downmix is now ITU-style: centre and back at
+-3 dB; LFE and the sends dropped. `RECOMP_APU_MIXDOWN=sum` brings back the
+old fold.
+
+### Music corruption and the whistle (fixed, 2026-10-02)
+
+- **Music crackle/distortion in levels (toolkit `cf8ed97`).** DirectSound's
+  critical section is KeRaiseIrql to DISPATCH, which on the console's one
+  CPU excludes everything else. Here the game and XACT threads ran their
+  `SET_CURRENT_VOICE` + `SET_VOICE_*` sequences on different cores at
+  once, and SFX settings landed on the music stream voices: fmt
+  0xA200E041, BA 0, EBO 0, still active, a constant DC from one ADPCM
+  header sample. Fixed by the dispatch lock (`RECOMP_DISPATCH_LOCK=1`,
+  the default): one guest thread at DISPATCH at a time. Level 2 (which
+  also holds it across the timer's DPC passes) hitched, so it is opt-in.
+- **Pad crash, same root cause.** XPP built a pad slot ten bytes off the
+  handle it returned (see "Pad-handle race" below); the lock covers the
+  thread-vs-thread half of that.
+- **Whistle (toolkit `1010e73`).** Voices 0x40–0x43 loop one VP frame (32
+  samples) of a buffer the GP DSP rewrites every frame; our GP is a stub,
+  so they replayed stale memory, in one session the DSP program image.
+  They are now silent (`RECOMP_APU_GP_READBACK=1` to hear them).
+- **Physical numbering (toolkit `bf8c174`).** Ordinary memory is now
+  64–128 MB physical, so it never shares a page number with the window.
+- **Pad-handle race.** `diag/xinput_page0.bin`: the device pointer was
+  written at 0x80000322 while the handle 0x80000289 expects it at +0xA3.
+
+### Known toolkit issue (for upstream)
+
+The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes
+`ecx << 0x32` (C4293, undefined behaviour), where x86 masks the count to 5 bits
+(`0x12`). The 8 hits here are all in data decoded as code in the last chunk
+(`recomp_0057.c`), so they are harmless for Amped 2. The same lift on real code
+would be wrong.

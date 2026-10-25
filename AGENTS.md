@@ -51,7 +51,7 @@ RE-Amped2 is public only because it contains none of Amped 2. Keep it that way.
   through `tools.seed_from_log`. Edit that JSON with Python, not PowerShell
   5.1, which mangles arrays.
 - Record bring-up findings (addresses, identified functions, overrides) in
-  `README.md` under "Bring-up notes".
+  `docs/DEVELOPING.md` under "Bring-up notes".
 - Keep logging on hot paths opt-in. Printing changes the game's timing and
   has caused bugs of its own.
 - Players see the port as **RE-Amped2**; "Amped 2" means the original game.

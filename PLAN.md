@@ -65,7 +65,7 @@ clean-checkout build check. First mod work: the menu changes below
   render scale 1-8x, WASD or custom key bindings, dead zone, volume.
 - **Open:** the loading screen is black (its textures' memory is zero),
   FMV needs the NV2A video overlay, and resyncs come from the fence mirror
-  being ahead of the walk (README Bring-up notes).
+  being ahead of the walk (docs/DEVELOPING.md, Bring-up notes).
 
 **Update (2026-09-30, night): sound works and ML1 holds 60 fps.**
 - **Sound.** The sound-heap out-of-memory was a lifter flag-join bug in
@@ -79,7 +79,7 @@ clean-checkout build check. First mod work: the menu changes below
   on the render thread.
 - **Soak.** 45 minutes in ML1 with no crash, no out-of-memory and no
   freeze, at 60 fps with the soundtrack cycling (`soak6`). FMV is still
-  black (README Bring-up notes).
+  black (docs/DEVELOPING.md, Bring-up notes).
 
 **Update (2026-09-29, evening): the D3D11 GPU backend is in** (toolkit
 `292382f`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
@@ -193,7 +193,7 @@ Work items, in order of likelihood:
 - [x] At least one `Present` or flip reaches the host swap chain (D3D11 swap chain, 2026-09-29)
 - [x] The window shows a guest-rendered image (the legal or splash screen)
       (2026-09-29: title splash, `RECOMP_FB_WINDOW`)
-- [x] The finding is written up in the README's bring-up notes
+- [x] The finding is written up in the bring-up notes (docs/DEVELOPING.md)
 
 ### Phase 2: Frontend and menus (M2)
 
@@ -212,7 +212,7 @@ Work items, in order of likelihood:
   `config/force_return.txt`, which removed the post-splash deadlock.)*
 - **FMV:** decide whether XMV plays (`tools.xmv`) or is skipped for now.
   Skipping is acceptable for M2. *(2026-09-29: skipped by default.
-  2026-10-02: XMV plays, on by default; see README "FMV".)*
+  2026-10-02: XMV plays, on by default; see docs/DEVELOPING.md "FMV".)*
 - ~~**Front-end rendering:** the executor drew the UI squashed into the
   top-left.~~ Done 2026-09-29: vertex-program interpreter
   (`src/kernel/nv2a_vp.c`), viewport constants, general blending, texture ×
@@ -307,7 +307,7 @@ Work items, in order of likelihood:
 - Faster builds: hot-rebuild a single chunk, and `/MP` tuning.
 - Fix the lifter's unmasked immediate shift count (C4293) upstream if any
   real code turns out to hit it.
-- Record known issues in the README.
+- Record known issues in the README (player status table).
 
 **M4 exit criteria (the gate for Part B)**
 
@@ -522,10 +522,15 @@ Built from existing parts first, then new assets.
   - [x] 2026-10-25: the installer installs no build tool without consent.
         `ConsentDialog` lists each tool with its licence terms, and only the
         approved ones are installed.
-  - [ ] Wordmark: check that no letters are taken from the original Amped
-        logo. The Game Content Usage Rules forbid game logos in a fan
-        item's logo.
-- **RE-Amped2 branding** (README "Branding"). In the pack: title logo
+  - [x] Wordmark (2026-10-25, user): a new design inspired by the original
+        logo, with a similar but redrawn font, different colours and added
+        effects. It is not the game's logo, which the Game Content Usage
+        Rules forbid in a fan item's logo. Keep it that way: redraw rather
+        than trace or cut letters from the original.
+  - [x] 2026-10-25: Patreon removed everywhere (the user disabled it, to
+        leave no grey area). Feedback goes to GitHub Issues
+        (`Links.Issues`), and new versions to Releases.
+- **RE-Amped2 branding** (docs/DEVELOPING.md "Branding"). In the pack: title logo
   `ampedLogo`, the 4 boot splashes, `Logo_Amped2`, course banner
   `Banneramped2`, `RegisteredTradeMark` (blanked), the level loading screen
   (splash art, controller pictures and labels blanked, "LOADING ..."
