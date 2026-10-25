@@ -714,7 +714,7 @@ ah, 44h; jp` ("is this float non-zero") lifted `lahf` to a comment,
 because the comiss branch of the lifter's condition table had no `js`.
 `sub_000BD8E0` (scene-graph node transform) uses the idiom for
 position, rotation and scale, so camera `0x017D17A0` randomly lost its
-translation. Fixed in toolkit `99bdf66`; 60 of 61 sites are lifted now.
+translation. Fixed in toolkit `2cc2ee3`; 60 of 61 sites are lifted now.
 
 **Level-load crash: page 0.**
 - XAPI's USB driver keeps its device extensions in physical page 0,
@@ -727,8 +727,8 @@ translation. Fixed in toolkit `99bdf66`; 60 of 61 sites are lifted now.
 - The results: a DPC routine pointer of `0x00200020` (UTF-16 spaces), a
   CString crash inside the USB DPC, `XInputGetState` reading garbage,
   and OHCI giving up.
-- Fixed by reserving the bottom 64 KB of the window (`60da9a5`) and by
-  honouring `SET_COLOR_MASK` (`71c6c81`). Both allocators are locked
+- Fixed by reserving the bottom 64 KB of the window (`4d01c4d`) and by
+  honouring `SET_COLOR_MASK` (`94b15ac`). Both allocators are locked
   now too.
 - Because every contiguous block moved up by 0x10000, the DSP mailbox
   default in `main.c` is now `0x8106C810`.
@@ -755,7 +755,7 @@ dumping textures with `RECOMP_TEX_DUMP`), with its snow detail in another
 stage. `RECOMP_TEX_STATE` showed all four stages enabled, and the top
 unhandled methods had been the combiner registers all along.
 
-Toolkit `9f72674` adds a software register combiner
+Toolkit `662ddaf` adds a software register combiner
 (`src/kernel/nv2a_combiner.c`, using Xbox D3D's `PS_*` encodings),
 per-stage texture state, and oD1 plus oT0–oT3 carried per vertex. The
 menus now match the game, including the rider portraits that used to be
@@ -764,7 +764,7 @@ dark, and ML1 renders snow, forest, lifts, sky and the HUD.
 
 ### GPU backend (2026-09-29, evening)
 
-Toolkit `b8eddc1` draws on D3D11. It's on by default (`main.c` sets
+Toolkit `0894af8` draws on D3D11. It's on by default (`main.c` sets
 `RECOMP_GPU=d3d11`; `RECOMP_GPU=software` gets the software path back).
 The executor still decodes the pushbuffer; only draws, clears and flips
 change. Vertex programs and combiners become HLSL (`nv2a_hlsl.c`), and
@@ -785,7 +785,7 @@ which is D3D's CPU/GPU sync point. So frame time is roughly game time plus
 executor time. Per frame in ML1: about 800 draws, 2.9 MB of vertex copies,
 3.3 MB of texture hashing, and 5 ms inside `nv2a_d3d11_draw`.
 
-**Level-load race (fixed, toolkit `7e9ede5`).** With the GPU backend the ML1
+**Level-load race (fixed, toolkit `8619c99`).** With the GPU backend the ML1
 load failed about half the time, and every time at disc speed. The title's
 out-of-memory handler (`0x0002B6C0`, reached from `0x000DC1D6`) launched
 `d:\Boom.xbe` when the boarder's 41,000-byte `"SkeletonData"` sub-heap
@@ -806,7 +806,7 @@ level, disc speed included (`diag/fx1`–`fx4`).
 Ruled out on the way: flips at 30 fps, one guest CPU
 (`RECOMP_GUEST_CPU`, which also hangs), and priority boosts. Found on the
 way: new threads copied the main thread's live TLS block (current-heap
-stack included). They now copy a snapshot taken at load (`930e168`).
+stack included). They now copy a snapshot taken at load (`d023506`).
 **Lesson:** per-call logging on the file path changes the title's timing
 enough to lose its races. Keep hot-path traces opt-in.
 
@@ -816,10 +816,10 @@ the generated `sub_000DC0F0` at `loc_000DC1B8`. The out-of-memory wrapper
 then prints callers by heap and thread, and `RECOMP_AP_HEAP=<object>` logs
 one heap's allocations.
 
-### Missing rider torso (fixed, toolkit `f094bbf`)
+### Missing rider torso (fixed, toolkit `199e772`)
 
 In game only the rider's legs, board and hair rendered, on both draw
-paths. `RECOMP_VP_BAD` (toolkit `8732670`) found the torso batches
+paths. `RECOMP_VP_BAD` (toolkit `20e85fa`) found the torso batches
 collapsed to one point with w ≈ −974. `tools/vp_disasm.py` shows their
 program is 4-bone skinning:
 - `a0 = v3*c[168].x`, with `c[168].x` = 256;
@@ -843,7 +843,7 @@ one lands back in it, plus one level of call/return: about 23,500 per
 
 ### Render thread and pacing (2026-09-29, night)
 
-D3D11 calls run on a render thread (toolkit `32105ce`). The executor queues
+D3D11 calls run on a render thread (toolkit `bd1f87f`). The executor queues
 packets, and the display paces at 60 Hz with up to
 `RECOMP_GPU_FRAMES_AHEAD` (2) frames queued. ML1 runs at about 50–55 fps
 paced and about 70 unpaced (`RECOMP_FLIP_NOWAIT=1`).
@@ -863,7 +863,7 @@ paced and about 70 unpaced (`RECOMP_FLIP_NOWAIT=1`).
   64-byte cue (refcount 1, flags 4, no tracks) plus a chunk of the size-class
   pool (`0x0001304D`). The pool never returns chunks to the heap.
 
-The fix is toolkit `94d7325`: mixed-width joins merge into a marker that
+The fix is toolkit `59854f9`: mixed-width joins merge into a marker that
 answers only the width-independent conditions.
 
 How it was found:
@@ -886,7 +886,7 @@ thread spun forever in `voice_process`:
 - The next DirectSound `VOICE_LOCK` write (`sub_0029694E`, through the MMIO
   VEH) then waited on `d->lock` while holding the title's DirectSound lock.
 
-The fix is toolkit `5fa79de`, which also makes the frame thread hand the
+The fix is toolkit `3ec97f7`, which also makes the frame thread hand the
 lock to queued writers. `RECOMP_APU_STATS=1` prints voice, notification and
 frame-rate counters every 5 s.
 
@@ -926,7 +926,7 @@ nothing missing (`diag/async_game.png`).
 **Lesson:** logging is not free here. Anything printed from the executor,
 render, APU or guest threads has to be rare or go through the pipe.
 
-### Soundtrack (fixed, toolkit `3fb893e`, 2026-09-30)
+### Soundtrack (fixed, toolkit `0bfd7ab`, 2026-09-30)
 
 The jukebox builds its playlist by listing `d:\Audio\Music`, then each
 genre directory, with `NtQueryDirectoryFile` and an empty pattern (a
@@ -953,7 +953,7 @@ To catch the rest before a player does, a scan of the data sections
 library sections as code) looks for vtable runs whose entries are neither
 known functions nor inside one. It found six more, now seeded. Two of
 them follow a switch's jump tables with no prologue, and the disassembler
-rejected them until toolkit `b980bde` (an aligned seed after int3 padding
+rejected them until toolkit `2bf2c72` (an aligned seed after int3 padding
 counts as a boundary).
 
 ### FMV (fixed, 2026-10-02)
@@ -969,14 +969,14 @@ them. Four things were missing, all in the toolkit:
   shows PCRTC, and our ack thread had zeroed it by then. The tick now writes
   PCRTC_INTR_0 = 0x80000001; the bits stay pending until the title's
   acknowledge drops the marker, and a vblank-only thread then clears them at
-  once (toolkit `eb29413`). (0x0031C2E0, which counts only on a field parity
+  once (toolkit `c260dd4`). (0x0031C2E0, which counts only on a field parity
   match, is the mode-set path, not this one.)
 - **XMV starts only on an even field.** GetNextFrame sets its start time
   (0x002CE2D5) only when the field is not ODD. In interlaced modes the field
   comes from `in al, dx` at port 0x80C0 (bit 5, the TV encoder's field pin)
   in the ISR (0x0032213C) and the handler (0x0032240D). The lifter left `in`
   unimplemented. It now lifts port I/O to `xbox_PortIn/xbox_PortOut`, and
-  0x80C0 follows the vblank parity (toolkit `209befc`; needs a regen).
+  0x80C0 follows the vblank parity (toolkit `1c3c3d4`; needs a regen).
 - **The picture is the NV2A video overlay** (PVIDEO, registers at
   0xFD008000; D3D UpdateOverlay 0x00329240). The D3D11 backend reads it at
   present time and draws the YUY2 surface (BT.601) into its destination
@@ -1010,23 +1010,23 @@ interrupt every timer pass, thousands of trapped-front-end waits.
   the timer thread ran DPCs without the lock, so DirectSound's trap DPC
   could run beside a game thread inserting voices. Each DPC now holds the
   lock (bounded at 20 ms), and the APU wakes the timer thread when it
-  raises its line, so a trap is serviced at once (toolkit `457415a`).
+  raises its line, so a trap is serviced at once (toolkit `c79483a`).
 - [HEALTH] now ends with "N idle voices linked"; a steady count above a
   handful is this failure.
 - Separately, the kernel call counter wrapped at 2^31 calls and logged
   every kernel call from then on (135 MB in ten minutes), fixed in toolkit
-  `755b23a`.
+  `bbc9920`.
 
 ### Pad dead in game, hissing sound effects, rumble (fixed, 2026-09-30)
 
 - **Pad input stopped a few seconds into every level** (toolkit
-  `5fe3de8`). Rumble starts in game as HID SET_REPORT on the control pipe.
+  `51c6d5f`). Rumble starts in game as HID SET_REPORT on the control pipe.
   The OHCI model published the control list's done list over the periodic
   list's in the same tick, so a pad report's completion was lost, and the
   driver never polled again. All lists now share one done list per tick.
   The DPC queue is also locked, since the OHCI and timer threads both
   insert into it. Measured with `RECOMP_INPUT_DIAG`.
-- **Sound effects hissed; music inaudible** (toolkit `83a7130`). Low RAM
+- **Sound effects hissed; music inaudible** (toolkit `55681e6`). Low RAM
   and the contiguous window are separate storage with overlapping physical
   offsets. XACT keeps its wave banks in the ordinary heap, and DirectSound
   maps them with `MmGetPhysicalAddress`, but the APU read every page from
@@ -1050,8 +1050,8 @@ interrupt every timer pass, thousands of trapped-front-end waits.
 
 ### Renderer glitches, game-wide crackle (2026-10-01, overnight)
 
-- **Terrain without ground, garbage state** (toolkit `cf0773d`,
-  `e1de82f`). Two pushbuffer-walker bugs:
+- **Terrain without ground, garbage state** (toolkit `1265dee`,
+  `58ef72d`). Two pushbuffer-walker bugs:
   - D3D sets PUT in the middle of a long method, and the walker dropped
     the rest of it. The unfinished method is now carried over.
   - Ring wraps were handled as segments bounded by the lowest and highest
@@ -1064,11 +1064,11 @@ interrupt every timer pass, thousands of trapped-front-end waits.
   the walk is reading data. It then resyncs at PUT instead of executing it.
   The D3D11 backend range-checks every guest read (`guest_ok`). Result:
   240 s in ML1 with pause/resume, no bad state, no crash, 58 fps.
-- **Black rider on the menus** (toolkit `d379311`): cube maps and the
+- **Black rider on the menus** (toolkit `856bc12`): cube maps and the
   dot-product texture modes (DOT_PRODUCT, DOT_ST, DOT_RFLCT_*,
   DOT_STR_CUBE) with PS_INPUTTEXTURE and PS_DOTMAPPING. The rider has a
   reflective look.
-- **Crackle/hiss in game** (toolkit `dc6f9eb`): voices were played at
+- **Crackle/hiss in game** (toolkit `0970b90`): voices were played at
   48 kHz whatever their pitch. Slower streams ran dry mid-frame, so each
   32-sample frame could end in a step. A per-voice linear resampler cut the
   steps on frame boundaries from 1901 to 22 a minute.
@@ -1089,7 +1089,7 @@ interrupt every timer pass, thousands of trapped-front-end waits.
 Loading a second level ran the 48 MB guest heap out. `NtFreeVirtualMemory`
 handed the guest's pointer to the host's `VirtualFree`, which always failed,
 so the level pools Amped 2 gets from `NtAllocateVirtualMemory` were never
-released (toolkit `3891dad`). The heap's block reuse now also splits and
+released (toolkit `fbf31f2`). The heap's block reuse now also splits and
 coalesces properly. Three scripted Leave Mountain/reload cycles of ML1 run
 clean (`reload3`). One run crashed once in the USB driver's DPC
 (`sub_00334BA5`) after a reload; this has not been reproduced.
@@ -1129,11 +1129,11 @@ behaviour).
 - **Level 3 (Event 1, BR1)** calls a virtual method (`0x0012F7D0`) that
   static analysis missed. The unresolved call blacked out the picture, and
   it's now seeded (amped2 `0836027`). A USB DPC crash in the same run was
-  OHCI raising StartOfFrame before its list walk (toolkit `4d5a553`).
+  OHCI raising StartOfFrame before its list walk (toolkit `44b5808`).
 - **Audio noise a few minutes into a level:** freeing `NtFreeVirtualMemory`
   regions straight away (the level-2 memory fix) let the heap recycle memory
   the sound engine was still reading. Those regions are now held until the
-  heap actually runs out, which happens at a level load (toolkit `0a2eef4`).
+  heap actually runs out, which happens at a level load (toolkit `ed0ad31`).
 
 ### Competition-stage crash; night level too dark (2026-10-01)
 
@@ -1142,7 +1142,7 @@ behaviour).
   XPP's fresh-block fill 0xCCCCCCCC. A wrapper in `recomp_manual.c` now
   returns "not connected" in that window (amped2 `8e1da42`). Held heap
   regions are also released oldest-first, only as far as needed (toolkit
-  `aaa61d1`). A full competition then ran to the ranking screen with clean
+  `fdf479e`). A full competition then ran to the ranking screen with clean
   audio.
 - **Crash, second site (amped2, `sub_0032F2C6` wrapper):** run `l3t0`
   crashed in `XInputGetState` the same way: the handle block at 0x80000080
@@ -1152,7 +1152,7 @@ behaviour).
   watch, so the writer is still unknown. The one run that crashed was also
   the only one with a `[NV2A] ring walk … lost` line. GetState now answers
   "not connected" for such a handle, like SetState.
-- **Night level (fixed, toolkit `9aac8d1`):** the near terrain (pixel
+- **Night level (fixed, toolkit `efdf84e`):** the near terrain (pixel
   shader `c585d542…`) blends each pixel between lit, `(v0 + t0)·t2`, and
   "in shadow", `v1·t2`, which is dark blue. The blend factor is t0.a
   (baked floodlight mask, from the 1024×2048 atlas at 0x81118400) times
@@ -1173,7 +1173,7 @@ behaviour).
 
 ### Night-stage lights and audio break-up (fixed, 2026-10-01 evening)
 
-- **Lights (toolkit `92a013a`):** floodlight glows and lens flares are
+- **Lights (toolkit `e4c81d6`):** floodlight glows and lens flares are
   gated by D3D visibility tests:
   - Begin pushes `0x817C8 1 1` (game code at 0x13A1CB); End (D3D
     0x31ADF0) pushes `0x817CC 0 <report>`.
@@ -1183,13 +1183,13 @@ behaviour).
     report page above 16 MB bits 24-27 are address bits.
   - The report is completed at once with that slot's last count, because
     the title reads results a frame later than our GPU delivers them.
-- **Audio (toolkit `a3df707`):** DirectSound traps the APU front end
+- **Audio (toolkit `65dc2e3`):** DirectSound traps the APU front end
   (SE2FE_IDLE_VOICE) until its ISR/DPC run. The frame thread used to emit
   silent sub-frames meanwhile: 224-sample holes, dozens a second. It now
   waits instead. The throttle also makes up lost time and steers by the
   XAudio2 queue depth.
 
-### Mixbin downmix (toolkit `d64746c`, 2026-10-01)
+### Mixbin downmix (toolkit `d038c75`, 2026-10-01)
 
 The DSP is a stub, so the mixbins are folded to stereo on the host. Amped 2
 routes:
@@ -1206,7 +1206,7 @@ old fold.
 
 ### Music corruption and the whistle (fixed, 2026-10-02)
 
-- **Music crackle/distortion in levels (toolkit `a614b76`).** DirectSound's
+- **Music crackle/distortion in levels (toolkit `1ed18f9`).** DirectSound's
   critical section is KeRaiseIrql to DISPATCH, which on the console's one
   CPU excludes everything else. Here the game and XACT threads ran their
   `SET_CURRENT_VOICE` + `SET_VOICE_*` sequences on different cores at
@@ -1218,11 +1218,11 @@ old fold.
 - **Pad crash, same root cause.** XPP built a pad slot ten bytes off the
   handle it returned (see "Pad-handle race" below); the lock covers the
   thread-vs-thread half of that.
-- **Whistle (toolkit `a7e616e`).** Voices 0x40–0x43 loop one VP frame (32
+- **Whistle (toolkit `29a9870`).** Voices 0x40–0x43 loop one VP frame (32
   samples) of a buffer the GP DSP rewrites every frame; our GP is a stub,
   so they replayed stale memory, in one session the DSP program image.
   They are now silent (`RECOMP_APU_GP_READBACK=1` to hear them).
-- **Physical numbering (toolkit `1e91bf5`).** Ordinary memory is now
+- **Physical numbering (toolkit `95c5fde`).** Ordinary memory is now
   64–128 MB physical, so it never shares a page number with the window.
 - **Pad-handle race.** `diag/xinput_page0.bin`: the device pointer was
   written at 0x80000322 while the handle 0x80000289 expects it at +0xA3.

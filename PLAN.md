@@ -35,7 +35,7 @@ the sponsor, photo and Pro challenges and sk8 runs, with movies and
 sound. Legend runs unlock only once the whole game is completed, so
 they are a long-term check. Hiccups found later get fixed as they come. Still open
 from the M4 list, kept as follow-ups: a full career to the end, long play
-with the dead-voice fix (`457415a`), in-game movies, and the
+with the dead-voice fix (`c79483a`), in-game movies, and the
 clean-checkout build check. First mod work: the menu changes below
 (Phase 6).
 
@@ -44,20 +44,20 @@ clean-checkout build check. First mod work: the menu changes below
   the title screen, on by default (`PlayMovies=0` skips them). XMV needed
   D3D's vblank count to move, the TV field pin at port 0x80C0 (the lifter
   now lifts port I/O), the PVIDEO overlay drawn, and PVIDEO_STOP honoured
-  (toolkit `209befc`, `eb29413`). In-game movies are untested.
+  (toolkit `1c3c3d4`, `c260dd4`). In-game movies are untested.
 - **Sound after long play.** Dead voices left linked in the APU's voice
   lists slowed the APU to a third of real time, and the game with it. DPCs
-  now hold the dispatch lock, and traps are serviced at once (`457415a`).
+  now hold the dispatch lock, and traps are serviced at once (`c79483a`).
   Under test; [HEALTH] counts "idle voices linked".
 
 **Update (2026-10-01, overnight): menu rider, in-game state and crackle fixed.**
 - **Renderer.** The menu rider is drawn with cube maps and the dot-product
-  texture modes (`d379311`). The pushbuffer walker finishes methods split
-  at PUT (`cf0773d`). It now runs the ring from a GET pointer and follows
-  every jump, wraps included (`e1de82f`), which ends the garbage state and
+  texture modes (`856bc12`). The pushbuffer walker finishes methods split
+  at PUT (`1265dee`). It now runs the ring from a GET pointer and follows
+  every jump, wraps included (`58ef72d`), which ends the garbage state and
   the terrain without ground. 240 s in ML1 with pause/resume: no bad state,
   no crash, 58 fps.
-- **Sound.** Voices are resampled to their pitch (`dc6f9eb`), so the
+- **Sound.** Voices are resampled to their pitch (`0970b90`), so the
   crackle on APU frame boundaries is down 99%.
 - **Soak.** 60 minutes in ML1 at 2x internal resolution with constant
   pause/resume: no crash, no bad state, 59.2 fps, memory flat (`soak7`).
@@ -69,12 +69,12 @@ clean-checkout build check. First mod work: the menu changes below
 
 **Update (2026-09-30, night): sound works and ML1 holds 60 fps.**
 - **Sound.** The sound-heap out-of-memory was a lifter flag-join bug in
-  XACT (toolkit `94d7325`). The freeze that followed was the APU spinning
-  on a dry stream voice (`5fa79de`). The APU now reads the right memory by
+  XACT (toolkit `59854f9`). The freeze that followed was the APU spinning
+  on a dry stream voice (`3ec97f7`). The APU now reads the right memory by
   default, and in-game sound plays throughout. The soundtrack plays too:
-  directory listing with an empty pattern was broken (`3fb893e`).
+  directory listing with an empty pattern was broken (`0bfd7ab`).
 - **Frame rate.** Paced ML1 is a locked 60.0 fps, 600 flips in 10.00 s,
-  even with a cold shader cache (`b8fb14f`, and async stderr in `main.c`).
+  even with a cold shader cache (`c6b2d5e`, and async stderr in `main.c`).
   The hitches came from logging on hot threads and from compiling shaders
   on the render thread.
 - **Soak.** 45 minutes in ML1 with no crash, no out-of-memory and no
@@ -82,17 +82,17 @@ clean-checkout build check. First mod work: the menu changes below
   black (docs/DEVELOPING.md, Bring-up notes).
 
 **Update (2026-09-29, evening): the D3D11 GPU backend is in** (toolkit
-`b8eddc1`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
+`0894af8`, the default via `RECOMP_GPU=d3d11` in `main.c`). Vertex programs
 and register combiners are compiled to HLSL; textures, render targets and
 depth live on the GPU. The front end runs at 60–90 fps and level ML1 at
 **about 46 fps** (was 1.6), on the RTX 2070. Flips now wait for a 60 Hz
-vblank. **The level-load failure is fixed** (`7e9ede5`). Per-read logging made a
+vblank. **The level-load failure is fixed** (`8619c99`). Per-read logging made a
 front-end character take 11 s to load, and leaving the menu destroyed its
-heaps mid-load; 4/4 loads now reach ML1. **The rider renders whole** (`f094bbf`): the pushbuffer walker now follows jumps and calls out of the ring, and **fog** is in (`1b3c50c`). Next: shadows,
+heaps mid-load; 4/4 loads now reach ML1. **The rider renders whole** (`199e772`): the pushbuffer walker now follows jumps and calls out of the ring, and **fog** is in (`11b3279`). Next: shadows,
 presenting to a swap chain with upscaling, and cheaper per-draw state.
 
 **Update (2026-09-29, later afternoon):** lit models render (packed
-normals, `810179c`), and the executor is about twice as fast (`39df0df`),
+normals, `e1950c6`), and the executor is about twice as fast (`6cc0668`),
 at roughly 1.6 fps in game. That's the ceiling of the single-threaded
 software renderer: the game waits on it. **Next decision: a GPU
 backend.** Vertex programs → HLSL, combiners → pixel shaders, texture
@@ -103,7 +103,7 @@ software path with predecoded vertex programs, which is cheaper but
 probably tops out at a few fps.
 
 **Update (2026-09-29, afternoon):** with register combiners and four
-texture stages in the executor (toolkit `9f72674`), **the front end and
+texture stages in the executor (toolkit `662ddaf`), **the front end and
 level ML1 render like the game**: the logo and snow backdrop, the rider
 portraits, and in game the snowy slopes, forest, lifts, sky, HUD and
 CHALLENGES panel (`diag/comb_menu_sheet.png`,
@@ -222,14 +222,14 @@ Work items, in order of likelihood:
 - ~~**Input:**~~ Done 2026-09-29: USB wired in `main.c`, the toolkit's
   bus-address fix, and seeds for the XPP class-driver and report routines
   (`0x003306DF`, `0x0032FC8B`). START is read; the menus navigate.
-- ~~**Menu camera.**~~ Done 2026-09-29 (toolkit `99bdf66`). It wasn't an
+- ~~**Menu camera.**~~ Done 2026-09-29 (toolkit `2cc2ee3`). It wasn't an
   ordering problem: `lahf` after `ucomiss` was never lifted, so
   `sub_000BD8E0` decided at random whether a node's position was set.
-- ~~**Level-load crash.**~~ Done 2026-09-29 (toolkit `60da9a5`,
-  `71c6c81`). A depth-only pass painted physical page 0, where XAPI's
+- ~~**Level-load crash.**~~ Done 2026-09-29 (toolkit `4d01c4d`,
+  `94b15ac`). A depth-only pass painted physical page 0, where XAPI's
   USB driver keeps its structures.
 - ~~**In-game rendering: black terrain.**~~ Done 2026-09-29 (toolkit
-  `9f72674`): register combiners and texture stages 0–3. `0x001C8C20`
+  `662ddaf`): register combiners and texture stages 0–3. `0x001C8C20`
   seeded.
 - **In-game rendering (next):**
   - the rider draws black: check its combiner inputs, likely lighting
@@ -239,7 +239,7 @@ Work items, in order of likelihood:
   - fixed-function mode `0x4` batches (the shadow pass);
   - speed.
 - ~~**Depth, Gouraud, perspective, alpha test in the executor.**~~ Done
-  2026-09-29 (toolkit `8d0db30`). Fixed-function T&L (mode `0x4`) and
+  2026-09-29 (toolkit `95eb12b`). Fixed-function T&L (mode `0x4`) and
   register combiners are still open.
 - **Menu rendering: 3D in the executor.** The streaks are fixed
   (near-plane clipping). The remaining problem is menus stacking over one
@@ -316,9 +316,9 @@ Work items, in order of likelihood:
       career run to the end is still a follow-up)
 - [x] Audio, music and FMV work
       (2026-10-02: audio and music work in play after the dispatch lock,
-      toolkit `a614b76`. The boot movies play with sound, `eb29413`.
+      toolkit `1ed18f9`. The boot movies play with sound, `c260dd4`.
       Still to confirm: in-game movies, and long play without the
-      dead-voice slowdown, `457415a`)
+      dead-voice slowdown, `c79483a`)
 - [x] Saves persist across restarts
       (2026-10-02: career progress, level 4+ unlocks kept across many sessions)
 - [x] 60 minutes of play with no crash (`soak7`, 2026-10-01: ML1 at 2x with scripted pause/resume, 59.2 fps, memory flat at ~500 MB)
@@ -349,9 +349,9 @@ touch generated code directly.
   allocator, so anything they read must stay in the RAM range they map;
   `g_xbox_phys_lowram`, `guest_ok` in the D3D11 backend and
   `xbox_ContiguousAllocatedBytes` all assume 64 MB today. Not needed for
-  M4: the level-2 out-of-memory was a leak (`3891dad`).
+  M4: the level-2 out-of-memory was a leak (`fbf31f2`).
   **Done (2026-10-08), opt-in:** ini `[Game] Memory=128` (toolkit
-  `RECOMP_GUEST_RAM_MB=128`, `7ee1123`) gives a debug kit's layout: heap
+  `RECOMP_GUEST_RAM_MB=128`, `db4b7bd`) gives a debug kit's layout: heap
   48 → 112 MB, contiguous window 64 → 128 MB. The game sizes its graphics
   pool by probing from 60 MB down in 8 KB steps (`0x0013A181`); at 64 MB it
   settles at ~48 MB after 1571 failed tries, at 128 MB it gets the full
@@ -459,7 +459,7 @@ In order: the cheapest win first, and the ones that affect gameplay last.
    menu and loading-screen textures after freeing them, when the pool's
    free-list header has replaced the first 16 bytes (a pointer, so a new
    key each run). The runtime now matches DXT textures by the rest of the
-   top mip (toolkit `851b052`, `tails.txt` from `tex-pack`); the loading
+   top mip (toolkit `bd652ed`, `tails.txt` from `tex-pack`); the loading
    screen shows its upscaled art for the first time. Left: four fonts (by
    design), a 1x1 fill, one 0x3C texture, and a few textures drawn after
    their memory was reused. `RECOMP_TEXTURE_PACK_DUMP` + `tex-misses` add
