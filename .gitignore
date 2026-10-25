@@ -61,8 +61,9 @@ run_stdout.txt
 # tools/diag.ps1 output
 diag/
 
-# Local-only project files
+# Local-only project files (personal agent rules and settings; see AGENTS.md)
 CHANGELOG.md
+CLAUDE.local.md
 .claude/settings.local.json
 # D3D11 compiled-shader cache (RECOMP_SHADER_CACHE)
 shader_cache/
