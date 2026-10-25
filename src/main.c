@@ -1275,10 +1275,11 @@ static void mod_packs(void)
 
 /*
  * Which disc the XBE came from. The USA and the PAL (Europe, Australia) XBEs
- * hold the same build: the code is byte-identical apart from the PAL rip's
- * media patch at 0x0025543A, and everything else that differs is in the
- * certificate. Either works -- sub_00255202 (recomp_manual.c) answers the DVD
- * check -- so this only reports which one was loaded.
+ * hold the same build: the code is byte-identical apart from one byte at
+ * 0x0025543A, and everything else that differs is in the certificate.
+ * Either works -- sub_00255202 (recomp_manual.c) answers the disc-drive
+ * check, since the port has no drive -- so this only reports which one was
+ * loaded.
  */
 static void describe_xbe(const uint8_t *xbe, size_t size)
 {

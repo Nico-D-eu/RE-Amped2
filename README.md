@@ -10,6 +10,22 @@ You must supply your own legally owned copy of the game. No game code or assets
 are in this repository; `game/` and `src/recomp/gen/` are git-ignored and are
 regenerated locally.
 
+## Legal
+
+- RE-Amped2 is an **unofficial, free fan project**, not affiliated with or
+  endorsed by Microsoft. Amped, Amped 2 and Xbox are trademarks of Microsoft
+  Corporation. Amped 2 © Microsoft Corporation.
+- **No game code or data** is in this repository or in its releases. The
+  installer builds the game on the player's PC, from the player's own disc.
+- This project's own code is under the **MIT licence** (`LICENSE`).
+  Third-party components and their licences are listed in `NOTICE.md`.
+- RE-Amped2's art was created under Microsoft's
+  ["Game Content Usage Rules"](https://www.xbox.com/en-US/developers/rules)
+  using assets from Amped 2, and it is not endorsed by or affiliated with
+  Microsoft.
+- Contributing: see `CONTRIBUTING.md`. Never submit game files, code
+  generated from the game, or anything extracted from it.
+
 ## Layout
 
 ```
@@ -44,14 +60,13 @@ From `py -3 -m tools.xbe_parser` (full output in `game/default_analysis.json`):
 | Libraries | XAPILIB, LIBCMT, DSOUND, XONLINES, XVOICE, XMV, D3D8LTCG, XGRAPHCL, XACTENLT |
 
 **Either disc works.** The USA and PAL XBEs are the same build: same entry
-point, layout, imports and code, apart from one byte (the PAL rip is
-media-patched at `0x0025543A`), and all 720 data files are identical. The
-certificates differ (region `0x1` vs `0x4`, ratings, keys). XAPI's DVD
-authentication `sub_00255202`, which the unpatched USA XBE runs, is
-overridden in `recomp_manual.c` to report success, so `game/` can hold
-either disc and `regen.ps1` works from either `default.xbe`. The exe prints
-which one it loaded (`XBE region: ...`). We use the USA disc; the PAL XBE
-is kept as `game/default.pal.xbe`. Comparison: `../amped2-ntsc/NOTES.md`.
+point, layout, imports and code, apart from one byte (at `0x0025543A`),
+and all 720 data files are identical. The certificates differ (region
+`0x1` vs `0x4`, ratings, keys). The port runs from extracted files and has
+no disc drive, so XAPI's start-up drive check `sub_00255202` is answered
+directly in `recomp_manual.c`. That way `game/` can hold either disc and
+`regen.ps1` works from either `default.xbe`. The exe prints which one it
+loaded (`XBE region: ...`).
 
 Other executables on the disc (`Boom.xbe`, `cdx.xbe`, `update.xbe`,
 `dashupdate.xbe`) are not part of the port; only `default.xbe` is recompiled.
@@ -138,7 +153,7 @@ the window title, the shortcut and new menu text ("Close RE-Amped2."). "Amped 2"
 means the original game only. Internal names stay as they are: the `amped2/`
 folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
 
-- **Icon:** `branding/RE-Amped2.ico` (16-256 px, from the user's badge). It is
+- **Icon:** `branding/RE-Amped2.ico` (16-256 px, from the RE-Amped2 badge). It is
   `RE-Amped2.exe`'s icon resource (`src/RE-Amped2.rc`), which xboxrecomp's
   game and video windows load for their title bar and taskbar button. It is
   also the installer's icon, its window's, and the installed `RE-Amped2.ico`
@@ -168,7 +183,7 @@ folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
   shows too. `build.py` also makes the installer's header and badge
   (`installer/assets/`). After changing the art, rebuild and commit
   `branding/pack/` and `installer/assets/`.
-- **Masters** are local and git-ignored, in `branding/drafts/`: the user's art.
+- **Masters** are local and git-ignored, in `branding/drafts/`: the project's art, composed with AI image tools from screenshots of the game (see `NOTICE.md`).
   These are `reamped2_wordmark_full.png` and `..._noglow_full.png` (the logo,
   transparent) and `work/` (4x upscales of the banner and badge, and the course
   banner with its old logo painted out). `tools/branding/unblack.py` turns a
