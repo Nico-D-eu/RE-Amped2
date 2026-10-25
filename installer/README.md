@@ -5,8 +5,8 @@ wizard that builds the game on the player's PC from their own disc image.
 No game code or data is in it; it carries this project's sources, the
 xboxrecomp toolkit, xdvdfs and the RE-Amped2 look (15 MB in all).
 
-Version 0.1.0 is the **early-access** test build: the header carries an
-EARLY ACCESS tag, the footer says `v0.1.0 · Early Access`, and the first and
+Version 0.2.0 is the first public **early-access** build (0.1.0 was the testers' build): the header carries an
+EARLY ACCESS tag, the footer says `v0.2.0 · Early Access`, and the first and
 last pages and `README.txt` ask testers to report problems on GitHub Issues
 (`Links.Issues` in `Shortcut.cs`) with their `amped2.log`. The footer's **Licences** link
 opens the licence texts (see below).
