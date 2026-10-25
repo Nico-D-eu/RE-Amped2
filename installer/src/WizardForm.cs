@@ -14,7 +14,7 @@ namespace Amped2Installer
 {
     /// <summary>
     /// The four-step wizard: 1 disc image, 2 install folder and options,
-    /// 3 install (InstallJob on a worker thread), 4 result and Patreon.
+    /// 3 install (InstallJob on a worker thread), 4 result and where to report problems.
     /// </summary>
     sealed class WizardForm : Form
     {
@@ -31,8 +31,8 @@ namespace Amped2Installer
         static readonly Color Good = Color.FromArgb(0x1E, 0x8E, 0x4F);
         static readonly Color Bad = Color.FromArgb(0xC6, 0x28, 0x28);
         static readonly Color Info = Color.FromArgb(0x1E, 0x6F, 0xB8);
-        static readonly Color PatreonRed = Color.FromArgb(0xFF, 0x42, 0x4D);
-        static readonly Color PatreonBg = Color.FromArgb(0xFF, 0xF3, 0xF2);
+        static readonly Color FeedbackBg = Color.FromArgb(0xEE, 0xF5, 0xFD);
+        static readonly Color FeedbackBorder = Color.FromArgb(0xC7, 0xDD, 0xF5);
         static readonly Color FooterBg = Color.FromArgb(0xF4, 0xF6, 0xF8);
         static readonly Color Border = Color.FromArgb(0xDD, 0xE3, 0xE9);
 
@@ -232,7 +232,7 @@ namespace Amped2Installer
 
             AddFill(page);
             Add(page, Para("Early access: RE-Amped2 is a work in progress, so expect bugs and rough edges. " +
-                           "Tell us what you run into in our free Patreon community; the last page has the link.", Body, _small));
+                           "Tell us what you run into on GitHub; the last page has the link.", Body, _small));
             Add(page, Para("No game files come with this installer: it needs your own legally owned copy of the game. " +
                            "You can also drag the disc image onto this window.", Muted, _small));
             return Wrap(page);
@@ -859,9 +859,9 @@ namespace Amped2Installer
                 foreach (var tip in tips)
                     Add(page, Bullet(tip));
 
-                Add(page, PatreonBox("Tell us how it rides",
-                    "Early-access feedback goes to our Patreon community: bugs, crashes, anything that looks off. " +
-                    "It's also where updates and news appear. Joining is free, and nothing is behind a paywall."));
+                Add(page, FeedbackBox("Tell us how it rides",
+                    "Bugs, crashes, anything that looks off: report them on GitHub, with amped2.log from the install folder. " +
+                    "New versions appear on the same page."));
 
                 _launchBox = new CheckBox { Text = "Start RE-Amped2 now", Checked = true, AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
                 Add(page, _launchBox);
@@ -887,8 +887,8 @@ namespace Amped2Installer
                 if (!string.IsNullOrEmpty(r.Advice))
                     Add(page, Para(r.Advice));
                 AddLogLink(page, r);
-                Add(page, PatreonBox("Need a hand?",
-                    "The free community on Patreon can help. Share the install log there, along with which step went wrong."));
+                Add(page, FeedbackBox("Need a hand?",
+                    "Report it on GitHub, with the install log and the step that went wrong."));
             }
             AddFill(page);   // leftover height below the content, not between rows
             page.ResumeLayout();
@@ -909,31 +909,30 @@ namespace Amped2Installer
             Add(page, link);
         }
 
-        Control PatreonBox(string title, string text)
+        Control FeedbackBox(string title, string text)
         {
             var box = new TableLayoutPanel
             {
                 ColumnCount = 2,
                 AutoSize = true,
                 Anchor = AnchorStyles.Left | AnchorStyles.Right,
-                BackColor = PatreonBg,
+                BackColor = FeedbackBg,
                 Padding = new Padding(14, 12, 14, 12),
                 Margin = new Padding(0, 14, 0, 0),
             };
             box.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             box.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            box.Paint += (s, e) => { using (var p = new Pen(Color.FromArgb(0xF6, 0xC8, 0xC5))) e.Graphics.DrawRectangle(p, 0, 0, box.Width - 1, box.Height - 1); };
-            var words = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0), BackColor = PatreonBg };
+            box.Paint += (s, e) => { using (var p = new Pen(FeedbackBorder)) e.Graphics.DrawRectangle(p, 0, 0, box.Width - 1, box.Height - 1); };
+            var words = new TableLayoutPanel { ColumnCount = 1, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0), BackColor = FeedbackBg };
             words.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             words.Controls.Add(Label(title, _bold, Ink, new Padding(0, 0, 0, 4)), 0, 0);
             words.Controls.Add(Label(text, _base, Body, new Padding(0)), 0, 1);
-            var button = MakeButton("Visit Patreon", true);
-            button.BackColor = PatreonRed;
+            var button = MakeButton("Report a problem", true);
             button.Anchor = AnchorStyles.Right;
             button.Margin = new Padding(14, 0, 0, 0);
-            button.Click += (s, e) => Links.Open(Links.Patreon);
+            button.Click += (s, e) => Links.Open(Links.Issues);
             var tip = new ToolTip();
-            tip.SetToolTip(button, Links.Patreon);
+            tip.SetToolTip(button, Links.Issues);
             box.Controls.Add(words, 0, 0);
             box.Controls.Add(button, 1, 0);
             return box;

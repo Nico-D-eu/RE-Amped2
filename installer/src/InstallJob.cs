@@ -345,7 +345,7 @@ namespace Amped2Installer
             var gen = Path.Combine(Amped2, @"src\recomp\gen");
             if (code != 0 || !Directory.Exists(gen) || Directory.GetFiles(gen, "recomp_*.c").Length == 0)
                 throw new UserFacingException("The game's code couldn't be translated.",
-                    "This shouldn't happen with a good disc image. Please share the install log with the community on Patreon so it can be looked at.");
+                    "This shouldn't happen with a good disc image. Please report it on GitHub with the install log so it can be looked at.");
         }
 
         void StageBuild()
@@ -398,7 +398,7 @@ namespace Amped2Installer
                 if (errors.Count > 0)
                     Log("First errors:\n  " + string.Join("\n  ", errors));
                 throw new UserFacingException("The game couldn't be compiled.",
-                    "The install log has the details. Please share it with the community on Patreon so it can be fixed.");
+                    "The install log has the details. Please report it on GitHub with the log so it can be fixed.");
             }
             SetFraction(1);
         }
@@ -548,7 +548,7 @@ namespace Amped2Installer
                 .AppendLine()
                 .AppendLine("Early access")
                 .AppendLine("  This is a test build of a work in progress: expect bugs and rough edges.")
-                .AppendLine("  Report problems in the free Patreon community (link below). Say what you were doing, and")
+                .AppendLine("  Report problems on GitHub (link below). Say what you were doing, and")
                 .AppendLine("  attach amped2.log from this folder; it is rewritten on every start, so")
                 .AppendLine("  copy it before starting the game again.")
                 .AppendLine()
@@ -572,8 +572,11 @@ namespace Amped2Installer
                 .AppendLine("  Career progress is saved in game\\UDATA in this folder. Back it up before")
                 .AppendLine("  deleting the folder. Running the installer again keeps it.")
                 .AppendLine()
-                .AppendLine("Community, support and updates (free to join, nothing is paywalled)")
-                .AppendLine("  " + Links.Patreon)
+                .AppendLine("Report a problem")
+                .AppendLine("  " + Links.Issues)
+                .AppendLine()
+                .AppendLine("New versions")
+                .AppendLine("  " + Links.Releases)
                 .AppendLine()
                 .AppendLine("About")
                 .AppendLine("  RE-Amped2 is an unofficial, free fan project. It is not affiliated with or")
@@ -752,7 +755,7 @@ namespace Amped2Installer
             else
             {
                 r.Error = "Something unexpected went wrong: " + e.Message;
-                r.Advice = "The install log has the details. Please share it with the community on Patreon.";
+                r.Advice = "The install log has the details. Please report it on GitHub with the log.";
             }
         }
 

@@ -21,7 +21,7 @@ removed from the history.
 
 ## Reporting a bug
 
-Open an issue (or post in the Patreon community, which is free to join) with:
+Open an issue with:
 
 - what you did and what happened, and how often;
 - `amped2.log` from the install folder. It is rewritten on every start, so

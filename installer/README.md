@@ -7,8 +7,8 @@ xboxrecomp toolkit, xdvdfs and the RE-Amped2 look (15 MB in all).
 
 Version 0.1.0 is the **early-access** test build: the header carries an
 EARLY ACCESS tag, the footer says `v0.1.0 · Early Access`, and the first and
-last pages and `README.txt` ask testers to report problems in the free
-Patreon community with their `amped2.log`. The footer's **Licences** link
+last pages and `README.txt` ask testers to report problems on GitHub Issues
+(`Links.Issues` in `Shortcut.cs`) with their `amped2.log`. The footer's **Licences** link
 opens the licence texts (see below).
 
 ## What the player sees
@@ -35,8 +35,8 @@ opens the licence texts (see below).
 3. **Install.** The stages below, with a progress bar, elapsed time and a
    "Show details" log. Cancel kills the running tool's process tree.
 4. **Done.** What was installed and where, short play tips (controls, F11,
-   Game Options, where saves live), and a Patreon box (the free community:
-   bug reports, help and updates; nothing is paywalled). On failure: the step that failed, a plain
+   Game Options, where saves live), and a box with a "Report a problem"
+   button that opens GitHub Issues. On failure: the step that failed, a plain
    explanation and advice, and the install log.
 
 ## What it does

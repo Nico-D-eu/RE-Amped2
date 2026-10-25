@@ -5,7 +5,11 @@ namespace Amped2Installer
 {
     static class Links
     {
-        public const string Patreon = "https://www.patreon.com/cw/REAmped2";
+        // The public repository. If it is renamed, update these (GitHub
+        // redirects the old name, but only for a rename it knows about).
+        public const string Repository = "https://github.com/Nico-D-eu/RE-Amped2";
+        public const string Issues = Repository + "/issues";
+        public const string Releases = Repository + "/releases";
 
         public static void Open(string target)
         {
