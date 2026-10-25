@@ -1,0 +1,37 @@
+name: Feature request
+description: An idea that would make RE-Amped2 better.
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the status table in the README and `PLAN.md` first. Your idea may already be planned.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Gameplay
+        - Graphics
+        - Sound and video
+        - Controls
+        - Menus and settings
+        - Mods and texture packs
+        - Installer
+        - Other platforms
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What should RE-Amped2 do, and why would it help?
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: How it could work, examples from other ports, screenshots of your own.

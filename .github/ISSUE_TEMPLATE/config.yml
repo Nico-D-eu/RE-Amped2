@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: https://github.com/Nico-D-eu/RE-Amped2/discussions/categories/q-a
+    about: How do I...? Ask in Discussions, where other players can help too.
+  - name: Show your mods and texture packs
+    url: https://github.com/Nico-D-eu/RE-Amped2/discussions/categories/show-and-tell
+    about: Share what you've made.

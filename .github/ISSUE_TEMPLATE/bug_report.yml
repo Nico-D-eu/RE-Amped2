@@ -1,0 +1,89 @@
+name: Bug report
+description: Something goes wrong in the game (a crash, a glitch, missing sound, wrong controls).
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. For problems with the installer itself, use the **Install problem** form.
+
+        **Never attach game files** (anything from the `game` folder, the disc image, or files extracted from it). Logs are fine.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you were doing, what you expected, and what happened instead.
+      placeholder: "In Career, on the second mountain, the game froze when I started a photo shoot."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: The steps, if you know them. Mode, mountain, menu, rider, board.
+      placeholder: |
+        1. Career > ...
+        2. ...
+  - type: dropdown
+    id: often
+    attributes:
+      label: How often?
+      options:
+        - Every time
+        - Sometimes
+        - Once so far
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: amped2.log
+      description: |
+        Drag `amped2.log` from the install folder into this box. The game rewrites it on every start, so copy it before starting again. You can remove your user name from the paths in it first.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: RE-Amped2 version
+      description: Shown in the installer's footer, and as `installer=` in `install-info.txt` in the install folder.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: disc
+    attributes:
+      label: Disc
+      options:
+        - USA
+        - Europe / Australia
+    validations:
+      required: true
+  - type: dropdown
+    id: input
+    attributes:
+      label: Playing with
+      options:
+        - Controller
+        - Keyboard
+        - Both
+  - type: input
+    id: system
+    attributes:
+      label: Windows version and graphics card
+      placeholder: "Windows 11 24H2, RTX 2070"
+  - type: textarea
+    id: settings
+    attributes:
+      label: Changed settings or mods
+      description: Any lines you changed in `amped2.ini`, and any mod or texture packs in use. Leave empty if none.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send
+      options:
+        - label: I searched the existing issues, and this isn't one of them.
+          required: true
+        - label: I'm not attaching or pasting any game files.
+          required: true

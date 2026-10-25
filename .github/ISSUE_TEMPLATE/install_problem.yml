@@ -1,0 +1,84 @@
+name: Install problem
+description: The installer stopped, failed, or did something unexpected.
+title: "[Install] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sorry it didn't work. The install log usually tells us why.
+
+        **Never attach game files or your disc image.** Logs are fine.
+  - type: dropdown
+    id: step
+    attributes:
+      label: Where did it stop?
+      description: The step marked on the installer's Install page, or "Something else".
+      options:
+        - Before the install started (disc image or Location page)
+        - Getting the build tools ready
+        - Copying the game from your disc image
+        - Preparing the recompiler
+        - Translating the game's code for Windows
+        - Compiling the game
+        - Adding the RE-Amped2 menus
+        - Finishing up
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: message
+    attributes:
+      label: What did the installer say?
+      description: The error message and advice from the last page, or what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: install.log
+      description: |
+        Drag `install.log` from the install folder into this box. If it isn't there, the installer's last page links it. You can remove your user name from the paths in it first.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Installer version
+      description: Shown in the installer's footer.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: disc
+    attributes:
+      label: Disc
+      options:
+        - USA
+        - Europe / Australia
+    validations:
+      required: true
+  - type: checkboxes
+    id: tools
+    attributes:
+      label: Build tools the installer had to install
+      description: Tick the ones it listed as missing and installed.
+      options:
+        - label: Visual Studio C++ Build Tools
+        - label: Python
+        - label: CMake
+        - label: Java
+  - type: input
+    id: system
+    attributes:
+      label: Windows version, CPU cores and memory
+      placeholder: "Windows 11 24H2, 8 cores, 16 GB"
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send
+      options:
+        - label: I searched the existing issues, and this isn't one of them.
+          required: true
+        - label: I'm not attaching any game files or my disc image.
+          required: true
