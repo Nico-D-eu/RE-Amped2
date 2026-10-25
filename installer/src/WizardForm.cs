@@ -49,6 +49,7 @@ namespace Amped2Installer
         readonly Label[] _stepLabels = new Label[4];
         readonly Button _back, _next, _cancel;
         readonly Label _version;
+        readonly LinkLabel _licenses;
         readonly Image _headerArt, _badge;
         readonly Panel[] _pages = new Panel[4];
         int _page;
@@ -161,8 +162,13 @@ namespace Amped2Installer
                 Location = new Point(18, 20),
                 BackColor = FooterBg,
             };
+            // The licence texts (RE-Amped2, the toolkit, xdvdfs, unluac), from the payload.
+            _licenses = new LinkLabel { Text = "Licences", Font = _small, AutoSize = true, BackColor = FooterBg };
+            _licenses.LinkClicked += (s, e) => ShowLicenses();
             _footer.Controls.Add(buttons);
             _footer.Controls.Add(_version);
+            _footer.Controls.Add(_licenses);
+            _footer.Layout += (s, e) => _licenses.Location = new Point(_version.Right + 12, _version.Top);
 
             _body = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
             _pages[0] = BuildDiscPage();
@@ -226,7 +232,7 @@ namespace Amped2Installer
 
             AddFill(page);
             Add(page, Para("Early access: RE-Amped2 is a work in progress, so expect bugs and rough edges. " +
-                           "Tell us what you run into on Patreon; the last page has the link.", Body, _small));
+                           "Tell us what you run into in our free Patreon community; the last page has the link.", Body, _small));
             Add(page, Para("No game files come with this installer: it needs your own legally owned copy of the game. " +
                            "You can also drag the disc image onto this window.", Muted, _small));
             return Wrap(page);
@@ -307,6 +313,7 @@ namespace Amped2Installer
             Add(page, _spaceLabel);
             _existingLabel = Para("", Info, _small);
             _existingLabel.Margin = new Padding(0, 2, 0, 6);
+            _existingLabel.Visible = false;   // takes no room unless there is an install to update
             Add(page, _existingLabel);
 
             _shortcutBox = new CheckBox { Text = "Create a desktop shortcut", Checked = true, AutoSize = true, Margin = new Padding(0, 6, 0, 2) };
@@ -417,6 +424,7 @@ namespace Amped2Installer
                 _spaceLabel.ForeColor = Bad;
                 _spaceLabel.Text = "Enter a full folder path, such as C:\\Games\\RE-Amped2.";
             }
+            _existingLabel.Visible = _existingLabel.Text.Length > 0;
             UpdateButtons();
         }
 
@@ -466,7 +474,7 @@ namespace Amped2Installer
                 else if (tool.CanInstall)
                 {
                     anyInstall = true;
-                    AddToolRow("\u2B07", Info, $"{tool.Name} \u2014 will be installed: {tool.Purpose} ({tool.InstallNote})", null);
+                    AddToolRow("\u2B07", Info, $"{tool.Name} \u2014 missing, can be installed for you ({tool.InstallNote.Split(',')[0]})", null);
                 }
                 else
                 {
@@ -481,9 +489,9 @@ namespace Amped2Installer
             _toolsNote.Text = anyManual
                 ? "Windows can't install these automatically on this PC. Install the missing tools, then click \u201CCheck again\u201D."
                 : anyInstall
-                    ? "Tools marked \u2B07 are downloaded with Windows' package manager (winget) from their makers, under their own licence terms. " +
-                      "Windows may ask for administrator rights while they install."
-                    : "Everything needed is already on this PC.";
+                    ? "Tools marked \u2B07 are installed only if you agree: Install first shows what each one is, with its licence terms."
+                    : "Everything needed is already on this PC. The installer only downloads the recompiler's Python " +
+                      "packages, into a temporary folder it removes at the end.";
         }
 
         void AddToolRow(string mark, Color color, string text, string url)
@@ -635,7 +643,39 @@ namespace Amped2Installer
             return Wrap(page);
         }
 
-        void StartInstall()
+        /// <summary>
+        /// Asks before any build tool is installed. True when nothing is
+        /// missing or the player agreed; <paramref name="approved"/> then
+        /// names the tools the install may fetch.
+        /// </summary>
+        bool AskToInstallTools(out HashSet<string> approved)
+        {
+            approved = new HashSet<string>();
+            var missing = _tools.Describe(_menuBox.Checked).Where(t => !t.Found && t.CanInstall).ToList();
+            if (missing.Count == 0)
+                return true;
+            if (!ConsentDialog.Ask(this, missing, _menuBox.Checked))
+                return false;
+            foreach (var t in missing)
+                approved.Add(t.Name);
+            return true;
+        }
+
+        void ShowLicenses()
+        {
+            try
+            {
+                var dir = Path.Combine(Payload.Scratch, "licenses");
+                if (Payload.ExtractLicenses(dir) > 0)
+                    Links.Open(dir);
+            }
+            catch (Exception e)
+            {
+                Warn("The licence texts couldn't be shown: " + e.Message);
+            }
+        }
+
+        void StartInstall(HashSet<string> approvedTools)
         {
             var options = new InstallOptions
             {
@@ -644,6 +684,7 @@ namespace Amped2Installer
                 DesktopShortcut = _shortcutBox.Checked,
                 MenuMod = _menuBox.Checked,
                 Look = _lookBox.Checked,
+                ApprovedTools = approvedTools,
             };
             _installIntro.Text = "Sit back: the installer is building RE-Amped2 from your disc image, right here on your PC. " +
                                  $"Approx. {EstimateMinutes()} minutes, please be patient; the compiling step is the longest.";
@@ -819,8 +860,8 @@ namespace Amped2Installer
                     Add(page, Bullet(tip));
 
                 Add(page, PatreonBox("Tell us how it rides",
-                    "Early-access feedback goes to Patreon: bugs, crashes, anything that looks off. It's also where " +
-                    "updates and news appear. Donations keep the work going, but they're entirely optional."));
+                    "Early-access feedback goes to our Patreon community: bugs, crashes, anything that looks off. " +
+                    "It's also where updates and news appear. Joining is free, and nothing is behind a paywall."));
 
                 _launchBox = new CheckBox { Text = "Start RE-Amped2 now", Checked = true, AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
                 Add(page, _launchBox);
@@ -847,7 +888,7 @@ namespace Amped2Installer
                     Add(page, Para(r.Advice));
                 AddLogLink(page, r);
                 Add(page, PatreonBox("Need a hand?",
-                    "The community on Patreon can help. Share the install log there, along with which step went wrong."));
+                    "The free community on Patreon can help. Share the install log there, along with which step went wrong."));
             }
             AddFill(page);   // leftover height below the content, not between rows
             page.ResumeLayout();
@@ -950,9 +991,10 @@ namespace Amped2Installer
                     break;
                 case 1:
                     if (!ValidateLocation()) return;
+                    if (!AskToInstallTools(out var approved)) return;
                     _cancelRequested = false;
                     ShowPage(2);
-                    StartInstall();
+                    StartInstall(approved);
                     break;
                 case 3:
                     if (_launchBox != null && _launchBox.Checked && _job?.Result?.ExePath != null)

@@ -70,6 +70,38 @@ namespace Amped2Installer
             }
         }
 
+        /// <summary>
+        /// The licence texts in the payload, and the names they get in a
+        /// "licenses" folder: RE-Amped2's, the toolkit's (with its LGPL part)
+        /// and those of the tools the installer carries.
+        /// </summary>
+        static readonly (string Entry, string Name)[] LicenseFiles =
+        {
+            ("amped2/LICENSE", "RE-Amped2-LICENSE.txt"),
+            ("amped2/NOTICE.md", "RE-Amped2-NOTICE.txt"),
+            ("xboxrecomp/LICENSE", "xboxrecomp-LICENSE.txt"),
+            ("xboxrecomp/NOTICE", "xboxrecomp-NOTICE.txt"),
+            ("xboxrecomp/LICENSES/LGPL-2.1.txt", "LGPL-2.1.txt"),
+            ("amped2/licenses/xdvdfs-LICENSE.txt", "xdvdfs-LICENSE.txt"),
+            ("amped2/licenses/unluac-LICENSE.txt", "unluac-LICENSE.txt"),
+        };
+
+        /// <summary>Writes the licence texts into <paramref name="destDir"/>; returns how many it found.</summary>
+        public static int ExtractLicenses(string destDir)
+        {
+            int n = 0;
+            foreach (var (entry, name) in LicenseFiles)
+            {
+                try
+                {
+                    ExtractFile(entry, System.IO.Path.Combine(destDir, name));
+                    n++;
+                }
+                catch (FileNotFoundException) { }
+            }
+            return n;
+        }
+
         public static void ExtractFile(string entryName, string destPath)
         {
             using (var s = Open())

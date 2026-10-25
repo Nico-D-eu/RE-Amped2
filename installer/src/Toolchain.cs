@@ -11,8 +11,10 @@ namespace Amped2Installer
     /// <summary>One build tool as the location page lists it.</summary>
     sealed class ToolStatus
     {
-        public string Name;          // "Python", ...
+        public string Name;          // "Python", ... (one of the Toolchain.*Tool names)
         public string Purpose;       // what the player is told it is for
+        public string Publisher;     // who it comes from
+        public string LicenseUrl;    // the publisher's licence terms, shown before installing
         public bool Found;
         public string FoundAs;       // e.g. "Python 3.13"
         public bool CanInstall;      // winget can fetch it
@@ -28,6 +30,11 @@ namespace Amped2Installer
     /// </summary>
     sealed class Toolchain
     {
+        public const string VsTool = "Visual Studio C++ Build Tools";
+        public const string PythonTool = "Python";
+        public const string CMakeTool = "CMake";
+        public const string JavaTool = "Java";
+
         public string PythonExe, PythonVersion;
         public string VsPath, VsName;
         public int VsMajor;
@@ -60,8 +67,10 @@ namespace Amped2Installer
             {
                 new ToolStatus
                 {
-                    Name = "Visual Studio C++ Build Tools",
+                    Name = VsTool,
                     Purpose = "Microsoft's free compiler, turns the translated code into the game",
+                    Publisher = "Microsoft",
+                    LicenseUrl = "https://visualstudio.microsoft.com/license-terms/",
                     Found = VsPath != null && WindowsSdk,
                     FoundAs = VsName,
                     CanInstall = winget,
@@ -70,8 +79,10 @@ namespace Amped2Installer
                 },
                 new ToolStatus
                 {
-                    Name = "Python",
+                    Name = PythonTool,
                     Purpose = "runs the recompiler that translates the game's code",
+                    Publisher = "Python Software Foundation",
+                    LicenseUrl = "https://docs.python.org/3/license.html",
                     Found = PythonExe != null,
                     FoundAs = PythonVersion != null ? "version " + PythonVersion : null,
                     CanInstall = winget,
@@ -84,8 +95,10 @@ namespace Amped2Installer
             if (VsPath != null && CMakeExe == null)
                 list.Add(new ToolStatus
                 {
-                    Name = "CMake",
+                    Name = CMakeTool,
                     Purpose = "organises the build",
+                    Publisher = "Kitware",
+                    LicenseUrl = "https://cmake.org/licensing/",
                     Found = false,
                     CanInstall = winget,
                     InstallNote = "about 40 MB download",
@@ -94,8 +107,10 @@ namespace Amped2Installer
             if (wantJava)
                 list.Add(new ToolStatus
                 {
-                    Name = "Java",
+                    Name = JavaTool,
                     Purpose = "needed only for the RE-Amped2 menus",
+                    Publisher = "Microsoft (Microsoft Build of OpenJDK)",
+                    LicenseUrl = "https://openjdk.org/legal/gplv2+ce.html",
                     Found = JavaExe != null,
                     FoundAs = JavaExe != null ? "Java" : null,
                     CanInstall = winget,
@@ -283,14 +298,30 @@ namespace Amped2Installer
 
         /// <summary>
         /// Installs what is missing with winget and returns a fresh detection.
-        /// Throws when a required tool is still missing; a missing Java is
-        /// left for the caller, which skips the menu improvements.
+        /// Only tools named in <paramref name="approved"/> are installed: the
+        /// player agreed to those, with their licence terms, before the
+        /// install started (ConsentDialog). Throws when a required tool is
+        /// still missing; a missing Java is left for the caller, which skips
+        /// the menu improvements.
         /// </summary>
-        public static Toolchain InstallMissing(Toolchain t, bool wantJava, Action<string> status, Action<string> log,
-                                               CancellationToken ct)
+        public static Toolchain InstallMissing(Toolchain t, bool wantJava, ICollection<string> approved,
+                                               Action<string> status, Action<string> log, CancellationToken ct)
         {
             if (t.BuildReady && (!wantJava || t.JavaExe != null))
                 return t;
+
+            // A required tool the player didn't agree to install: stop and ask
+            // them to go back, rather than install it anyway.
+            void Require(string name)
+            {
+                if (approved.Contains(name)) return;
+                log(name + " is missing and wasn't approved for installation.");
+                throw new UserFacingException(
+                    name + " is needed to build the game, but it isn't on this PC.",
+                    "Go back and click Install again: the installer will ask whether to install it. " +
+                    "You can also install it yourself, then run the installer again.");
+            }
+
             if (t.WingetExe == null)
                 throw new UserFacingException(
                     "Some of the free tools needed to build the game aren't installed, and Windows can't install them automatically on this PC.",
@@ -298,6 +329,7 @@ namespace Amped2Installer
 
             if (t.VsPath == null || !t.WindowsSdk)
             {
+                Require(VsTool);
                 status("Installing Microsoft's C++ build tools (this can take 10-20 minutes; a Visual Studio window shows the progress)");
                 Winget(t, "Microsoft.VisualStudio.2022.BuildTools",
                        "--override \"--wait --passive --norestart" +
@@ -308,6 +340,7 @@ namespace Amped2Installer
             }
             if (t.PythonExe == null)
             {
+                Require(PythonTool);
                 status("Installing Python");
                 Winget(t, "Python.Python.3.13", "--scope user", log, ct);
             }
@@ -315,11 +348,14 @@ namespace Amped2Installer
             var again = Detect(wantJava);
             if (again.VsPath != null && again.CMakeExe == null)
             {
+                Require(CMakeTool);
                 status("Installing CMake");
                 Winget(again, "Kitware.CMake", "", log, ct);
                 again = Detect(wantJava);
             }
-            if (wantJava && again.JavaExe == null)
+            if (wantJava && again.JavaExe == null && !approved.Contains(JavaTool))
+                log("Java is missing and wasn't approved for installation; the RE-Amped2 menus are skipped.");
+            else if (wantJava && again.JavaExe == null)
             {
                 status("Installing Java (for the RE-Amped2 menus)");
                 try

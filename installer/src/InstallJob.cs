@@ -18,6 +18,8 @@ namespace Amped2Installer
         public bool DesktopShortcut;
         public bool MenuMod;
         public bool Look;            // the RE-Amped2 texture pack (branding\pack)
+        /// <summary>Build tools the player agreed to have installed (ConsentDialog); nothing else is.</summary>
+        public HashSet<string> ApprovedTools = new HashSet<string>();
     }
 
     sealed class InstallResult
@@ -183,13 +185,16 @@ namespace Amped2Installer
         {
             Begin(0, "Looking for the tools on this PC");
             _tools = Toolchain.Detect(_o.MenuMod);
-            _tools = Toolchain.InstallMissing(_tools, _o.MenuMod, s => Detail = s, Log, Ct);
+            Log("Approved for installation: " + (_o.ApprovedTools.Count > 0 ? string.Join(", ", _o.ApprovedTools) : "(none)"));
+            _tools = Toolchain.InstallMissing(_tools, _o.MenuMod, _o.ApprovedTools, s => Detail = s, Log, Ct);
             Log($"Python:  {_tools.PythonExe} ({_tools.PythonVersion})");
             Log($"VS:      {_tools.VsName} at {_tools.VsPath}");
             Log($"CMake:   {_tools.CMakeExe} ({_tools.CMakeGenerator})");
             Log($"Java:    {_tools.JavaExe ?? "(none)"}");
             if (_o.MenuMod && _tools.JavaExe == null)
-                r.MenuModNote = "Java couldn't be installed, so the RE-Amped2 menus were left out.";
+                r.MenuModNote = _o.ApprovedTools.Contains(Toolchain.JavaTool)
+                    ? "Java couldn't be installed, so the RE-Amped2 menus were left out."
+                    : "Java isn't on this PC, so the RE-Amped2 menus were left out.";
         }
 
         void StageExtract()
@@ -464,6 +469,8 @@ namespace Amped2Installer
                 s.CopyTo(f);
 
             TryDelete(Path.Combine(GameDir, "default_analysis.json"));   // written by the recompiler
+            var licenses = Path.Combine(Dest, "licenses");
+            Log($"Licence texts: {Payload.ExtractLicenses(licenses)} written to {licenses}");
             WriteReadme();
             WriteInstallInfo();
             SetFraction(0.6);
@@ -541,7 +548,7 @@ namespace Amped2Installer
                 .AppendLine()
                 .AppendLine("Early access")
                 .AppendLine("  This is a test build of a work in progress: expect bugs and rough edges.")
-                .AppendLine("  Report problems on Patreon (link below). Say what you were doing, and")
+                .AppendLine("  Report problems in the free Patreon community (link below). Say what you were doing, and")
                 .AppendLine("  attach amped2.log from this folder; it is rewritten on every start, so")
                 .AppendLine("  copy it before starting the game again.")
                 .AppendLine()
@@ -565,8 +572,19 @@ namespace Amped2Installer
                 .AppendLine("  Career progress is saved in game\\UDATA in this folder. Back it up before")
                 .AppendLine("  deleting the folder. Running the installer again keeps it.")
                 .AppendLine()
-                .AppendLine("Community, support and updates")
-                .AppendLine("  " + Links.Patreon);
+                .AppendLine("Community, support and updates (free to join, nothing is paywalled)")
+                .AppendLine("  " + Links.Patreon)
+                .AppendLine()
+                .AppendLine("About")
+                .AppendLine("  RE-Amped2 is an unofficial, free fan project. It is not affiliated with or")
+                .AppendLine("  endorsed by Microsoft. Amped, Amped 2 and Xbox are trademarks of Microsoft.")
+                .AppendLine("  Amped 2 (c) Microsoft Corporation. This folder holds the game built on this")
+                .AppendLine("  PC from your own disc; none of it was downloaded.")
+                .AppendLine("  RE-Amped2's art was created under Microsoft's \"Game Content Usage Rules\"")
+                .AppendLine("  using assets from Amped 2, and it is not endorsed by or affiliated with")
+                .AppendLine("  Microsoft: https://www.xbox.com/en-US/developers/rules")
+                .AppendLine("  The licences of RE-Amped2 (MIT) and the software it is built with are in")
+                .AppendLine("  the licenses folder.");
             File.WriteAllText(Path.Combine(Dest, "README.txt"), text.ToString(), Encoding.UTF8);
         }
 
