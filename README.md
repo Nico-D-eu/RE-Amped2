@@ -70,7 +70,7 @@ The roadmap, including the console plans, is in [PLAN.md](PLAN.md).
 ### Install
 
 1. Download **`RE-Amped2-Setup.exe`** from the
-   [latest release](../../releases/latest).
+   [Releases page](../../releases) (the newest release is at the top).
 2. Run it. The installer isn't code-signed yet, so Windows may show a
    SmartScreen warning ("Windows protected your PC"). If you want to check
    the file first, compare its SHA-256 with the one on the release page.
