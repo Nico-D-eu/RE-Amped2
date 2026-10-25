@@ -513,6 +513,18 @@ Built from existing parts first, then new assets.
 - Mod pack format and docs for other modders.
 - License check: xboxrecomp's license, third-party tools (texconv, unluac,
   Upscayl models) and their redistribution terms.
+  - [x] 2026-10-25: RE-Amped2 is MIT (`LICENSE`). `NOTICE.md` covers the
+        disclaimer, the Game Content Usage Rules notice for the art and the
+        third-party list. The xdvdfs and unluac licence texts are in
+        `licenses/`, and every install writes them, the toolkit's licences
+        and its LGPL text to `licenses\`. The installer's footer links them.
+        texconv and the Upscayl models aren't shipped.
+  - [x] 2026-10-25: the installer installs no build tool without consent.
+        `ConsentDialog` lists each tool with its licence terms, and only the
+        approved ones are installed.
+  - [ ] Wordmark: check that no letters are taken from the original Amped
+        logo. The Game Content Usage Rules forbid game logos in a fan
+        item's logo.
 - **RE-Amped2 branding** (README "Branding"). In the pack: title logo
   `ampedLogo`, the 4 boot splashes, `Logo_Amped2`, course banner
   `Banneramped2`, `RegisteredTradeMark` (blanked), the level loading screen
@@ -587,7 +599,8 @@ care what it runs on. What ties it to Windows is the toolkit runtime:
 
 | Target | What changes | Effort |
 |---|---|---|
-| **UWP: Windows Store, and Xbox One/Series in Dev Mode** | Still Windows and D3D11, so the renderer and audio carry over. Swap GDI for CoreWindow and a swap chain (Phase 7 needs one anyway), file mappings for `CreateFileMappingFromApp`/`MapViewOfFile3FromApp`, and XInput for `Windows.Gaming.Input`. Game data goes in app-local storage. Check that fixed-address mapping and a vectored exception handler are allowed inside the app container. On Xbox Dev Mode, a "Game" app gets enough memory (the game needs ~64 MB guest plus the host). | **Medium.** The most realistic port. |
+| **UWP: Windows Store, and Xbox One/Series in Dev Mode** | Still Windows and D3D11, so the renderer and audio carry over. Swap GDI for CoreWindow and a swap chain (Phase 7 needs one anyway), file mappings for `CreateFileMappingFromApp`/`MapViewOfFile3FromApp`, and XInput for `Windows.Gaming.Input`. Game data goes in app-local storage. Check that fixed-address mapping and a vectored exception handler are allowed inside the app container. On Xbox Dev Mode, a "Game" app gets enough memory (the game needs ~64 MB guest plus the host). | **Medium.** The most realistic port. Planned as **Phase 13**. |
+| **PlayStation 5 (homebrew)** | Same x86-64 CPU (Zen 2), so the generated C compiles unchanged, but everything around it is new: a POSIX (FreeBSD) runtime, a GPU backend with no D3D or Vulkan to lean on, and Sony's audio, pad and file APIs, all through the community homebrew toolchain on exploitable firmware only. | **High**, mostly the renderer, with legal attention on top. Planned as **Phase 14**, after Phases 12 and 13. |
 | **Android (ARM64)** | The generated C compiles for ARM64 once the lifter's SSE helpers (`XMM_*`) have scalar or NEON versions. Device emulation needs a SIGSEGV handler that decodes *ARM64* loads and stores (or MMIO calls emitted by the lifter, which would be cleaner everywhere). Also needed: a Vulkan (or GLES) backend next to D3D11, AAudio audio, Android input, `mmap` for memory, and pthreads for the kernel's threads. | **High.** |
 | **Nintendo Switch** | Same ARM64 work as Android, on either homebrew (libnx, deko3d or Mesa OpenGL) or the official SDK (licensed developers only, under NDA). There are 4 GB of RAM and tight virtual-memory control, so the fixed-address guest mapping needs checking first. | **Highest**, with distribution and legal constraints on top. |
 
@@ -604,6 +617,145 @@ What they'd share, in the order to do it:
 The same rule as Part B applies: none of this starts before M4, and no
 game data ships with any build.
 
+### Phase 12: Portable runtime (groundwork for the consoles)
+
+Both consoles have x86-64 Zen 2 CPUs, so **the generated C compiles as it
+is** on either, and needs no JIT, which neither console allows homebrew to
+use freely. What ties the game to Windows is the toolkit runtime. This phase
+puts interfaces between the runtime and the OS, with today's Win32 code as
+the first implementation. It is toolkit work, so do it in xboxrecomp,
+written to go upstream. Open it as a proposal with the toolkit's maintainer
+first: upstream may already be partway there (`src/platform/win32_compat.*`,
+`Dockerfile.gcc`).
+
+1. **Platform interface** (`src/platform/`): guest memory (reserve and map
+   at fixed host addresses, and the contiguous window), threads, events and
+   TLS, file I/O, timers, and fault handling. The Win32 version is the code
+   as it is now.
+2. **Device registers without page faults.** The lifter emits calls for
+   accesses to the device register ranges (NV2A, APU, OHCI, AC'97) instead
+   of letting them fault. That retires the decoder for faulting x86-64 host
+   instructions, the least portable piece, and works where a fault handler
+   is restricted. Keep the fault path as a fallback while it settles.
+3. **Renderer split.** Divide `nv2a_d3d11.c` into a front end (NV2A state
+   to abstract draws and state) and a back end. D3D11 is the first back
+   end. Later ones: D3D12 (if the Xbox caps D3D11), Vulkan (Linux, Steam
+   Deck), and the PS5's native interface.
+4. **Shaders.** The HLSL generator gets a back-end hook, and the shader
+   cache can be filled ahead of time for platforms that have no run-time
+   compiler (the PS5).
+5. **Audio sink and input interfaces**: XAudio2 and XInput today;
+   Windows.Gaming.Input, and the PS5's audio out and pad, later.
+6. **Portability check of the generated code** with clang and GCC (no MSVC
+   intrinsics or `__declspec` that the other compilers lack).
+
+**Exit criteria:** the Windows build runs entirely through the interfaces
+with no regression: ML1 at 60 fps, sound, pad and saves, and a 60-minute
+soak with no crash.
+
+### Phase 13: Xbox Series X|S (Dev Mode)
+
+**Route.** Dev Mode is Microsoft's own route for running your own apps on a
+retail console: a Partner Center developer account (one-time fee), the Dev
+Mode Activation app, then sideloading through Device Portal. Nothing goes
+to the Store. As on Windows, **the player builds their own package** from
+their own disc, and nothing from the game is downloaded.
+
+**Effort:** medium, about 3–6 weeks of focused work. It's the same Windows
+and D3D11 stack, and most of it can be developed and tested as a UWP app on
+a PC.
+
+1. **Spike (go/no-go, 1–2 days).** A minimal UWP "Game" app on the console
+   that:
+   - maps the guest memory layout with `MapViewOfFile3FromApp`, at fixed
+     addresses if allowed, through the offset otherwise;
+   - installs a vectored exception handler and catches a guarded-page
+     access;
+   - creates a D3D11 device and reports its feature level (the backend asks
+     for 11_0+);
+   - plays an XAudio2 tone and reads a pad through Windows.Gaming.Input.
+
+   One answer per item. Each "no" points to Phase 12 (fault-free device
+   registers, D3D12 or D3D11On12).
+2. **App shell.** CoreApplication entry and a swap chain for the
+   CoreWindow. Suspend and resume: pause audio and rendering, and survive
+   constrained mode. Title-safe area and 4K output.
+3. **Platform layer for UWP.** File access under the package and
+   `LocalState` (`CreateFile2FromApp`). No registry, GDI, console or
+   process launch. `amped2.ini`, `amped2.log`, the saves and the shader
+   cache live in `LocalState`.
+4. **Graphics.** D3D11 as it is if the feature level allows, otherwise
+   D3D11On12 or a D3D12 back end (Phase 12.3). `D3DCompile` at run time
+   (ship `d3dcompiler_47.dll` in the package), with the shader cache kept
+   on disk.
+5. **Input and audio.** Windows.Gaming.Input feeds the emulated USB pads.
+   Up to four pads are natural here, which opens up split-screen (Phase 10).
+   Rumble works through the same API. XAudio2 stays.
+6. **Game data.** Decide in the spike between packing the player's
+   extracted `game/` into their own package (simple; it's their copy and
+   never shared) and copying it to `LocalState` or a USB drive after
+   install.
+7. **Packaging.** A UWP build of the CMake project (`WindowsStore`), an
+   `AppxManifest`, and an `.msix` signed with a certificate generated on
+   the player's PC. The installer gets an "Xbox package" option, plus
+   step-by-step instructions for Dev Mode and Device Portal, including
+   setting the app type to Game.
+8. **Tuning.** Default `RenderScale` per console (Series S at 1080p,
+   Series X at 4K) and a check of the memory headroom.
+
+**Exit criteria:** boot to the menus. ML1 at 60 fps, at 1080p on Series S
+and 4K on Series X. Sound, pad and rumble work. Saves persist across app
+restarts and suspends. A 60-minute soak with no crash. A package built by
+the installer installs by following the written instructions.
+
+### Phase 14: PlayStation 5 (homebrew)
+
+**Status:** exploratory. Start only after Phase 12 is done and Phase 13
+has shipped.
+
+**Ground rules, written down before any code:**
+- Use only the open community homebrew toolchain. Never use Sony's SDK,
+  leaked SDK files, keys or Sony code.
+- Put no exploit or jailbreak code in this project. Players use whatever
+  their console's homebrew scene provides; RE-Amped2 only offers a
+  homebrew build.
+- Keep it a separate build target with its own notice, not in the default
+  installer. Consider a separate repository.
+- The distribution rule is unchanged: the player builds it on their own PC,
+  by cross-compiling, from their own disc. Nothing from the game ships.
+
+**Steps:**
+1. **Research spike (go/no-go)**, written up in `docs/ps5.md`:
+   - which firmware versions homebrew covers, and how homebrew runs (ELF
+     payload loader or package);
+   - which system libraries a homebrew app can use: video out, audio out,
+     pad, files on internal or USB storage;
+   - fixed-address memory mapping, signal handling and threads;
+   - **graphics**: can homebrew drive the GPU, and how do shaders get built?
+     This answer decides the phase.
+2. **POSIX platform layer** (from Phase 12). Prove it on Linux and FreeBSD
+   on a PC first, with `mmap`, pthreads, a SIGSEGV/SIGBUS handler (or the
+   fault-free device registers) and `clock_gettime`. As a side effect, this
+   gives a Linux and Steam Deck build (with a Vulkan back end).
+3. **Cross-compile.** clang with the homebrew sysroot must build all ~78 MB
+   of generated C plus the runtime (Phase 12.6).
+4. **Bring-up on the software rasteriser.** The old software executor
+   needs no GPU API, so it can prove boot, audio, input and saves on the
+   console, even at low frame rates.
+5. **GPU back end.** The big item: native command buffers through
+   whatever interface homebrew can reach, and shaders compiled ahead of
+   time for RDNA 2 (for example through LLVM's AMDGPU back end or Mesa's
+   ACO), packed in the format the system expects. Expect months.
+6. **Audio, pad, files and saves** through the system libraries.
+7. **Packaging.** Whatever format the homebrew loaders take. The installer
+   would need LLVM and the sysroot on the player's PC to cross-compile.
+
+**Milestones:** P1, boot to the title screen with software rendering. P2,
+the menus at full speed on the GPU back end. P3, ML1 playable at 60 fps.
+
+**Effort:** high, months, with the renderer the bulk of it. The audience
+is limited to players on exploitable firmware.
+
 ---
 
 ## Risks
@@ -615,13 +767,16 @@ game data ships with any build.
 | D3D8LTCG's non-standard shapes | Many rendering bugs | Follow the D3D8LTCG device-context doc and compare frame captures with xemu |
 | x87 precision drift in physics | Gameplay differs | Conformance tests against xemu traces |
 | The texture hash changes if a texture is modified at runtime | Pack misses | Done: missed keys are dumped (`RECOMP_TEXTURE_PACK_DUMP`), and freed textures are matched past their first block (`tails.txt`) |
-| Legal and distribution | Can't share the result | Never ship game data; the user brings their own disc |
+| Legal and distribution | Can't share the result | Never ship game data; the user brings their own disc. MIT licence, `NOTICE.md`, the Game Content Usage Rules notice for the art, and nothing paywalled |
+| Microsoft changes the Dev Mode policy | The Xbox port (Phase 13) stops working | Keep the Xbox layer thin over Phase 12; the Windows build is unaffected |
+| PS5 homebrew: firmware churn, toolchain changes, Sony's attention | Phase 14 breaks or draws a takedown | Exploratory only, separate target, open toolchain only, no exploit code, no Sony code |
 
 ## Working agreements
 
 - The detailed log lives in `CHANGELOG.md` (local, git-ignored). This file
   records phases and exit criteria only.
-- Commit locally after each meaningful step, and never push (see
-  `CLAUDE.md`).
+- Contribution rules are in `CONTRIBUTING.md` and `AGENTS.md`. The
+  maintainer's own workflow (local commits, publishing) is in the
+  untracked `CLAUDE.local.md`.
 - Toolkit fixes that aren't specific to Amped 2 go into `../xboxrecomp` on
   a local branch, written as upstreamable patches.
