@@ -12,6 +12,18 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-26): next phases.** v0.2.0 is released. The user is
+testing a full career to the end and the Legend challenges. The work next
+to that is Part D (Phases 15–20):
+1. test isolation and coverage logs;
+2. a regression suite;
+3. the toolkit sync to upstream v0.16.0;
+4. v0.3.0;
+5. split-screen (optional);
+6. offline content tooling.
+
+Bugs from the testing come first.
+
 **Update (2026-10-07): USA disc, HD widescreen, in-game PC settings.**
 - **Source.** The USA disc is the source now; the EU one still works.
   Both XBEs are the same build apart from the EU rip's media patch.
@@ -142,7 +154,10 @@ The three fixes that got here:
 | M5 | Mod framework | Loader, asset overrides, hooks, config | 6 |
 | M6 | HD | Resolution scaling, widescreen, texture pack in-game | 7 |
 | M7 | New content | First custom character and remixed level | 8 |
-| M8 | Release | Distributable patch or launcher, no game data | 9 |
+| M8 | Release | Distributable patch or launcher, no game data | 9 (v0.2.0 tagged 2026-10-25) |
+| M9 | Safety net | Isolated test runs, coverage logs, regression suite | 15–16 |
+| M10 | Current toolkit | `amped2-fixes` on upstream v0.16.0, suite green | 17 |
+| M11 | v0.3.0 | Sharp fonts and optional HD textures at install, unstretched menus | 18 |
 
 ---
 
@@ -760,6 +775,214 @@ the menus at full speed on the GPU back end. P3, ML1 playable at 60 fps.
 
 **Effort:** high, months, with the renderer the bulk of it. The audience
 is limited to players on exploitable firmware.
+
+---
+
+## Part D: Next phases (from 2026-10-26)
+
+Written while the user tests a full career to the end and the Legend
+challenges (the last two 🟡 gameplay rows in the README). These hours of
+manual play need the game, its files and `game/UDATA` to themselves.
+So the order puts first what makes those runs produce data and what keeps
+test runs off the player's copy. Then come the work that needs a safety
+net, the toolkit sync, and the player-facing polish for v0.3.0.
+
+| # | Phase | Why now | Runs the game? |
+|---|---|---|---|
+| 15 | Test isolation and coverage telemetry | Makes the user's runs useful; unblocks the rest | Short checks only |
+| 16 | Automated regression suite | The safety net for 17 and 18 | Yes, in an isolated copy |
+| 17 | Toolkit upstream sync (v0.16.0) | `amped2-fixes` is 101 ahead and 333 behind upstream | Yes, through the suite |
+| 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
+| 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
+| 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
+
+- **Standing lane:** bugs from the user's testing come before any phase.
+  For each one: reproduce it, fix it, add a suite case, and ship the fix in
+  the next 0.2.x.
+- Phase 20 never starts the game, so it can run while the user plays.
+- Phases 12–14 (platforms) come after Phase 17, because upstream's POSIX
+  work (e.g. the POSIX file backend) changes their starting point.
+
+### Phase 15: Test isolation and coverage telemetry
+
+The user's play sessions double as coverage runs, and test runs never
+collide with them.
+
+1. **Save redirect.** A switch in the toolkit's path layer (e.g.
+   `RECOMP_UDATA_DIR`, ini `[Advanced]`) gives a run its own UDATA and TDATA
+   folders. `diag.ps1 -FreshSave` uses it instead of moving the player's
+   profile aside. The move-and-restore logic stays as a fallback.
+2. **Isolated test install.** `tools/testenv.ps1` builds `test/` with a
+   hard-linked `game/`, its own UDATA, cache partition and `amped2.ini`. Runs
+   from there avoid the sharing violation. They still share the GPU and CPU,
+   so the rule stays: no runs while the user plays, unless they ask.
+3. **Coverage counters, off the hot path.** Keep three sets of unique
+   addresses:
+   - unresolved indirect-call targets;
+   - `RECOMP_UNIMPL` hits;
+   - lifter `_flags` fallbacks reached.
+
+   They go to `amped2.log` at exit and every few minutes. They are on by
+   default: the cost is one set insert per new address. This also feeds the
+   Phase 2 exit criterion "no unresolved indirect calls" and the Phase 4
+   `RECOMP_UNIMPL` audit.
+4. **Crash report.** The unhandled-exception path writes a minidump plus
+   the guest call chain (RIP → PDB → `loc_` label, as `sample_threads.py`
+   does) to `crash\<time>\`. The bug-report form gets a "crash folder"
+   field.
+5. **Version line.** The build writes its commit pair (as `installer\build.ps1`
+   computes it) to the log and the F3 overlay.
+
+**Exit criteria**
+
+- [ ] A `-FreshSave` run leaves `game/UDATA` byte-identical (hashed before
+      and after)
+- [ ] A run from `test/` works while `game/` is open in another process
+- [ ] One user play session yields a log with the coverage sets and the
+      version line
+- [ ] A forced crash (e.g. `RECOMP_TEST_CRASH=1`) leaves a minidump that
+      opens in Visual Studio with symbols, plus a guest call chain
+- [ ] docs/DEVELOPING.md has a "Testing" section
+
+### Phase 16: Automated regression suite
+
+One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
+`RECOMP_GPU_SHOT`, `[HEALTH]` and `RECOMP_PACE_TRACE`.
+
+1. `tools/suite.ps1` runs named cases in `test/`. A case is a pad script, a
+   time limit and pass checks read from the log.
+2. Cases:
+   - **boot:** title to main menu;
+   - **ml1:** a career save into ML1 for 120 s, at ≥ 58 fps, with no
+     resync storm;
+   - **reload3:** three Leave Mountain/reload cycles;
+   - **level2:** a second mountain, from a fixture save;
+   - **movie:** the intro plays through to the title;
+   - **mods:** a loose `StringTable.dat` entry shows its label;
+   - **texpack:** hits > 0, with misses under a threshold;
+   - **soak:** 60 min in ML1, for `soak7`'s numbers.
+3. **Fixture saves.** Copies of the user's progressed profiles, taken only
+   with their OK, kept in the git-ignored `test/fixtures/`. Later levels
+   then load without a full career.
+4. **Screenshot checks.** `RECOMP_GPU_SHOT` frames at fixed times are
+   compared with git-ignored goldens (perceptual diff with a tolerance).
+5. **Health checks.**
+   - "idle voices linked" stays at 0;
+   - memory stays flat (±5% over the run);
+   - no unresolved-call addresses beyond the Phase 15 baseline.
+6. **Report.** A summary table, plus logs and frames in
+   `diag/suite-<date>/`.
+
+**Exit criteria**
+
+- [ ] `suite.ps1 -Quick` (boot, ml1) takes ≤ 5 min; the full suite without
+      the soak takes ≤ 30 min, unattended
+- [ ] Three passes in a row on the current build (no flaky cases)
+- [ ] An injected regression (e.g. `RECOMP_GPU_NODEPTH=1`) fails the right
+      case
+- [ ] The soak case reproduces `soak7` (60 min, no crash, ~59 fps, memory
+      flat)
+
+### Phase 17: Toolkit upstream sync (xboxrecomp v0.16.0)
+
+1. **Survey** `amped2-fixes..upstream/main` (333 commits on 2026-10-26).
+   Group them into lifter/disasm (changes the generated code), kernel/HLE,
+   NV2A/APU, and platform/POSIX. Mark the ones that touch the same code as
+   our commits.
+2. **Rebase or merge** onto upstream on a new local branch
+   (`amped2-sync-v0.16`), whichever conflicts less. Where both sides touch
+   the same area, keep our behaviour.
+3. **Regenerate** with `tools/regen.ps1`. Compare these with the current
+   build, and explain every change:
+   - the function count;
+   - seed resolution;
+   - the `_flags` fallback count;
+   - the unresolved stubs.
+4. **Full rebuild**, then the full Phase 16 suite and the soak.
+5. **Upstream candidates.** List our generic toolkit fixes with a note each:
+   contiguous free, `lahf` after `ucomiss`, the APU, OHCI, the D3D11 backend,
+   texture packs, and so on. Whether and how to offer them upstream is the
+   user's call.
+6. Move `amped2-fixes` onto the sync branch only once the suite passes.
+
+**Exit criteria**
+
+- [ ] `amped2-fixes` contains `upstream/main` (0 behind) and builds from a
+      fresh checkout
+- [ ] The full suite and the soak pass
+- [ ] The generated-code delta is written up in docs/DEVELOPING.md
+- [ ] The list of upstream candidates is written
+
+### Phase 18: v0.3.0, "out of the box"
+
+1. **Fixes from the completion and Legend testing** (the standing lane),
+   each with a suite case.
+2. **Sharp fonts made on the player's PC** (Phase 9's open item). At the
+   end of the install:
+   - a headless run dumps the six font atlases (`RECOMP_TEXTURE_PACK_DUMP`);
+   - a non-AI upscale (Lanczos with an alpha-preserving sharpen) packs
+     them into `mods\packs\fonts`.
+
+   No game pixels ship.
+3. **Optional HD textures, built at install time.** An installer option,
+   "Build HD textures (about an hour, needs a GPU)", runs `tex-export`, the
+   upscale and `tex-pack` on the player's machine. The option asks for
+   consent the way the build tools do, with the upscaler's licence in
+   `ConsentDialog`. A cancelled build can be resumed.
+4. **Menu pictures at 16:9.** Per-scene `AspectCorrect` anchors, or a
+   wrapper like the text one at `0x00248FF0`, for menu titles and icons.
+5. **Backlog checks:**
+   - `Logo_Amped2` and the course banner in game;
+   - the seam between the title screen's background tiles.
+6. **Release.** Bump to 0.3.0 and build with `installer\build.ps1` from
+   clean trees. Test-install on a clean Windows user account and write the
+   release notes. The user publishes.
+
+**Exit criteria**
+
+- [ ] Every 🟡 row in the README is ✅, or is listed under known issues
+- [ ] A fresh install shows sharp text with the font option. With the HD
+      option, ML1 uses the upscaled pack at ≥ 58 fps
+- [ ] Menu titles and icons are not stretched at 16:9 (a screenshot of
+      each main menu)
+- [ ] The suite passes on the release build; `v0.3.0` is tagged locally
+
+### Phase 19: Split-screen multiplayer (optional; Phase 10, item 4)
+
+1. An OHCI root hub with 2–4 ports, and one emulated Duke pad per host
+   controller (XInput slots 0–3, with hot-plug).
+2. Multiplayer back in the main menu (the menu mod, `Shell.rui`
+   `Scenes/Main.scene`).
+3. **Check split-screen rendering:**
+   - per-viewport state;
+   - shadows;
+   - frame rate at `RenderScale` 2.
+4. A suite case with two scripted pads.
+
+**Exit criteria**
+
+- [ ] 2-player and 4-player sessions run start to finish, each pad
+      steering its own rider
+- [ ] Split-screen holds 60 fps at 1080p
+- [ ] The README's split-screen row is ✅
+
+### Phase 20: Content tooling (Phase 8 prerequisites, offline)
+
+1. Decode the `.pgf` **mesh** block in `tools/assets/`: vertex formats,
+   index buffers and material references.
+2. Decode `.ani` (skeleton tracks) and the level object placement format.
+3. A **round-trip test** for each format: decode, re-encode and
+   byte-compare, over every file on the disc.
+4. glTF export for viewing, then import for edited meshes.
+5. A first M7 proof: a new `NewCareerParts` combination (part and texture
+   swap) as a mod-pack recipe in `tools/mods/`.
+
+**Exit criteria**
+
+- [ ] Every `.pgf`, `.ani` and placement file on the disc round-trips
+      byte-identical
+- [ ] glTF exports of a rider and a level chunk open correctly in Blender
+- [ ] A recipe-built custom character shows up in career creation in game
 
 ---
 
