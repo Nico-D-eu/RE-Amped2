@@ -116,6 +116,87 @@ capture the boot trace. It will crash on first run. That is expected; see
 `xboxrecomp/docs/GETTING_STARTED.md` step 8 and
 `xboxrecomp/docs/pipeline/06-debugging.md`.
 
+The first log line names the build: `[BOOT] RE-Amped2 build amped2=<commit>
+xboxrecomp=<commit>`, with `+modified` for a tree that had uncommitted changes.
+F3 shows it too. `cmake/version.cmake` writes it on every build
+(`build\amped2_version.c`). A player's install has no `.git`, so there it
+comes from the installer's `manifest.txt`.
+
+## Testing
+
+**The rule:** a test run never changes the player's saves, caches or
+settings. It also never starts while the player's game is running, unless
+they say so. Their game is usually the installed copy (for example
+`C:\Games\RE-Amped2`), with its own `game\UDATA`. The dev tree's runs used to
+share `%LOCALAPPDATA%\xboxrecomp`, the console storage, with it.
+
+**Isolated runs.** `tools\diag.ps1` isolates every run, through
+`tools\testenv.ps1`. Everything the game writes goes under `test\`
+(git-ignored):
+
+| Switch | Isolated value | Holds |
+|---|---|---|
+| `RECOMP_HDD_DIR` (toolkit) | `test\runs\<name>\hdd` | E:, which holds UDATA and TDATA. By default a copy of the dev tree's `game\UDATA`/`TDATA`; empty with `-FreshSave`; `test\fixtures\<name>` with `-Fixture <name>` |
+| `RECOMP_SAVE_DIR` (toolkit) | `test\storage` | partition images and the cache partitions, shared by test runs |
+| `AMPED2_INI` | `test\amped2.ini` | test settings: the defaults unless edited |
+| `RECOMP_SHADER_CACHE` (toolkit) | `test\shader_cache` | seeded from `shader_cache\` |
+| `AMPED2_COVERAGE_FILE` | `test\amped2-coverage.txt` | what test runs reached |
+| `AMPED2_CRASH_DIR` | `test\runs\<name>\crash` | crash reports |
+
+- The player's folders are only ever read.
+- `-Shared` runs on the dev tree's own saves and settings, as runs did
+  before.
+- A run refuses to start while any RE-Amped2 is running; `-AllowParallel`
+  overrides that. Next to another instance, a run gets its own storage
+  (`test\runs\<name>\storage`), because the game writes its cache partitions
+  with exclusive opens.
+- Disc files are read from `game\` like any run. The toolkit opens every
+  disc file read-only: the game opens `shaders\shaders.res` for read and
+  write with no sharing, which a DVD makes harmless and a writable host
+  copy does not. It also opens read-only files with read sharing
+  (`kernel_file.c`), so two instances can read the same files.
+- `mods\` is read as is. If a loose entry changed, `mods\cache\loose` is
+  rebuilt at start-up.
+
+**Coverage** (`src/coverage.c`). Some of the generated code is a guess:
+- an **unresolved-call stub** is a target the disassembler missed;
+- a **flags fallback** is a condition the lifter could not trace;
+- **unimpl** is an untranslated instruction;
+- **icall-unresolved** and **icall-not-code** are indirect calls into
+  nothing.
+
+Each run reports the ones it reaches:
+- a `[REACHED] <kind> 0x<address>` line in the log, once per address;
+- a `[COVERAGE]` summary when things go quiet and at exit;
+- a line in `amped2-coverage.txt` in the game root (`AMPED2_COVERAGE_FILE`;
+  `0` turns the file off).
+
+The file is read back at start-up and only added to. So a player's long
+sessions build up one list across runs, with the date and build that
+first reached each entry. Lines are queued and written once a minute, and
+when the game quits or crashes.
+
+The generated sites report themselves through `RECOMP_REACHED`
+(`recomp_types.h`), which CMake turns on with `RECOMP_COVERAGE`. Each site
+calls once; after that it costs a byte test. What to do with an entry:
+- a reached **stub**: the function the disassembler missed goes into
+  `config\seed_functions.json`;
+- a reached **flags fallback**: needs the lifter to trace that condition;
+- **icall-unresolved**: a missing function, seeded through
+  `tools.seed_from_log`.
+
+**Crash reports.** An exception nothing handles writes `crash\<date-time>\`
+in the game root (`AMPED2_CRASH_DIR` moves it). It holds:
+- `RE-Amped2.dmp`, a minidump. Open it in Visual Studio with the `.pdb` of
+  the same build;
+- `crash.txt`, with the build, the exception, the guest registers and the
+  guest call chain;
+- `amped2.log`, the run's log up to the crash.
+
+A double-clicked game also shows a dialog saying where the report is.
+`AMPED2_TEST_CRASH=1` faults on purpose just before the game starts, to
+check the whole path.
+
 ## Installer (for players)
 
 `installer\build.ps1` makes `installer\dist\RE-Amped2-Setup.exe`, a single-file
@@ -745,7 +826,8 @@ still unresolved in game.
 **Unattended walks:** `tools\diag.ps1 -FreshSave` moves the saved
 profiles (`game\UDATA\4d530041\<id>`) aside, so a walk creates a player
 instead of looping on "That player already exists. Overwrite?"
-(default No).
+(default No). *(Since 2026-10-28 it starts the run on an empty, isolated E:
+instead, and nothing is moved; see "Testing".)*
 
 ### Register combiners (2026-09-29, afternoon)
 

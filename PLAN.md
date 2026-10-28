@@ -12,6 +12,15 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-28): Phase 15 done; the toolkit sync next.**
+- Test runs are isolated and safe to run next to the player's game.
+- Every run keeps a coverage list of reached guesses.
+- A crash leaves a report (minidump, guest chain, log).
+- The log and F3 name the build.
+
+At the user's request the toolkit sync (Phase 17) comes before the suite
+(Phase 16).
+
 **Update (2026-10-26): next phases.** v0.2.0 is released. The user is
 testing a full career to the end and the Legend challenges. The work next
 to that is Part D (Phases 15–20):
@@ -789,9 +798,9 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 
 | # | Phase | Why now | Runs the game? |
 |---|---|---|---|
-| 15 | Test isolation and coverage telemetry | Makes the user's runs useful; unblocks the rest | Short checks only |
-| 16 | Automated regression suite | The safety net for 17 and 18 | Yes, in an isolated copy |
-| 17 | Toolkit upstream sync (v0.16.0) | `amped2-fixes` is 101 ahead and 333 behind upstream | Yes, through the suite |
+| 15 | Test isolation and coverage telemetry ✅ (2026-10-28, one check left) | Makes the user's runs useful; unblocks the rest | Short checks only |
+| 17 | Toolkit upstream sync (v0.16.0), **next** | `amped2-fixes` is 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
+| 16 | Automated regression suite | The safety net for 18 | Yes, in an isolated copy |
 | 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
 | 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
@@ -800,6 +809,10 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
   For each one: reproduce it, fix it, add a suite case, and ship the fix in
   the next 0.2.x.
 - Phase 20 never starts the game, so it can run while the user plays.
+- **Order changed (user, 2026-10-28):** the toolkit sync (17) comes before
+  the suite (16), since it is five releases behind. Its check is Phase 15's
+  coverage list and isolated runs: one baseline before the sync, the same
+  runs after it.
 - Phases 12–14 (platforms) come after Phase 17, because upstream's POSIX
   work (e.g. the POSIX file backend) changes their starting point.
 
@@ -833,16 +846,48 @@ collide with them.
 5. **Version line.** The build writes its commit pair (as `installer\build.ps1`
    computes it) to the log and the F3 overlay.
 
+**Done (2026-10-28)**, as described in docs/DEVELOPING.md "Testing". It
+differs from the steps above in these ways:
+- The switches are the toolkit's `RECOMP_HDD_DIR` (E:, which holds UDATA
+  and TDATA) and `RECOMP_SAVE_DIR` (storage: partition images and the cache
+  partitions). Toolkit `52838f8`.
+- Nothing of the player's is moved any more, so the move-and-restore
+  fallback is gone.
+- No hard-linked `game/`: hard links share Windows' sharing checks, so they
+  would not have helped. The conflicts were elsewhere:
+  - the storage both runs shared, `%LOCALAPPDATA%\xboxrecomp`;
+  - disc files opened with no sharing, `shaders\shaders.res` even for
+    writing.
+
+  Disc files are now opened read-only and shared for reading.
+- Coverage covers five kinds, not three:
+  - unresolved stubs and `_flags` fallbacks, as generated markers
+    (`RECOMP_REACHED`, toolkit `f461003`);
+  - unimpl, icall-unresolved and icall-not-code.
+
+  They are kept across sessions in `amped2-coverage.txt`.
+- The crash test switch is `AMPED2_TEST_CRASH=1`.
+
 **Exit criteria**
 
-- [ ] A `-FreshSave` run leaves `game/UDATA` byte-identical (hashed before
-      and after)
-- [ ] A run from `test/` works while `game/` is open in another process
+- [x] A `-FreshSave` run leaves `game/UDATA` byte-identical (hashed before
+      and after) (2026-10-28: 239 files unchanged across 7 isolated runs. The
+      check covered the dev tree's and the installed game's UDATA/TDATA, both
+      ini files and `%LOCALAPPDATA%\xboxrecomp`)
+- [x] A run from `test/` works while `game/` is open in another process
+      (2026-10-28: two isolated instances reached ML1 at the same time, with
+      no sharing violation. A run started next to another instance gets its
+      own storage)
 - [ ] One user play session yields a log with the coverage sets and the
-      version line
-- [ ] A forced crash (e.g. `RECOMP_TEST_CRASH=1`) leaves a minidump that
+      version line (needs a play session on this build; the installed
+      0.2.0 predates it)
+- [x] A forced crash (e.g. `RECOMP_TEST_CRASH=1`) leaves a minidump that
       opens in Visual Studio with symbols, plus a guest call chain
-- [ ] docs/DEVELOPING.md has a "Testing" section
+      (2026-10-28: `AMPED2_TEST_CRASH=1` writes `crash\<date-time>\`. Its
+      `crash.txt` names `WinMain+0x954` through the PDB. The dump's module
+      record matches the exe's PDB GUID and age, so a debugger loads the
+      symbols. Not yet opened in Visual Studio itself)
+- [x] docs/DEVELOPING.md has a "Testing" section
 
 ### Phase 16: Automated regression suite
 
