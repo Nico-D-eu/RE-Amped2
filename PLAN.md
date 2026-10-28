@@ -799,7 +799,7 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 | # | Phase | Why now | Runs the game? |
 |---|---|---|---|
 | 15 | Test isolation and coverage telemetry ✅ (2026-10-28, one check left) | Makes the user's runs useful; unblocks the rest | Short checks only |
-| 17 | Toolkit upstream sync (v0.16.0), **next** | `amped2-fixes` is 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
+| 17 | Toolkit upstream sync (v0.16.0), **in progress** (merged on a branch; a kernel race left) | `amped2-fixes` is 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
 | 16 | Automated regression suite | The safety net for 18 | Yes, in an isolated copy |
 | 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
@@ -929,6 +929,21 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
       flat)
 
 ### Phase 17: Toolkit upstream sync (xboxrecomp v0.16.0)
+
+**Status (2026-10-28): merged on the local branch `amped2-sync-v0.16`, not
+yet good enough to replace `amped2-fixes`.**
+- All 30 conflicting files are resolved. The toolkit builds, and the
+  recompiler and disassembler tests pass.
+- Three findings so far (details in CHANGELOG):
+  1. Upstream's stricter disassembler drops real function starts, such as
+     `0x00282C0A`. For now the analysis runs with our tools.
+  2. The merged APU leaks XACT's sound heap. The sync keeps our APU, which
+     brings the walk back to the baseline's 57 fps.
+  3. That tree still has an intermittent race in the merged kernel: of 5
+     runs, 1 crashed in XACT and 2 deadlocked in ML1.
+
+Next: find the race, then port upstream's APU changes one at a time, then
+upstream's disassembler (seeding the real starts it drops).
 
 1. **Survey** `amped2-fixes..upstream/main` (333 commits on 2026-10-26).
    Group them into lifter/disasm (changes the generated code), kernel/HLE,
