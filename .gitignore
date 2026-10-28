@@ -60,6 +60,11 @@ stderr*.txt
 run_stdout.txt
 # tools/diag.ps1 output
 diag/
+# Isolated test runs (tools/testenv.ps1): saves, storage, fixtures
+/test/
+# Written by the game: crash reports and the reached-code list (src/coverage.c)
+/crash/
+amped2-coverage.txt
 
 # Local-only project files (personal agent rules and settings; see AGENTS.md)
 CHANGELOG.md

@@ -140,8 +140,10 @@ extern void xbe_entry_point(void);
  * guest function is the whole question at a fault.
  *
  * Requires linking dbghelp and keeping the .pdb beside the .exe.
+ *
+ * Written to `out`: stderr from the VEH, crash.txt from the crash report.
  */
-static void print_guest_context(void *rip)
+static void print_guest_context(FILE *out, void *rip)
 {
     /* SYMBOL_INFO is variable-length: the name is written past the struct, so
      * it must be over-allocated with MaxNameLen set to the slack. */
@@ -153,18 +155,18 @@ static void print_guest_context(void *rip)
     sym->SizeOfStruct = sizeof(SYMBOL_INFO);
     sym->MaxNameLen = 255;
     if (SymFromAddr(GetCurrentProcess(), (DWORD64)(uintptr_t)rip, &disp, sym))
-        fprintf(stderr, "  in %s+0x%llX\n",
+        fprintf(out, "  in %s+0x%llX\n",
                 sym->Name, (unsigned long long)disp);
 
     if (g_xbox_mem_offset && g_esp) {
         const uint32_t *sp =
             (const uint32_t *)((uintptr_t)g_xbox_mem_offset + g_esp);
         int shown = 0, i;
-        fprintf(stderr, "  guest stack (return addresses, innermost first):\n");
+        fprintf(out, "  guest stack (return addresses, innermost first):\n");
         for (i = 0; i < 256 && shown < 24; i++) {
             uint32_t v = sp[i];
             if (v > g_xbox_code_lo && v < g_xbox_code_hi) {
-                fprintf(stderr, "    [esp+%-4d] 0x%08X\n", i * 4, v);
+                fprintf(out, "    [esp+%-4d] 0x%08X\n", i * 4, v);
                 shown++;
             }
         }
@@ -177,7 +179,7 @@ static void print_guest_context(void *rip)
          * needed -- and an empty list under a promising heading reads like
          * "nothing to see" rather than "the evidence is destroyed". */
         if (!shown)
-            fprintf(stderr, "    (no return addresses in range)\n");
+            fprintf(out, "    (no return addresses in range)\n");
 
         /* Everything below only pays for itself when the scan came back
          * empty. A crash where the chain was recovered already says what
@@ -197,11 +199,11 @@ static void print_guest_context(void *rip)
             extern volatile uint32_t g_icall_trace[16];
             extern volatile uint32_t g_icall_trace_idx;
 
-            fprintf(stderr, "  recent ICALL targets:");
+            fprintf(out, "  recent ICALL targets:");
             for (k = 0; k < 16; k++)
-                fprintf(stderr, " %08X",
+                fprintf(out, " %08X",
                         g_icall_trace[(g_icall_trace_idx + k) & 15]);
-            fprintf(stderr, "\n");
+            fprintf(out, "\n");
 
             /* The frame unfiltered. The pointers and lengths handed to
              * whatever faulted live here and look nothing like code, so the
@@ -210,7 +212,7 @@ static void print_guest_context(void *rip)
              * RAM mirror -- which is what identified the fault as a copy
              * running off its buffer rather than a stray pointer. */
             for (i = 0; i < 20; i++)
-                fprintf(stderr, "    raw[esp+%-4d] 0x%08X\n", i * 4, sp[i]);
+                fprintf(out, "    raw[esp+%-4d] 0x%08X\n", i * 4, sp[i]);
         }
     }
 }
@@ -302,7 +304,7 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
             g_ebx, g_esi, g_edi);
         fprintf(stderr, "  Xbox VA of fault: 0x%08X\n",
             (uint32_t)(fault_addr - (uintptr_t)g_xbox_mem_offset));
-        print_guest_context((void *)ep->ContextRecord->Rip);
+        print_guest_context(stderr, (void *)ep->ContextRecord->Rip);
 
         /* The raw frame too. The filtered chain above drops everything
          * that is not a code address, and on a short stack -- a DPC or ISR
@@ -404,6 +406,9 @@ static void stderr_drain_quit(void)
 {
     static const char line[] = "  [WINDOW] closed -- exiting\r\n";
     DWORD avail = 0, n, t0 = GetTickCount();
+    void amped2_coverage_flush(void);
+
+    amped2_coverage_flush();        /* Win32 file calls only, no stdio */
     while (s_err_pipe_r && PeekNamedPipe(s_err_pipe_r, NULL, 0, NULL, &avail, NULL)
            && avail && GetTickCount() - t0 < 250)
         Sleep(1);
@@ -486,6 +491,139 @@ void amped2_stderr_drain(void)
 {
     if (s_err_pump)
         stderr_drain();
+}
+
+/* ── Crash report ──────────────────────────────────────────── */
+
+/* The build, as cmake/version.cmake wrote it (amped2_version.c). */
+extern const char amped2_build_version[];
+void amped2_coverage_init(const char *build);
+void amped2_coverage_flush(void);
+void amped2_coverage_summary(void);
+
+/*
+ * An exception nothing handled: write crash\<date-time>\ beside the game, so
+ * a crash during someone's play leaves something to attach to a bug report.
+ *
+ *   RE-Amped2.dmp  a minidump (threads, stacks, the memory they point at),
+ *                  which Visual Studio opens against the .pdb of the same
+ *                  build;
+ *   crash.txt      the build, the exception, and the guest's view of it --
+ *                  registers and call chain, as the VEH prints them;
+ *   amped2.log     the run's log up to the crash, when the game keeps one.
+ *
+ * Runs after the VEH above has printed its [CRASH] block and declined the
+ * fault, on the faulting thread, so the guest registers are that thread's.
+ * AMPED2_CRASH_DIR replaces the crash\ folder (test runs keep their own).
+ */
+static void copy_log(const char *dir)
+{
+    char path[MAX_PATH];
+    char buf[65536];
+    HANDLE in, out;
+    DWORD n, w;
+
+    if (!s_err_log)
+        return;
+    in = CreateFileA("amped2.log", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                     NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (in == INVALID_HANDLE_VALUE)
+        return;
+    snprintf(path, sizeof path, "%s\\amped2.log", dir);
+    out = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                      FILE_ATTRIBUTE_NORMAL, NULL);
+    if (out != INVALID_HANDLE_VALUE) {
+        while (ReadFile(in, buf, sizeof buf, &n, NULL) && n)
+            WriteFile(out, buf, n, &w, NULL);
+        CloseHandle(out);
+    }
+    CloseHandle(in);
+}
+
+static LONG WINAPI crash_report(PEXCEPTION_POINTERS ep)
+{
+    static volatile LONG once;
+    const char *base = getenv("AMPED2_CRASH_DIR");
+    char dir[MAX_PATH], path[MAX_PATH];
+    SYSTEMTIME t;
+    HANDLE h;
+    FILE *f;
+
+    if (InterlockedExchange(&once, 1))
+        return EXCEPTION_EXECUTE_HANDLER;       /* a second thread: let it die */
+    amped2_coverage_flush();
+
+    GetLocalTime(&t);
+    snprintf(dir, sizeof dir, "%s\\%04u%02u%02u-%02u%02u%02u",
+             base && *base ? base : "crash", t.wYear, t.wMonth, t.wDay,
+             t.wHour, t.wMinute, t.wSecond);
+    CreateDirectoryA(base && *base ? base : "crash", NULL);
+    CreateDirectoryA(dir, NULL);
+
+    snprintf(path, sizeof path, "%s\\RE-Amped2.dmp", dir);
+    h = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        MINIDUMP_EXCEPTION_INFORMATION mei;
+        mei.ThreadId = GetCurrentThreadId();
+        mei.ExceptionPointers = ep;
+        mei.ClientPointers = FALSE;
+        /* Not a full dump: the guest's memory is hundreds of MB. What the
+         * stacks and registers point at comes along, which covers the
+         * questions a crash asks first. */
+        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), h,
+                          (MINIDUMP_TYPE)(MiniDumpWithIndirectlyReferencedMemory
+                                          | MiniDumpWithThreadInfo
+                                          | MiniDumpWithUnloadedModules),
+                          &mei, NULL, NULL);
+        CloseHandle(h);
+    }
+
+    snprintf(path, sizeof path, "%s\\crash.txt", dir);
+    if (fopen_s(&f, path, "w") == 0 && f) {
+        PEXCEPTION_RECORD er = ep->ExceptionRecord;
+        fprintf(f, "RE-Amped2 crash report, %04u-%02u-%02u %02u:%02u:%02u\n",
+                t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+        fprintf(f, "build: %s\n", amped2_build_version);
+        fprintf(f, "exception 0x%08lX at RIP=0x%llX",
+                (unsigned long)er->ExceptionCode,
+                (unsigned long long)ep->ContextRecord->Rip);
+        if (er->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && er->NumberParameters >= 2)
+            fprintf(f, ", %s of 0x%llX (guest VA 0x%08X)",
+                    er->ExceptionInformation[0] ? "write" : "read",
+                    (unsigned long long)er->ExceptionInformation[1],
+                    (uint32_t)(er->ExceptionInformation[1] - (uintptr_t)g_xbox_mem_offset));
+        fprintf(f, "\nguest regs: eax=0x%08X ecx=0x%08X edx=0x%08X ebx=0x%08X\n"
+                   "            esi=0x%08X edi=0x%08X esp=0x%08X\n",
+                g_eax, g_ecx, g_edx, g_ebx, g_esi, g_edi, g_esp);
+        {
+            extern __declspec(thread) uint32_t g_xbox_current_dpc;
+            if (g_xbox_current_dpc)
+                fprintf(f, "inside DPC routine 0x%08X\n", g_xbox_current_dpc);
+        }
+        print_guest_context(f, (void *)ep->ContextRecord->Rip);
+        fclose(f);
+    }
+
+    fprintf(stderr, "[CRASH] report written to %s\n", dir);
+    amped2_stderr_drain();
+    copy_log(dir);
+
+    /* A player's double-clicked game has no console: say where the report
+     * is. Not under tools/diag.ps1 (stderr is a file there), where a dialog
+     * would hold the run until it is killed. */
+    if (s_err_log && !getenv("AMPED2_NO_CRASH_DIALOG")) {
+        char msg[MAX_PATH + 256], full[MAX_PATH];
+        if (!GetFullPathNameA(dir, sizeof full, full, NULL))
+            snprintf(full, sizeof full, "%s", dir);
+        snprintf(msg, sizeof msg,
+                 "RE-Amped2 stopped because of an error.\n\n"
+                 "A crash report was saved in:\n%s\n\n"
+                 "Please attach that folder (zipped) to a bug report on GitHub.",
+                 full);
+        MessageBoxA(NULL, msg, "RE-Amped2", MB_ICONERROR);
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
 }
 
 /* amped2.ini, beside the exe: the player's settings, as the toolkit's runtime
@@ -573,9 +711,20 @@ static void ini_set(const char *var, const char *value)
     _putenv(buf);
 }
 
+/* AMPED2_INI names another file (a test run's own settings; created with the
+ * defaults if it isn't there yet). A relative name is resolved once, at the
+ * first read, before find_game_root moves the working directory. */
 static BOOL ini_path(char *path, size_t size)
 {
+    static char resolved[MAX_PATH];
     char *slash;
+    const char *e = getenv("AMPED2_INI");
+    if (e && *e) {
+        if (!resolved[0] && !GetFullPathNameA(e, sizeof resolved, resolved, NULL))
+            return FALSE;
+        snprintf(path, size, "%s", resolved);
+        return TRUE;
+    }
     if (!GetModuleFileNameA(NULL, path, (DWORD)size))
         return FALSE;
     slash = strrchr(path, '\\');
@@ -817,6 +966,12 @@ static void load_settings(void)
     fprintf(stderr, "  amped2.ini: %d settings from %s\n", n, path);
 }
 
+static void coverage_at_exit(void)
+{
+    amped2_coverage_summary();
+    amped2_coverage_flush();
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow)
 {
@@ -832,6 +987,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
     stderr_async();
+    /* Which build this is, first thing in every log, and on the F3 overlay
+     * (the toolkit reads RECOMP_BUILD_VERSION). */
+    fprintf(stderr, "[BOOT] RE-Amped2 build %s\n", amped2_build_version);
+    if (!getenv("RECOMP_BUILD_VERSION")) {
+        char b[192];
+        snprintf(b, sizeof b, "RECOMP_BUILD_VERSION=%s", amped2_build_version);
+        _putenv(b);
+    }
     load_settings();
     /* The game's own HD mode: with 720p reported it renders 1280x720, 16:9,
      * with its HUD and menus laid out for it (see README, "Built-in HD and
@@ -918,6 +1081,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
     SymInitialize(GetCurrentProcess(), NULL, TRUE);
     AddVectoredExceptionHandler(1, veh_handler);
+    SetUnhandledExceptionFilter(crash_report);
 
     /* Step 1: Load XBE */
     {
@@ -939,6 +1103,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     printf("XBE loaded: %zu bytes\n", xbe_size);
     describe_xbe((const uint8_t *)xbe_data, xbe_size);
     mod_packs();
+    /* Reached guesses (src/coverage.c), kept in amped2-coverage.txt in the
+     * game root, which is the working directory from here on. */
+    amped2_coverage_init(amped2_build_version);
+    atexit(coverage_at_exit);
 
     /* Step 2: Initialize Xbox memory layout */
     printf("Initializing Xbox memory layout...\n");
@@ -1069,6 +1237,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * silently inert, and the one diagnostic that tells a hang from slowness
      * does nothing while appearing to be set. */
     xbox_WatchdogStart();
+
+    /* AMPED2_TEST_CRASH=1: fault on purpose, to check the crash report end
+     * to end (the VEH's [CRASH] block, then crash\<date-time>\). */
+    {
+        const char *tc = getenv("AMPED2_TEST_CRASH");
+        if (tc && *tc == '1') {
+            volatile int *volatile nowhere = NULL;
+            fprintf(stderr, "[BOOT] AMPED2_TEST_CRASH: faulting on purpose\n");
+            *nowhere = 0;
+        }
+    }
 
     /* Step 7: Call the recompiled entry point */
     printf("\nStarting game...\n");
