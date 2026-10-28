@@ -60,8 +60,10 @@ if ($Shared -and ($FreshSave -or $Fixture)) {
     throw '-Shared runs on the player''s own saves; -FreshSave and -Fixture need an isolated run.'
 }
 
+# By prefix: test builds run as copies (RE-Amped2.base.exe and the like), and
+# an exact name missed them -- parallel runs then shared one storage.
 $running = @(Get-Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.ProcessName -in 'RE-Amped2', 'amped2_recomp' })
+    Where-Object { $_.ProcessName -like 'RE-Amped2*' -or $_.ProcessName -like 'amped2_recomp*' })
 if ($running.Count -and -not $AllowParallel) {
     throw ("RE-Amped2 is already running (pid $($running.Id -join ', ')); the player may be " +
            "playing. Wait, or pass -AllowParallel if they agreed.")
