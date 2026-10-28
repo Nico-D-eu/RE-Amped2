@@ -939,11 +939,19 @@ yet good enough to replace `amped2-fixes`.**
      `0x00282C0A`. For now the analysis runs with our tools.
   2. The merged APU leaks XACT's sound heap. The sync keeps our APU, which
      brings the walk back to the baseline's 57 fps.
-  3. That tree still has an intermittent race in the merged kernel: of 5
-     runs, 1 crashed in XACT and 2 deadlocked in ML1.
+  3. That tree still had an intermittent race in the merged kernel: of 5
+     runs, 1 crashed in XACT and 2 deadlocked in ML1. **Found and fixed
+     (sync `f9cb831`)**: device threads wrote their ISR's IRQL into the
+     main thread's KPCR, so DirectSound skipped its lock. Since the fix, 6
+     parallel runs have had no freeze in ML1 and no bug check. One run
+     stalled before ML1, unexplained.
 
-Next: find the race, then port upstream's APU changes one at a time, then
-upstream's disassembler (seeding the real starts it drops).
+Next:
+1. More runs of the fix, to see whether the before-ML1 stall repeats.
+2. A play session.
+3. Then `amped2-fixes` moves.
+4. After that, upstream's APU changes one at a time, then its disassembler
+   (seeding the real starts it drops).
 
 1. **Survey** `amped2-fixes..upstream/main` (333 commits on 2026-10-26).
    Group them into lifter/disasm (changes the generated code), kernel/HLE,
