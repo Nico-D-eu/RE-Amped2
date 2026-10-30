@@ -163,7 +163,7 @@ The three fixes that got here:
 | M5 | Mod framework | Loader, asset overrides, hooks, config | 6 |
 | M6 | HD | Resolution scaling, widescreen, texture pack in-game | 7 |
 | M7 | New content | First custom character and remixed level | 8 |
-| M8 | Release | Distributable patch or launcher, no game data | 9 (v0.2.0 tagged 2026-10-25) |
+| M8 | Release | Distributable patch or launcher, no game data | 9 (v0.2.0 tagged 2026-10-25, v0.2.1 built 2026-10-30) |
 | M9 | Safety net | Isolated test runs, coverage logs, regression suite | 15–16 |
 | M10 | Current toolkit | `amped2-fixes` on upstream v0.16.0, suite green | 17 |
 | M11 | v0.3.0 | Sharp fonts and optional HD textures at install, unstretched menus | 18 |

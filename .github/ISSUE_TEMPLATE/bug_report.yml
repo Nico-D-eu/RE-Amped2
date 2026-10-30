@@ -54,7 +54,7 @@ body:
     attributes:
       label: RE-Amped2 version
       description: Shown in the installer's footer, and as `installer=` in `install-info.txt` in the install folder.
-      placeholder: "0.2.0"
+      placeholder: "0.2.1"
     validations:
       required: true
   - type: dropdown

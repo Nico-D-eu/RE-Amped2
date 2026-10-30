@@ -98,7 +98,13 @@ $size = (Get-Item $zipPath).Length / 1MB
 Write-Host ("Payload: {0} files, {1:N1} MB" -f $count, $size)
 Write-Host $manifest
 
-dotnet build (Join-Path $Installer 'Amped2Installer.csproj') -c Release --nologo -v minimal
+# Windows PowerShell 5.1 turns a native tool's stderr into an error record,
+# which 'Stop' makes fatal even when the build succeeds. The exit code is
+# what counts.
+$ErrorActionPreference = 'Continue'
+dotnet build (Join-Path $Installer 'Amped2Installer.csproj') -c Release --nologo -v minimal 2>&1 |
+    ForEach-Object { "$_" }
+$ErrorActionPreference = 'Stop'
 if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed' }
 
 $dist = Join-Path $Installer 'dist'

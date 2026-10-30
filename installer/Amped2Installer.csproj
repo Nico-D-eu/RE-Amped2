@@ -18,8 +18,8 @@
     <ApplicationIcon>..\branding\RE-Amped2.ico</ApplicationIcon>
     <Product>RE-Amped2 Installer</Product>
     <Description>Builds RE-Amped2, Amped 2 for Windows, from your own disc image</Description>
-    <Version>0.2.0</Version>
-    <InformationalVersion>0.2.0 Early Access</InformationalVersion>
+    <Version>0.2.1</Version>
+    <InformationalVersion>0.2.1 Early Access</InformationalVersion>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
