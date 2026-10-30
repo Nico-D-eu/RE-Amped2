@@ -1196,8 +1196,12 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
  * (the ICALL macro pops the dummy return address and continues).
  * Focus on the ones that cause crashes or incorrect behavior.
  */
+/* src/coverage.c: kind 3 unimpl, 4 icall-unresolved, 5 icall-not-code. */
+void amped2_coverage_note(int kind, uint32_t va);
+
 void recomp_icall_fail_log(uint32_t va)
 {
+    amped2_coverage_note(4, va);
     fprintf(stderr, "[ICALL] Failed to resolve VA 0x%08X (total calls: %llu)\n",
             va, (unsigned long long)g_icall_count);
 
@@ -1228,6 +1232,7 @@ void recomp_icall_not_code_log(uint32_t va)
     static int count;
     int i;
 
+    amped2_coverage_note(5, va);
     for (i = 0; i < count; i++)
         if (seen[i] == va)
             break;
@@ -1272,6 +1277,7 @@ void recomp_unimpl(const char *text, uint32_t va)
     const char *trap = getenv("RECOMP_UNIMPL_TRAP");
     int stop = trap && *trap && *trap != '0';
 
+    amped2_coverage_note(3, va);
     if (printed < 50 || stop) {
         printed++;
         fprintf(stderr,

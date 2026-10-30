@@ -116,6 +116,87 @@ capture the boot trace. It will crash on first run. That is expected; see
 `xboxrecomp/docs/GETTING_STARTED.md` step 8 and
 `xboxrecomp/docs/pipeline/06-debugging.md`.
 
+The first log line names the build: `[BOOT] RE-Amped2 build amped2=<commit>
+xboxrecomp=<commit>`, with `+modified` for a tree that had uncommitted changes.
+F3 shows it too. `cmake/version.cmake` writes it on every build
+(`build\amped2_version.c`). A player's install has no `.git`, so there it
+comes from the installer's `manifest.txt`.
+
+## Testing
+
+**The rule:** a test run never changes the player's saves, caches or
+settings. It also never starts while the player's game is running, unless
+they say so. Their game is usually the installed copy (for example
+`C:\Games\RE-Amped2`), with its own `game\UDATA`. The dev tree's runs used to
+share `%LOCALAPPDATA%\xboxrecomp`, the console storage, with it.
+
+**Isolated runs.** `tools\diag.ps1` isolates every run, through
+`tools\testenv.ps1`. Everything the game writes goes under `test\`
+(git-ignored):
+
+| Switch | Isolated value | Holds |
+|---|---|---|
+| `RECOMP_HDD_DIR` (toolkit) | `test\runs\<name>\hdd` | E:, which holds UDATA and TDATA. By default a copy of the dev tree's `game\UDATA`/`TDATA`; empty with `-FreshSave`; `test\fixtures\<name>` with `-Fixture <name>` |
+| `RECOMP_SAVE_DIR` (toolkit) | `test\storage` | partition images and the cache partitions, shared by test runs |
+| `AMPED2_INI` | `test\amped2.ini` | test settings: the defaults unless edited |
+| `RECOMP_SHADER_CACHE` (toolkit) | `test\shader_cache` | seeded from `shader_cache\` |
+| `AMPED2_COVERAGE_FILE` | `test\amped2-coverage.txt` | what test runs reached |
+| `AMPED2_CRASH_DIR` | `test\runs\<name>\crash` | crash reports |
+
+- The player's folders are only ever read.
+- `-Shared` runs on the dev tree's own saves and settings, as runs did
+  before.
+- A run refuses to start while any RE-Amped2 is running; `-AllowParallel`
+  overrides that. Next to another instance, a run gets its own storage
+  (`test\runs\<name>\storage`), because the game writes its cache partitions
+  with exclusive opens.
+- Disc files are read from `game\` like any run. The toolkit opens every
+  disc file read-only: the game opens `shaders\shaders.res` for read and
+  write with no sharing, which a DVD makes harmless and a writable host
+  copy does not. It also opens read-only files with read sharing
+  (`kernel_file.c`), so two instances can read the same files.
+- `mods\` is read as is. If a loose entry changed, `mods\cache\loose` is
+  rebuilt at start-up.
+
+**Coverage** (`src/coverage.c`). Some of the generated code is a guess:
+- an **unresolved-call stub** is a target the disassembler missed;
+- a **flags fallback** is a condition the lifter could not trace;
+- **unimpl** is an untranslated instruction;
+- **icall-unresolved** and **icall-not-code** are indirect calls into
+  nothing.
+
+Each run reports the ones it reaches:
+- a `[REACHED] <kind> 0x<address>` line in the log, once per address;
+- a `[COVERAGE]` summary when things go quiet and at exit;
+- a line in `amped2-coverage.txt` in the game root (`AMPED2_COVERAGE_FILE`;
+  `0` turns the file off).
+
+The file is read back at start-up and only added to. So a player's long
+sessions build up one list across runs, with the date and build that
+first reached each entry. Lines are queued and written once a minute, and
+when the game quits or crashes.
+
+The generated sites report themselves through `RECOMP_REACHED`
+(`recomp_types.h`), which CMake turns on with `RECOMP_COVERAGE`. Each site
+calls once; after that it costs a byte test. What to do with an entry:
+- a reached **stub**: the function the disassembler missed goes into
+  `config\seed_functions.json`;
+- a reached **flags fallback**: needs the lifter to trace that condition;
+- **icall-unresolved**: a missing function, seeded through
+  `tools.seed_from_log`.
+
+**Crash reports.** An exception nothing handles writes `crash\<date-time>\`
+in the game root (`AMPED2_CRASH_DIR` moves it). It holds:
+- `RE-Amped2.dmp`, a minidump. Open it in Visual Studio with the `.pdb` of
+  the same build;
+- `crash.txt`, with the build, the exception, the guest registers and the
+  guest call chain;
+- `amped2.log`, the run's log up to the crash.
+
+A double-clicked game also shows a dialog saying where the report is.
+`AMPED2_TEST_CRASH=1` faults on purpose just before the game starts, to
+check the whole path.
+
 ## Installer (for players)
 
 `installer\build.ps1` makes `installer\dist\RE-Amped2-Setup.exe`, a single-file
@@ -306,6 +387,55 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x0025A120` / `0x0025A15B` — `__SEH_prolog` / `__SEH_epilog` (auto-detected by `tools.recomp`)
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
+
+### XACT, DirectSound and the music dropout (2026-10-30)
+
+Two intermittent audio faults, both older than the v0.16 toolkit sync:
+
+- **The music dropout.** The in-level music stops being fed and its voice
+  keeps playing a 4 s ring of old data: the output repeats exactly every
+  4 s, with digital silence where the ring was never refilled. One-shot
+  effects keep playing. ML1 walks under 4 parallel instances: 2 of 20 on the
+  pre-sync build, 4–5 of 20 after the sync, every run with KPCR.Irql
+  published (fixed in `6ebbbec`). It is not tied to a track.
+- **The XACT DPC hitch.** XACT's DPC `0x00318663` runs for 0.5–1.5 s now
+  and then (157–719 ms on 2026-10-02 already), holding the dispatch lock,
+  so raises time out.
+
+What is known so far:
+
+- `0x00318663` is a thunk: DeferredContext → `[obj]` → vtable `+4`.
+- `sub_0030E385` is XACT/DirectSound's IRQL guard (`CIrql`): it reads
+  KPCR.Irql (`fs:[0x24]`), raises to DISPATCH through KfRaiseIrql if below,
+  and records whether it did at `+4`. Its partner calls KfLowerIrql.
+  `0x0030E3A3` (just after the raise) is the usual "longest hold" site in
+  `[HEALTH]`. Since KPCR.Irql reads 0 outside the gate, a DPC goes through
+  the raise and DirectSound's critical section too, where the console's
+  DPC would skip both.
+- `sub_00317C9B` / `sub_00317E25`: XACT elapsed-time reads
+  (KeQuerySystemTime), one call each, not loops.
+- XACT's stream reader thread is `sub_003120E9` → `sub_003123A9`. Its loop:
+  1. wait on the event handle at `[obj+0x9C]` with no timeout;
+  2. enter the critical section at `obj+0x7C`;
+  3. take the next request (`sub_0031245E`) and issue its read
+     (`sub_00310369`);
+  4. leave and wait again.
+
+  In every dropout snapshot it is idle in step 1, so the "read more" signal
+  is what stops coming.
+- DirectSound calls KeRemoveQueueDpc at `0x00293760` and `0x0029A012`.
+- Kernel thunks: KeQuerySystemTime `0x00336E04`, KfRaiseIrql `0x00336FE0`,
+  KfLowerIrql `0x00336F34`, RtlEnterCriticalSection `0x00336DE8`,
+  RtlLeaveCriticalSection `0x00336DE4`, KeRemoveQueueDpc `0x00336FF4`,
+  NtSetEvent `0x00336E44`.
+
+How to catch them:
+- The toolkit's stale-loop check prints `[AUDIO] the output repeats itself
+  4 s back`, and main.c then logs every thread (`[STALL]`).
+- A raise that gives up on the dispatch lock does the same.
+- In diag runs, `diag/sync-v0.16/ab_audio.ps1` (parallel A/B with
+  recording), `wav_loop.py` (the WAV verdict) and `tracks.py` (track
+  against verdict).
 
 ### Text aspect in 16:9 (2026-10-08)
 
@@ -745,7 +875,8 @@ still unresolved in game.
 **Unattended walks:** `tools\diag.ps1 -FreshSave` moves the saved
 profiles (`game\UDATA\4d530041\<id>`) aside, so a walk creates a player
 instead of looping on "That player already exists. Overwrite?"
-(default No).
+(default No). *(Since 2026-10-28 it starts the run on an empty, isolated E:
+instead, and nothing is moved; see "Testing".)*
 
 ### Register combiners (2026-09-29, afternoon)
 

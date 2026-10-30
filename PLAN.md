@@ -12,6 +12,15 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-28): Phase 15 done; the toolkit sync next.**
+- Test runs are isolated and safe to run next to the player's game.
+- Every run keeps a coverage list of reached guesses.
+- A crash leaves a report (minidump, guest chain, log).
+- The log and F3 name the build.
+
+At the user's request the toolkit sync (Phase 17) comes before the suite
+(Phase 16).
+
 **Update (2026-10-26): next phases.** v0.2.0 is released. The user is
 testing a full career to the end and the Legend challenges. The work next
 to that is Part D (Phases 15–20):
@@ -154,7 +163,7 @@ The three fixes that got here:
 | M5 | Mod framework | Loader, asset overrides, hooks, config | 6 |
 | M6 | HD | Resolution scaling, widescreen, texture pack in-game | 7 |
 | M7 | New content | First custom character and remixed level | 8 |
-| M8 | Release | Distributable patch or launcher, no game data | 9 (v0.2.0 tagged 2026-10-25) |
+| M8 | Release | Distributable patch or launcher, no game data | 9 (v0.2.0 tagged 2026-10-25, v0.2.1 built 2026-10-30) |
 | M9 | Safety net | Isolated test runs, coverage logs, regression suite | 15–16 |
 | M10 | Current toolkit | `amped2-fixes` on upstream v0.16.0, suite green | 17 |
 | M11 | v0.3.0 | Sharp fonts and optional HD textures at install, unstretched menus | 18 |
@@ -789,9 +798,9 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 
 | # | Phase | Why now | Runs the game? |
 |---|---|---|---|
-| 15 | Test isolation and coverage telemetry | Makes the user's runs useful; unblocks the rest | Short checks only |
-| 16 | Automated regression suite | The safety net for 17 and 18 | Yes, in an isolated copy |
-| 17 | Toolkit upstream sync (v0.16.0) | `amped2-fixes` is 101 ahead and 333 behind upstream | Yes, through the suite |
+| 15 | Test isolation and coverage telemetry ✅ (2026-10-28, one check left) | Makes the user's runs useful; unblocks the rest | Short checks only |
+| 17 | Toolkit upstream sync (v0.16.0), **in progress** (merged on a branch; a kernel race left) | `amped2-fixes` is 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
+| 16 | Automated regression suite | The safety net for 18 | Yes, in an isolated copy |
 | 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
 | 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
@@ -800,6 +809,10 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
   For each one: reproduce it, fix it, add a suite case, and ship the fix in
   the next 0.2.x.
 - Phase 20 never starts the game, so it can run while the user plays.
+- **Order changed (user, 2026-10-28):** the toolkit sync (17) comes before
+  the suite (16), since it is five releases behind. Its check is Phase 15's
+  coverage list and isolated runs: one baseline before the sync, the same
+  runs after it.
 - Phases 12–14 (platforms) come after Phase 17, because upstream's POSIX
   work (e.g. the POSIX file backend) changes their starting point.
 
@@ -833,16 +846,48 @@ collide with them.
 5. **Version line.** The build writes its commit pair (as `installer\build.ps1`
    computes it) to the log and the F3 overlay.
 
+**Done (2026-10-28)**, as described in docs/DEVELOPING.md "Testing". It
+differs from the steps above in these ways:
+- The switches are the toolkit's `RECOMP_HDD_DIR` (E:, which holds UDATA
+  and TDATA) and `RECOMP_SAVE_DIR` (storage: partition images and the cache
+  partitions). Toolkit `52838f8`.
+- Nothing of the player's is moved any more, so the move-and-restore
+  fallback is gone.
+- No hard-linked `game/`: hard links share Windows' sharing checks, so they
+  would not have helped. The conflicts were elsewhere:
+  - the storage both runs shared, `%LOCALAPPDATA%\xboxrecomp`;
+  - disc files opened with no sharing, `shaders\shaders.res` even for
+    writing.
+
+  Disc files are now opened read-only and shared for reading.
+- Coverage covers five kinds, not three:
+  - unresolved stubs and `_flags` fallbacks, as generated markers
+    (`RECOMP_REACHED`, toolkit `f461003`);
+  - unimpl, icall-unresolved and icall-not-code.
+
+  They are kept across sessions in `amped2-coverage.txt`.
+- The crash test switch is `AMPED2_TEST_CRASH=1`.
+
 **Exit criteria**
 
-- [ ] A `-FreshSave` run leaves `game/UDATA` byte-identical (hashed before
-      and after)
-- [ ] A run from `test/` works while `game/` is open in another process
+- [x] A `-FreshSave` run leaves `game/UDATA` byte-identical (hashed before
+      and after) (2026-10-28: 239 files unchanged across 7 isolated runs. The
+      check covered the dev tree's and the installed game's UDATA/TDATA, both
+      ini files and `%LOCALAPPDATA%\xboxrecomp`)
+- [x] A run from `test/` works while `game/` is open in another process
+      (2026-10-28: two isolated instances reached ML1 at the same time, with
+      no sharing violation. A run started next to another instance gets its
+      own storage)
 - [ ] One user play session yields a log with the coverage sets and the
-      version line
-- [ ] A forced crash (e.g. `RECOMP_TEST_CRASH=1`) leaves a minidump that
+      version line (needs a play session on this build; the installed
+      0.2.0 predates it)
+- [x] A forced crash (e.g. `RECOMP_TEST_CRASH=1`) leaves a minidump that
       opens in Visual Studio with symbols, plus a guest call chain
-- [ ] docs/DEVELOPING.md has a "Testing" section
+      (2026-10-28: `AMPED2_TEST_CRASH=1` writes `crash\<date-time>\`. Its
+      `crash.txt` names `WinMain+0x954` through the PDB. The dump's module
+      record matches the exe's PDB GUID and age, so a debugger loads the
+      symbols. Not yet opened in Visual Studio itself)
+- [x] docs/DEVELOPING.md has a "Testing" section
 
 ### Phase 16: Automated regression suite
 
@@ -885,6 +930,51 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
 
 ### Phase 17: Toolkit upstream sync (xboxrecomp v0.16.0)
 
+**Status (2026-10-30): `amped2-fixes` is fast-forwarded to the sync
+(`1fad747`), 0 behind upstream v0.16.0.** The old tip is the local tag
+`amped2-fixes-pre-sync`. The history:
+- All 30 conflicting files are resolved. The toolkit builds, and the
+  recompiler and disassembler tests pass.
+- Findings (details in CHANGELOG):
+  1. Upstream's stricter disassembler drops real function starts, such as
+     `0x00282C0A`. For now the analysis runs with our tools.
+  2. The merged APU leaks XACT's sound heap. The sync keeps our APU, which
+     brings the walk back to the baseline's 57 fps.
+  3. That tree still had an intermittent race in the merged kernel: of 5
+     runs, 1 crashed in XACT and 2 deadlocked in ML1. **Found and fixed
+     (sync `f9cb831`)**: device threads wrote their ISR's IRQL into the
+     main thread's KPCR, so DirectSound skipped its lock. Since the fix, 6
+     parallel runs have had no freeze in ML1 and no bug check. One run
+     stalled before ML1, unexplained.
+  4. The user's first play test of that fix crashed in DirectSound and
+     XACT, and the music dropped out. Publishing KPCR.Irql at all is unsafe
+     without upstream's one-CPU gate. **Fixed (sync `6ebbbec`)**: it is now
+     published only under the gate. Recorded ML1 audio matches the
+     baseline.
+- **Play test of `6ebbbec` passed (2026-10-30):** about 57 minutes of
+  career play at 59 fps, Pro challenges included, with no crash and no
+  dropout. The one ~1.5 s hitch was the XACT DPC waiting on a DirectSound
+  critical section (CHANGELOG).
+- **`amped2-fixes` moved (2026-10-30), at the user's call.** `1fad747`
+  keeps our `tools/disasm`, as `25f1d07` did for the APU. A full
+  `regen.ps1` on the moved branch gives `src/recomp/gen` byte-identical to
+  the play-tested build (14,737 functions, 109 stubs). The ML1 audio check
+  on `RE-Amped2.exe` (`xboxrecomp=1fad747`) passes: 0 s silent, 57.5 fps.
+- The XACT DPC hitch is older than the merge: `0x00318663` ran 157–719 ms
+  in the 2026-10-02 runs.
+- **The music dropout is older too (2026-10-30 A/B).** The in-level music
+  stops being fed and loops 4 s of stale data. Under 4 parallel instances:
+  2 of 20 pre-sync runs, 4–5 of 20 post-sync. So it is a standing-lane bug,
+  not a reason to undo the move. Toolkit `a95c347` and amped2 `7821108`
+  detect it in-process and snapshot every thread (docs/DEVELOPING.md
+  "XACT, DirectSound and the music dropout").
+
+Next:
+1. Standing lane: why XACT's stream reader stops being asked for more (the
+   dropout), and what the 0.5–1.5 s XACT DPC waits on (the hitch).
+2. Upstream's APU changes one at a time, then its disassembler
+   (seeding the real starts it drops).
+
 1. **Survey** `amped2-fixes..upstream/main` (333 commits on 2026-10-26).
    Group them into lifter/disasm (changes the generated code), kernel/HLE,
    NV2A/APU, and platform/POSIX. Mark the ones that touch the same code as
@@ -908,7 +998,8 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
 **Exit criteria**
 
 - [ ] `amped2-fixes` contains `upstream/main` (0 behind) and builds from a
-      fresh checkout
+      fresh checkout (0 behind since 2026-10-30; a build from a fresh clone
+      has not been tried)
 - [ ] The full suite and the soak pass
 - [ ] The generated-code delta is written up in docs/DEVELOPING.md
 - [ ] The list of upstream candidates is written

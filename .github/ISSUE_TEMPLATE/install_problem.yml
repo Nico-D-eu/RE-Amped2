@@ -46,7 +46,7 @@ body:
     attributes:
       label: Installer version
       description: Shown in the installer's footer.
-      placeholder: "0.2.0"
+      placeholder: "0.2.1"
     validations:
       required: true
   - type: dropdown

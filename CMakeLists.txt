@@ -55,6 +55,7 @@ set(GAME_SOURCES
     src/recomp_manual.c
     src/mod_loose.c         # loose archive entries merged at start-up
     src/lua_probe.c         # hand copies of generated functions, instrumented
+    src/coverage.c          # which guessed or missing code a run reached
     src/RE-Amped2.rc        # exe and window icon (branding/RE-Amped2.ico)
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
@@ -67,10 +68,30 @@ set(GAME_SOURCES
 #   src/recomp/recomp_dispatch.h     - binary search dispatch table
 #   src/recomp/recomp_types.h        - register model, ICALL macros, MEM helpers
 
+# The build string (amped2_build_version): both repos' commits, refreshed on
+# every build by cmake/version.cmake and written only when it changes. Once at
+# configure time too, so the file exists before the first build.
+set(AMPED2_VERSION_C "${CMAKE_BINARY_DIR}/amped2_version.c")
+set(AMPED2_VERSION_ARGS
+    -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DTOOLKIT=${XBOXRECOMP_DIR}
+    -DOUT=${AMPED2_VERSION_C} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/version.cmake)
+execute_process(COMMAND ${CMAKE_COMMAND} ${AMPED2_VERSION_ARGS})
+add_custom_target(amped2_version
+    COMMAND ${CMAKE_COMMAND} ${AMPED2_VERSION_ARGS}
+    BYPRODUCTS ${AMPED2_VERSION_C}
+    COMMENT "Build version")
+
 add_executable(${PROJECT_NAME} WIN32
     ${GAME_SOURCES}
     ${RECOMP_GEN_SOURCES}
+    ${AMPED2_VERSION_C}
 )
+add_dependencies(${PROJECT_NAME} amped2_version)
+
+# Coverage markers in the generated code (RECOMP_REACHED in recomp_types.h):
+# each unresolved-call stub and `_flags` fallback reports itself the first
+# time it runs (src/coverage.c). One byte test per pass after that.
+target_compile_definitions(${PROJECT_NAME} PRIVATE RECOMP_COVERAGE)
 
 # Link against the xboxrecomp umbrella target (all 6 runtime libraries)
 target_link_libraries(${PROJECT_NAME} PRIVATE xboxrecomp)

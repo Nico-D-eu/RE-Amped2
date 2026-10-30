@@ -43,12 +43,18 @@ body:
         Drag `amped2.log` from the install folder into this box. The game rewrites it on every start, so copy it before starting again. You can remove your user name from the paths in it first.
     validations:
       required: true
+  - type: textarea
+    id: crash
+    attributes:
+      label: Crash report (if the game crashed)
+      description: |
+        After a crash the game saves a report in the `crash` folder of the install folder, one folder per crash, named by date and time (it also tells you where in a message). Zip that folder and drag the zip into this box. It holds the game's log and a crash dump, no game files.
   - type: input
     id: version
     attributes:
       label: RE-Amped2 version
       description: Shown in the installer's footer, and as `installer=` in `install-info.txt` in the install folder.
-      placeholder: "0.2.0"
+      placeholder: "0.2.1"
     validations:
       required: true
   - type: dropdown

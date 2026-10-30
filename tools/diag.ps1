@@ -11,13 +11,23 @@
     The watchdog (RECOMP_WATCHDOG_SECS) calls _exit(3) after its dump, so a run
     with it set ending on its own is expected.
 
-    -FreshSave moves the title's saved profiles (game\UDATA\4d530041\<id>
-    directories) into diag\saves_moved\<timestamp>\ before the run, so an
-    unattended walk creates a new player instead of stopping at "That player
-    already exists. Overwrite?" (default No, which loops back to name
-    entry). When the run ends, the run's own profile is moved to
-    diag\saves_moved\<timestamp>_run\ and the originals are put back, so the
-    player's save is never left aside (it was, until 2026-10-01).
+    Every run is isolated (tools\testenv.ps1): it writes its saves to
+    test\runs\<Name>\hdd, the console's storage to test\storage, and reads
+    test\amped2.ini, so it never changes the player's saves, caches or
+    settings. By default the hdd starts as a copy of the player's
+    game\UDATA and game\TDATA, so the run has their unlocks; the player's
+    folders are only read. Their profile was moved aside and back by
+    -FreshSave until 2026-10-28, and on 2026-10-01 it was left aside.
+
+    -FreshSave starts from an empty hdd: a new console, so an unattended walk
+    creates a new player instead of stopping at "That player already exists.
+    Overwrite?".
+    -Fixture <name> starts from test\fixtures\<name> instead.
+    -Shared runs on the player's own saves and settings, as runs did before
+    isolation. Only for looking at their actual state, never for tests.
+
+    The run refuses to start while another RE-Amped2 is running (the player
+    may be playing), unless -AllowParallel says the player is fine with it.
 
 .EXAMPLE
     .\tools\diag.ps1 vblank @{ RECOMP_VBLANK = '1'; RECOMP_WATCHDOG_SECS = '20' }
@@ -27,10 +37,12 @@ param(
     [hashtable]$Env = @{},
     [int]$Seconds = 30,
     [switch]$FreshSave,
-    # Run with the player's own profile, but put it back exactly as it was
-    # afterwards (copied to saves_moved\<timestamp>_keep first), so a test can
-    # use their unlocks without the run's autosaves changing their progress.
+    [string]$Fixture = '',
+    # The default now (a copy of the player's saves); kept so older command
+    # lines still work.
     [switch]$KeepSave,
+    [switch]$Shared,
+    [switch]$AllowParallel,
     # Another build of the exe in build\Release, e.g. a copy taken so a rebuild
     # can relink RE-Amped2.exe while this run is going.
     [string]$ExeName = 'RE-Amped2.exe'
@@ -44,55 +56,71 @@ $Log     = Join-Path $OutDir "$Name.txt"
 $Stdout  = Join-Path $OutDir "$Name.stdout.txt"
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 
-if ($FreshSave) {
-    $udata = Join-Path $Project 'game\UDATA\4d530041'
-    $profiles = @(Get-ChildItem -Path $udata -Directory -ErrorAction SilentlyContinue)
-    $dest = Join-Path $OutDir ("saves_moved\" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
-    New-Item -ItemType Directory -Force $dest | Out-Null
-    if ($profiles.Count) {
-        foreach ($d in $profiles) { Move-Item -LiteralPath $d.FullName -Destination $dest }
-        Write-Host "  moved $($profiles.Count) saved profile(s) to $dest"
-    }
+if ($Shared -and ($FreshSave -or $Fixture)) {
+    throw '-Shared runs on the player''s own saves; -FreshSave and -Fixture need an isolated run.'
 }
 
-if ($KeepSave) {
-    $udataK = Join-Path $Project 'game\UDATA\4d530041'
-    $keep = Join-Path $OutDir ("saves_moved\" + (Get-Date -Format 'yyyyMMdd_HHmmss') + "_keep")
-    New-Item -ItemType Directory -Force $keep | Out-Null
-    # A fresh checkout has no saves yet: keep an empty set, not an error.
-    New-Item -ItemType Directory -Force $udataK | Out-Null
-    Copy-Item -Recurse -Path (Join-Path $udataK '*') -Destination $keep
-    Write-Host "  kept a copy of the saved profile(s) in $keep"
+# By prefix: test builds run as copies (RE-Amped2.base.exe and the like), and
+# an exact name missed them -- parallel runs then shared one storage.
+$running = @(Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessName -like 'RE-Amped2*' -or $_.ProcessName -like 'amped2_recomp*' })
+if ($running.Count -and -not $AllowParallel) {
+    throw ("RE-Amped2 is already running (pid $($running.Id -join ', ')); the player may be " +
+           "playing. Wait, or pass -AllowParallel if they agreed.")
 }
-function Restore-Kept {
-    if (-not $KeepSave) { return }
-    foreach ($d in @(Get-ChildItem -Path $udataK -Directory)) {
-        Remove-Item -Recurse -Force -LiteralPath $d.FullName
-    }
-    Copy-Item -Recurse -Path (Join-Path $keep '*') -Destination $udataK
-    Write-Host "  put the saved profile(s) back as they were before the run"
+if ($running.Count -and $Shared) {
+    throw '-Shared with a running game would open the same saves twice.'
 }
 
-# Put the player's profiles back after a -FreshSave run: the run's own goes
-# to saves_moved\<timestamp>_run, the originals return to UDATA.
-function Restore-Saves {
-    if (-not $FreshSave -or -not $dest) { return }
-    $runDest = "${dest}_run"
-    $made = @(Get-ChildItem -Path $udata -Directory -ErrorAction SilentlyContinue)
-    if ($made.Count) {
-        New-Item -ItemType Directory -Force $runDest | Out-Null
-        foreach ($d in $made) { Move-Item -LiteralPath $d.FullName -Destination $runDest }
+$runEnv = @{}
+if (-not $Shared) {
+    $Test = & (Join-Path $PSScriptRoot 'testenv.ps1')
+    $RunDir = Join-Path $Test "runs\$Name"
+    $Hdd = Join-Path $RunDir 'hdd'
+    # Each run starts from its own fresh copy; the last one's hdd is replaced.
+    if (Test-Path $Hdd) { Remove-Item -Recurse -Force -LiteralPath $Hdd }
+    New-Item -ItemType Directory -Force $Hdd | Out-Null
+    if ($Fixture) {
+        $from = Join-Path $Test "fixtures\$Fixture"
+        if (-not (Test-Path $from)) { throw "No fixture $from" }
+        Copy-Item -Recurse -Path (Join-Path $from '*') -Destination $Hdd
+        $start = "fixture $Fixture"
+    } elseif ($FreshSave) {
+        $start = 'empty (fresh console)'
+    } else {
+        foreach ($d in 'UDATA', 'TDATA') {
+            $src = Join-Path $Project "game\$d"
+            if (Test-Path $src) { Copy-Item -Recurse -Path $src -Destination $Hdd }
+        }
+        $start = "a copy of the player's saves"
     }
-    foreach ($d in @(Get-ChildItem -Path $dest -Directory)) {
-        Move-Item -LiteralPath $d.FullName -Destination $udata
+    # The storage is shared by test runs, so caches stay warm, but the game
+    # writes its cache partitions with exclusive opens: next to another
+    # instance, a run gets storage of its own.
+    $storage = Join-Path $Test 'storage'
+    if ($running.Count) {
+        $storage = Join-Path $RunDir 'storage'
+        Write-Host "  another instance is running: this run uses its own storage, $storage"
     }
-    Write-Host "  restored the saved profile(s); this run's profile is in $runDest"
+    $runEnv = @{
+        RECOMP_HDD_DIR       = $Hdd
+        RECOMP_SAVE_DIR      = $storage
+        RECOMP_SHADER_CACHE  = Join-Path $Test 'shader_cache'
+        AMPED2_INI           = Join-Path $Test 'amped2.ini'
+        AMPED2_COVERAGE_FILE = Join-Path $Test 'amped2-coverage.txt'
+        AMPED2_CRASH_DIR     = Join-Path $RunDir 'crash'
+    }
+    Write-Host "  isolated run in $RunDir; saves start as $start"
 }
+
+# The caller's switches win over the isolation defaults, so a run can still
+# point one of them elsewhere on purpose.
+foreach ($k in $Env.Keys) { $runEnv[$k] = [string]$Env[$k] }
 
 $saved = @{}
-foreach ($k in $Env.Keys) {
+foreach ($k in $runEnv.Keys) {
     $saved[$k] = [Environment]::GetEnvironmentVariable($k)
-    [Environment]::SetEnvironmentVariable($k, [string]$Env[$k])
+    [Environment]::SetEnvironmentVariable($k, [string]$runEnv[$k])
 }
 try {
     $p = Start-Process -FilePath $Exe -WorkingDirectory $Project -PassThru `
@@ -106,9 +134,6 @@ try {
 } finally {
     foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
     if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit(5000) | Out-Null }
-    Start-Sleep -Milliseconds 500
-    Restore-Saves
-    Restore-Kept
 }
 
 $s = Get-Content $Log
@@ -121,9 +146,9 @@ $files = $s | Select-String '\[PATH\] \\Device\\CdRom0\\(.+)$' |
 
 Write-Host "=== $Name  [$switches]" -ForegroundColor Cyan
 Write-Host "  $ending; $($s.Count) log lines -> diag\$Name.txt"
-Write-Host ("  crash={0} icall_fail={1} unimpl={2} display_mode={3} flips={4} dma_put_moves={5} threads={6}" -f `
-    (Count '\[CRASH\]'), (Count 'Failed to resolve'), (Count '\[UNIMPL\]'), (Count '\[AV\] SetDisplayMode'),
-    (Count '(?i)\bflip'), (Count 'DMA_PUT ='), (Count 'spawned worker'))
+Write-Host ("  crash={0} icall_fail={1} unimpl={2} reached={3} display_mode={4} flips={5} dma_put_moves={6} threads={7}" -f `
+    (Count '\[CRASH\]'), (Count 'Failed to resolve'), (Count '\[UNIMPL\]'), (Count '\[REACHED\]'),
+    (Count '\[AV\] SetDisplayMode'), (Count '(?i)\bflip'), (Count 'DMA_PUT ='), (Count 'spawned worker'))
 Write-Host "  contiguous-arena failures: $(Count '\[CONTIG\] arena exhausted')"
 Write-Host "  disc files: $($files.Count) distinct, last: $(($files | Select-Object -Last 3) -join ', ')"
 $wd = ($s | Select-String '\[WATCHDOG\]' | Select-Object -First 1)

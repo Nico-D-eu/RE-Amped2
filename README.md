@@ -165,6 +165,11 @@ Open an [issue](../../issues) and include:
 - what you were doing, what happened, and how often;
 - **`amped2.log`** from the install folder. The game rewrites it on every
   start, so copy it before starting again;
+- after a crash, the newest folder in **`crash`** in the install folder,
+  zipped. The game saves a report there and tells you where;
+- **`amped2-coverage.txt`** from the install folder, if you like. It lists
+  the parts of the game's code that are still guesses and that your play
+  reached, which tells us what to fix first;
 - for install problems, **`install.log`**, and the step that failed;
 - your disc (USA or Europe), Windows version, graphics card, and whether you
   play with a controller or the keyboard.
