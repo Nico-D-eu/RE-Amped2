@@ -29,6 +29,11 @@
     The run refuses to start while another RE-Amped2 is running (the player
     may be playing), unless -AllowParallel says the player is fine with it.
 
+    -Samples writes diag\<Name>.samples.csv: once a second the run's elapsed
+    time, the log's size in bytes and the process's private and working-set
+    memory. The log has no timestamps of its own, so this is what puts a time
+    on its lines (tools\suite.ps1 reads it).
+
 .EXAMPLE
     .\tools\diag.ps1 vblank @{ RECOMP_VBLANK = '1'; RECOMP_WATCHDOG_SECS = '20' }
 #>
@@ -43,6 +48,7 @@ param(
     [switch]$KeepSave,
     [switch]$Shared,
     [switch]$AllowParallel,
+    [switch]$Samples,
     # Another build of the exe in build\Release, e.g. a copy taken so a rebuild
     # can relink RE-Amped2.exe while this run is going.
     [string]$ExeName = 'RE-Amped2.exe'
@@ -125,7 +131,23 @@ foreach ($k in $runEnv.Keys) {
 try {
     $p = Start-Process -FilePath $Exe -WorkingDirectory $Project -PassThru `
         -RedirectStandardError $Log -RedirectStandardOutput $Stdout
-    if ($p.WaitForExit($Seconds * 1000)) {
+    if ($Samples) {
+        $csv = Join-Path $OutDir "$Name.samples.csv"
+        $rows = [System.Collections.Generic.List[string]]::new()
+        $rows.Add('t,log_bytes,private_mb,ws_mb')
+        $clock = [Diagnostics.Stopwatch]::StartNew()
+        while (-not $p.WaitForExit(1000) -and $clock.Elapsed.TotalSeconds -lt $Seconds) {
+            $p.Refresh()
+            $bytes = (Get-Item -LiteralPath $Log).Length
+            # Invariant: '-f' would follow the locale, and a Danish one writes
+            # 1,5 for 1.5 into a comma-separated file.
+            $rows.Add([string]::Format([Globalization.CultureInfo]::InvariantCulture,
+                '{0:F1},{1},{2:F1},{3:F1}', $clock.Elapsed.TotalSeconds, $bytes,
+                ($p.PrivateMemorySize64 / 1MB), ($p.WorkingSet64 / 1MB)))
+        }
+        [IO.File]::WriteAllLines($csv, $rows)
+    }
+    if ($p.WaitForExit([Math]::Max(0, $Seconds * 1000 - $(if ($clock) { $clock.ElapsedMilliseconds } else { 0 })))) {
         $ending = "exited by itself (code $($p.ExitCode))"
     } else {
         Stop-Process -Id $p.Id -Force

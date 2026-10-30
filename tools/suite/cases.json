@@ -1,0 +1,169 @@
+{
+  "_about": "Regression cases for tools/suite.ps1 (PLAN Phase 16). Each case is one isolated diag.ps1 run: its switches, how long it runs, what saves it starts from, and the checks tools/suite/analyze.py makes on its log, samples and screenshots. Patterns are regular expressions over the log, case-sensitive. 'quick' cases make up suite.ps1 -Quick. 'requires' lists paths under the project the case needs; without them it is skipped. Shots are numbered from 0 every shot_ms of presented frames; goldens are local (test/suite/goldens/<case>/), made with -UpdateGoldens.",
+  "cases": [
+    {
+      "name": "boot",
+      "about": "Title to main menu on a fresh console: legal screens, Start on the title, Choose a Look, Enter Name, Done (A) saves the new career, then the main menu (about 18 s in), drawn at full rate.",
+      "quick": true,
+      "seconds": 50,
+      "save": "fresh",
+      "env": {
+        "AMPED2_PLAY_MOVIES": "0",
+        "RECOMP_PAD_SCRIPT": "4000:start,7000:start,10000:start,14000:a"
+      },
+      "shot_ms": 10000,
+      "checks": {
+        "markers": [
+          "guipackages\\\\legal\\.rui",
+          "guipackages\\\\shell\\.rui",
+          "characters\\\\boarder\\\\lorescharacter\\.gfx",
+          "UDATA\\\\4d530041\\\\[0-9A-F]+\\\\Career\\.progress"
+        ],
+        "forbid": ["levels\\\\ml1\\\\ml1\\.res"],
+        "fps": { "after": "Career\\.progress", "skip_s": 5, "min": 58, "window_s": 20 },
+        "memory": { "after": "Career\\.progress", "skip_s": 5, "tolerance": 0.05 },
+        "shots": [
+          { "index": 4, "what": "main menu", "min_brightness": 20 }
+        ]
+      }
+    },
+    {
+      "name": "ml1",
+      "about": "A new career into ML1 (Millicent 1, the first run) and riding to the end of the case: weaving with a jump every 1.5 s (pads/ml1.pad). Full rate, no pacing resync storm, flat memory.",
+      "quick": true,
+      "seconds": 200,
+      "save": "fresh",
+      "env": {
+        "AMPED2_PLAY_MOVIES": "0",
+        "RECOMP_PAD_SCRIPT": "@pads\\ml1.pad"
+      },
+      "shot_ms": 30000,
+      "checks": {
+        "markers": [
+          "guipackages\\\\shell\\.rui",
+          "UDATA\\\\4d530041\\\\[0-9A-F]+\\\\Career\\.progress",
+          "levels\\\\ml1\\\\ml1\\.res"
+        ],
+        "fps": { "after": "levels\\\\ml1\\\\ml1\\.res", "skip_s": 40, "min": 58, "min_10s": 50, "window_s": 110, "resyncs_max": 3 },
+        "memory": { "after": "levels\\\\ml1\\\\ml1\\.res", "skip_s": 40, "tolerance": 0.05 },
+        "shots": [
+          { "index": 5, "what": "on the mountain", "min_brightness": 30, "golden": false }
+        ]
+      }
+    },
+    {
+      "name": "reload3",
+      "about": "Into ML1, then three times: ride 15 s, Pause, Leave Mountain (straight back to Career), and back onto the mountain through the menus (pads/reload3.pad). The level loads four times; memory stays flat across the reloads.",
+      "quick": false,
+      "seconds": 250,
+      "save": "fresh",
+      "env": {
+        "AMPED2_PLAY_MOVIES": "0",
+        "RECOMP_PAD_SCRIPT": "@pads\\reload3.pad"
+      },
+      "shot_ms": 30000,
+      "checks": {
+        "markers": [
+          "UDATA\\\\4d530041\\\\[0-9A-F]+\\\\Career\\.progress",
+          "levels\\\\ml1\\\\ml1\\.res"
+        ],
+        "counts": [
+          { "what": "ML1 loads", "pattern": "CdRom0\\\\levels\\\\ml1\\\\ml1\\.gfx", "min": 4, "gap_lines": 300 }
+        ],
+        "fps": { "after": "levels\\\\ml1\\\\ml1\\.res", "skip_s": 30, "min": 50, "window_s": 150, "resyncs_max": 80 },
+        "memory": { "after": "levels\\\\ml1\\\\ml1\\.res", "skip_s": 30, "tolerance": 0.05 },
+        "shots": [
+          { "index": 7, "what": "riding after the third reload", "min_brightness": 30, "golden": false }
+        ]
+      }
+    },
+    {
+      "name": "movie",
+      "about": "The boot movies play to the end with nobody at the pad, then the legal screen and the title, drawn at full rate. The front-end boarder is loaded only once the intro has ended. Intro.xmv is 60.9 s (1801 frames at 29.6 fps; its header and its audio agree). The pre-sync build took 79 s from the intro to the front end; since the v0.16 sync it takes 150-180 s (2026-10-30). Shots of a movie depend on its timing, so they get no golden.",
+      "quick": false,
+      "seconds": 300,
+      "save": "fresh",
+      "env": {},
+      "shot_ms": 10000,
+      "checks": {
+        "markers": [
+          "Movies\\\\MGS\\.xmv",
+          "Movies\\\\XSN\\.xmv",
+          "Movies\\\\Intro\\.xmv",
+          "characters\\\\boarder\\\\lorescharacter\\.gfx"
+        ],
+        "durations": [
+          { "what": "intro to front end", "from": "Movies\\\\Intro\\.xmv", "to": "characters\\\\boarder\\\\lorescharacter\\.gfx", "max_s": 90, "known": "the intro plays at about 0.4x since the v0.16 merge (RE-Amped2.cand.exe, 2026-10-28: 153 s; pre-sync 79 s)" }
+        ],
+        "fps": { "after": "characters\\\\boarder\\\\lorescharacter\\.gfx", "skip_s": 5, "span_s": 20, "min": 58, "window_s": 10 },
+        "shots": [
+          { "index": 5, "what": "the intro movie", "min_brightness": 20, "golden": false }
+        ]
+      }
+    },
+    {
+      "name": "texpack",
+      "about": "The texture pack in mods\\texture_pack is used in ML1: textures replaced, few misses.",
+      "quick": false,
+      "requires": ["mods\\texture_pack"],
+      "seconds": 120,
+      "save": "fresh",
+      "env": {
+        "AMPED2_PLAY_MOVIES": "0",
+        "RECOMP_PAD_PRESS": "0x110",
+        "RECOMP_TEXTURE_PACK": "1"
+      },
+      "checks": {
+        "markers": ["levels\\\\ml1\\\\ml1\\.res"],
+        "numbers": [
+          { "what": "textures replaced", "pattern": "texture pack: (\\d+) replaced", "min": 1 },
+          { "what": "textures not in the pack", "pattern": "texture pack: \\d+ replaced, (\\d+) not in the pack", "max": 200 }
+        ]
+      }
+    },
+    {
+      "name": "mods",
+      "about": "Loose entries in mods\\loose are merged at start-up, and the front end comes up with them.",
+      "quick": false,
+      "requires": ["mods\\loose"],
+      "seconds": 45,
+      "save": "fresh",
+      "env": {
+        "AMPED2_PLAY_MOVIES": "0",
+        "RECOMP_PAD_SCRIPT": "4000:start,7000:start,10000:start"
+      },
+      "shot_ms": 10000,
+      "checks": {
+        "markers": [
+          "\\[MODS\\] loose: .* entr",
+          "characters\\\\boarder\\\\lorescharacter\\.gfx"
+        ],
+        "forbid": ["\\[MODS\\] loose: could not", "\\[LUA\\]"],
+        "shots": [
+          { "index": 3, "what": "main menu with the loose labels", "min_brightness": 20 }
+        ]
+      }
+    },
+    {
+      "name": "soak",
+      "about": "60 minutes on ML1 (the soak7 numbers): no crash, about 59 fps, memory flat. Runs only when named or with -Soak.",
+      "quick": false,
+      "seconds": 3700,
+      "save": "fresh",
+      "env": {
+        "AMPED2_PLAY_MOVIES": "0",
+        "RECOMP_PAD_PRESS": "0x110"
+      },
+      "shot_ms": 600000,
+      "checks": {
+        "markers": ["levels\\\\ml1\\\\ml1\\.res"],
+        "fps": { "after": "levels\\\\ml1\\\\ml1\\.res", "skip_s": 60, "min": 58, "min_10s": 45, "window_s": 3400, "resyncs_max": 30 },
+        "memory": { "after": "levels\\\\ml1\\\\ml1\\.res", "skip_s": 60, "tolerance": 0.05 },
+        "stalls_max": 20,
+        "shots": [
+          { "index": 5, "what": "on the mountain after 50 min", "min_brightness": 30 }
+        ]
+      }
+    }
+  ]
+}

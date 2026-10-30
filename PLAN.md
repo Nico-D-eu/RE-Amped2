@@ -12,6 +12,12 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-30, late): the regression suite runs** (Phase 16;
+`tools\suite.ps1 -Quick` in about 4 minutes). On its first day it found
+two things: the intro movie has played at about 0.4x since the v0.16
+merge, and an intermittent stutter in ML1. level2 (it needs a fixture
+save) and the soak are left.
+
 **Update (2026-10-30): v0.2.1 released on toolkit v0.16.0; the suite
 next.** Both PRs are merged, and `amped2-fixes` is on upstream v0.16.0. The
 user has played the installed 0.2.1 at length: no music dropout, no audio
@@ -926,13 +932,45 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
 6. **Report.** A summary table, plus logs and frames in
    `diag/suite-<date>/`.
 
+**Status (2026-10-30): the suite runs; level2 and the soak are left.**
+`tools\suite.ps1` with `tools\suite\cases.json`, `analyze.py` and pad
+scripts (docs/DEVELOPING.md "Testing"). Differences from the list above:
+- The cases are boot, ml1, reload3, movie, texpack, mods and soak.
+  - **level2 waits for a fixture:** a copy of the user's progressed
+    profile, taken only with their OK.
+  - texpack and mods are skipped on a tree without `mods\texture_pack` or
+    `mods\loose`. Phase 18's font pack will give texpack something to run on.
+- ml1 now rides (weaving and jumping, `pads\ml1.pad`). The old
+  `RECOMP_PAD_PRESS=0x110` walk spent ML1 toggling the pause menu.
+- "Idle voices linked stays 0" became "not steady": a few in one
+  `[HEALTH]` line is DirectSound's normal stop path. The APU rate is
+  checked too.
+- Goldens only for screens that hold still (the main menu). Shots of
+  riding or of a movie differ from run to run more than a fault changes
+  them.
+
+Found by the suite:
+- **The intro movie plays at about 0.4x since the v0.16 merge.** It takes
+  152–237 s from the intro to the front end, against 79 s before the sync.
+  `Intro.xmv` is 60.9 s. Marked known in the movie case; standing lane.
+- **An intermittent stutter:** 1 s bursts of 33–54 ms late frames every
+  10–20 s, all through a run, with the render thread idle. Seen in 2 of
+  about 12 riding runs (ml1 and reload3); `base.exe` and `.fix2` had none
+  in their one run each.
+
 **Exit criteria**
 
-- [ ] `suite.ps1 -Quick` (boot, ml1) takes ≤ 5 min; the full suite without
-      the soak takes ≤ 30 min, unattended
+- [x] `suite.ps1 -Quick` (boot, ml1) takes ≤ 5 min; the full suite without
+      the soak takes ≤ 30 min, unattended (2026-10-30: 4.2 min and about
+      13.5 min)
 - [ ] Three passes in a row on the current build (no flaky cases)
-- [ ] An injected regression (e.g. `RECOMP_GPU_NODEPTH=1`) fails the right
-      case
+      (2026-10-30: boot 3/3. ml1 3/3 apart from its riding golden, now
+      dropped. reload3 2/3: the stutter. movie 1/3: the slow intro left no
+      window, now 300 s)
+- [x] An injected regression fails the right case (2026-10-30:
+      `RECOMP_GPU=software` fails boot. `RECOMP_GPU_NODEPTH=1` and
+      `RECOMP_GPU_SCALE=8` were not caught: the shot compare is coarse,
+      and 8x still holds 60 fps)
 - [ ] The soak case reproduces `soak7` (60 min, no crash, ~59 fps, memory
       flat)
 

@@ -197,6 +197,64 @@ A double-clicked game also shows a dialog saying where the report is.
 `AMPED2_TEST_CRASH=1` faults on purpose just before the game starts, to
 check the whole path.
 
+**The regression suite** (`tools\suite.ps1`). One command that says
+whether anything regressed:
+
+```powershell
+.\tools\suite.ps1 -Quick                 # boot and ml1, about 4 minutes
+.\tools\suite.ps1                        # every case but the soak
+.\tools\suite.ps1 -Cases ml1 -Repeat 3   # one case, three times
+.\tools\suite.ps1 -Soak                  # everything, the 60-minute soak too
+.\tools\suite.ps1 -Cases ml1 -ExeName RE-Amped2.base.exe   # another build
+.\tools\suite.ps1 -Cases ml1 -Env @{ RECOMP_GPU_NODEPTH = '1' }   # inject a fault
+```
+
+The cases are in `tools\suite\cases.json`. Each one is an isolated
+`diag.ps1` run with a scripted pad, a time limit and checks:
+
+| Case | What it does | Time |
+|---|---|---|
+| `boot` (quick) | Fresh console: title, Choose a Look, Enter Name, Done, the main menu | 50 s |
+| `ml1` (quick) | A new career into ML1, then riding: weaving and jumping | 200 s |
+| `reload3` | ML1, then three times Pause → Leave Mountain and back onto the mountain | 250 s |
+| `movie` | No input: the boot movies to the end, then the title. Intro.xmv is 60.9 s | 240 s |
+| `texpack` | ML1 with `mods\texture_pack`: textures replaced, few misses (skipped without a pack) | 120 s |
+| `mods` | Loose entries merged at start-up (skipped without `mods\loose`) | 45 s |
+| `soak` | 60 min in ML1 (the old Start+A pulse walk; only with `-Soak`) | 62 min |
+
+The pad scripts are `tools\suite\pads\*.pad`, written by
+`tools\suite\pads\make_pads.py`, which also documents the menu path. The
+toolkit's script parser takes no comments and at most 256 steps. A case
+names one as `"RECOMP_PAD_SCRIPT": "@pads\\ml1.pad"`.
+`tools\suite\analyze.py` makes the checks on what the run left:
+
+| Check | From |
+|---|---|
+| No crash, watchdog, reboot into `Boom.xbe`, out-of-memory handler, bug check, or music replaying stale data | the log |
+| Markers in order (the files a screen loads, the save a step writes) | `[PATH]` lines |
+| Idle voices linked stay 0 | `[HEALTH]` |
+| Frame rate over a window from a marker on, and the slowest 10 s | `[GPU] frames` |
+| Pacing resyncs (frames 33 ms or more late) in that window | `[PACE]` (`RECOMP_PACE_TRACE`, always on in the suite) |
+| Private memory flat (±5 %) over the window | `diag.ps1 -Samples` |
+| Nothing reached beyond the coverage baseline | `[REACHED]` |
+| Shots not black, and close to the golden | `RECOMP_GPU_SHOT_PRESENT` |
+
+The log has no timestamps. `diag.ps1 -Samples` records the log's size and
+the process memory once a second, which dates every line to within a
+second.
+
+A pass writes `diag\suite-<date-time>\`: each case's log, samples, shots
+and result JSON, plus `report.md`. The goldens and the coverage baseline
+come from the game, so they stay local in `test\suite\` (git-ignored).
+`-UpdateGoldens` and `-UpdateBaseline` take them from the current pass;
+only do that on a build you trust. The screenshot compare is coarse on
+purpose: a 32×18 grid of mean colours, since the front end animates and
+shots are taken by wall-clock time.
+
+Cases that need something this tree may not have (`requires`, e.g.
+`mods\texture_pack`) are skipped and listed as such. The suite refuses to
+start while any RE-Amped2 is running, like every test run.
+
 ## Installer (for players)
 
 `installer\build.ps1` makes `installer\dist\RE-Amped2-Setup.exe`, a single-file
