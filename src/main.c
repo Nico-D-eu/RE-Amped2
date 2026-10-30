@@ -39,6 +39,7 @@
 
 #include <windows.h>
 #include <dbghelp.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -538,6 +539,138 @@ static void copy_log(const char *dir)
         CloseHandle(out);
     }
     CloseHandle(in);
+}
+
+/* Every thread's host stack at a stall, as generated-function names.
+ *
+ * The toolkit calls this when a raise gives up waiting for the dispatch lock
+ * (g_xbox_stall_hook, the first three times a run): the holder is still
+ * holding it, so its stack says what it is stuck on, and the others say who
+ * it is waiting for. The XACT DPC hitches (2026-10-30) last 0.5-1.5 s and
+ * come about once an hour, too rarely to catch with a sampler.
+ *
+ * Each thread is suspended only while its frames are copied out with
+ * RtlVirtualUnwind, which takes no lock the thread could hold; the names are
+ * looked up after it is resumed. AMPED2_STALL_SNAPSHOT=0 turns it off. */
+#define STALL_FRAMES 12
+
+static void stall_unwind_frames(CONTEXT *c, DWORD64 *pcs, int *n);
+
+static void stall_unwind(CONTEXT *c, DWORD64 *pcs, int *n)
+{
+    *n = 0;
+    __try {
+        stall_unwind_frames(c, pcs, n);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        /* A stack that does not unwind: keep the frames so far. */
+    }
+}
+
+static void stall_unwind_frames(CONTEXT *c, DWORD64 *pcs, int *n)
+{
+    while (*n < STALL_FRAMES && c->Rip) {
+        DWORD64 base = 0;
+        PRUNTIME_FUNCTION fn;
+        pcs[(*n)++] = c->Rip;
+        fn = RtlLookupFunctionEntry(c->Rip, &base, NULL);
+        if (fn) {
+            void *handler_data = NULL;
+            DWORD64 frame = 0;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, base, c->Rip, fn, c,
+                             &handler_data, &frame, NULL);
+        } else {
+            /* A leaf: its return address is on top of the stack. */
+            c->Rip = *(DWORD64 *)c->Rsp;
+            c->Rsp += 8;
+        }
+    }
+}
+
+/* `why` heads the list; `owner` (0: none) is marked as the holder. */
+static void thread_snapshot(const char *why, unsigned long owner)
+{
+    static int off = -1;
+    DWORD me = GetCurrentThreadId(), pid = GetCurrentProcessId();
+    HANDLE snap;
+    THREADENTRY32 te;
+
+    if (off < 0) {
+        const char *e = getenv("AMPED2_STALL_SNAPSHOT");
+        off = e && *e == '0';
+    }
+    if (off)
+        return;
+    snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return;
+    fprintf(stderr, "  [STALL] %s. Every thread, innermost first:\n", why);
+    te.dwSize = sizeof te;
+    for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) {
+        DWORD64 pcs[STALL_FRAMES];
+        CONTEXT c;
+        HANDLE h;
+        int n = 0, i;
+
+        if (te.th32OwnerProcessID != pid)
+            continue;
+        memset(&c, 0, sizeof c);
+        c.ContextFlags = CONTEXT_FULL;
+        if (te.th32ThreadID == me) {
+            RtlCaptureContext(&c);
+            stall_unwind(&c, pcs, &n);
+        } else {
+            h = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT
+                           | THREAD_QUERY_INFORMATION, FALSE, te.th32ThreadID);
+            if (!h)
+                continue;
+            if (SuspendThread(h) != (DWORD)-1) {
+                if (GetThreadContext(h, &c))
+                    stall_unwind(&c, pcs, &n);
+                ResumeThread(h);
+            }
+            CloseHandle(h);
+        }
+        fprintf(stderr, "    tid %lu%s:", (unsigned long)te.th32ThreadID,
+                owner && te.th32ThreadID == owner ? " (holder)"
+                : te.th32ThreadID == me ? " (gave up)" : "");
+        for (i = 0; i < n; i++) {
+            char buf[sizeof(SYMBOL_INFO) + 128];
+            SYMBOL_INFO *sym = (SYMBOL_INFO *)buf;
+            DWORD64 disp = 0;
+            memset(buf, 0, sizeof buf);
+            sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+            sym->MaxNameLen = 127;
+            if (SymFromAddr(GetCurrentProcess(), pcs[i], &disp, sym))
+                fprintf(stderr, " %s+0x%llX", sym->Name, (unsigned long long)disp);
+            else
+                fprintf(stderr, " 0x%llX", (unsigned long long)pcs[i]);
+        }
+        fprintf(stderr, "\n");
+    }
+    fflush(stderr);
+    CloseHandle(snap);
+}
+
+static void stall_snapshot(unsigned long owner, unsigned long waiter,
+                           unsigned long long held_ms)
+{
+    char why[128];
+    snprintf(why, sizeof why, "tid %lu held the dispatch lock %llu ms; tid %lu"
+             " gave up", owner, held_ms, waiter);
+    thread_snapshot(why, owner);
+}
+
+static void reason_snapshot(const char *why)
+{
+    thread_snapshot(why, 0);
+}
+
+static DWORD WINAPI stall_snapshot_test(LPVOID unused)
+{
+    (void)unused;
+    Sleep(1000u * (DWORD)atoi(getenv("AMPED2_STALL_SNAPSHOT_TEST")));
+    reason_snapshot("AMPED2_STALL_SNAPSHOT_TEST");
+    return 0;
 }
 
 static LONG WINAPI crash_report(PEXCEPTION_POINTERS ep)
@@ -1082,6 +1215,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     SymInitialize(GetCurrentProcess(), NULL, TRUE);
     AddVectoredExceptionHandler(1, veh_handler);
     SetUnhandledExceptionFilter(crash_report);
+    {
+        extern void (*g_xbox_stall_hook)(unsigned long, unsigned long,
+                                         unsigned long long);
+        extern void (*g_xbox_snapshot_hook)(const char *);
+        g_xbox_stall_hook = stall_snapshot;
+        g_xbox_snapshot_hook = reason_snapshot;
+        /* AMPED2_STALL_SNAPSHOT_TEST=<s>: one snapshot that many seconds
+         * in, with no stall, to check it runs and resumes every thread. */
+        if (getenv("AMPED2_STALL_SNAPSHOT_TEST"))
+            CreateThread(NULL, 0, stall_snapshot_test, NULL, 0, NULL);
+    }
 
     /* Step 1: Load XBE */
     {
