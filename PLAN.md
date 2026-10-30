@@ -12,6 +12,12 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-30): v0.2.1 released on toolkit v0.16.0; the suite
+next.** Both PRs are merged, and `amped2-fixes` is on upstream v0.16.0. The
+user has played the installed 0.2.1 at length: no music dropout, no audio
+issues, no hitches they could notice. That closes Phase 15. Next comes
+Phase 16 (the suite), which Phase 17's last checks and v0.3.0 wait on.
+
 **Update (2026-10-28): Phase 15 done; the toolkit sync next.**
 - Test runs are isolated and safe to run next to the player's game.
 - Every run keeps a coverage list of reached guesses.
@@ -798,8 +804,8 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 
 | # | Phase | Why now | Runs the game? |
 |---|---|---|---|
-| 15 | Test isolation and coverage telemetry ✅ (2026-10-28, one check left) | Makes the user's runs useful; unblocks the rest | Short checks only |
-| 17 | Toolkit upstream sync (v0.16.0), **in progress** (merged on a branch; a kernel race left) | `amped2-fixes` is 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
+| 15 | Test isolation and coverage telemetry ✅ (2026-10-30) | Makes the user's runs useful; unblocks the rest | Short checks only |
+| 17 | Toolkit upstream sync (v0.16.0), merged and shipped in 0.2.1 (2026-10-30); the suite and write-ups left | `amped2-fixes` was 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
 | 16 | Automated regression suite | The safety net for 18 | Yes, in an isolated copy |
 | 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
@@ -878,9 +884,11 @@ differs from the steps above in these ways:
       (2026-10-28: two isolated instances reached ML1 at the same time, with
       no sharing violation. A run started next to another instance gets its
       own storage)
-- [ ] One user play session yields a log with the coverage sets and the
-      version line (needs a play session on this build; the installed
-      0.2.0 predates it)
+- [x] One user play session yields a log with the coverage sets and the
+      version line (2026-10-30, the installed 0.2.1: `[BOOT]` names
+      `amped2=abe1bbc xboxrecomp=a95c347`, and `[COVERAGE]` lists
+      2 flags-fallback and 5 unimpl addresses, written to
+      `amped2-coverage.txt`)
 - [x] A forced crash (e.g. `RECOMP_TEST_CRASH=1`) leaves a minidump that
       opens in Visual Studio with symbols, plus a guest call chain
       (2026-10-28: `AMPED2_TEST_CRASH=1` writes `crash\<date-time>\`. Its
@@ -968,6 +976,13 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
   not a reason to undo the move. Toolkit `a95c347` and amped2 `7821108`
   detect it in-process and snapshot every thread (docs/DEVELOPING.md
   "XACT, DirectSound and the music dropout").
+- **Released as 0.2.1 (2026-10-30).** The user merged both PRs: amped2 by
+  squash (`998ffe6`; the detailed commits behind the build line `abe1bbc`
+  are kept under the local tag `v0.2.1-detail`), and the toolkit by merge
+  (`391d0a5`). Long play on the installed build had no dropout and no
+  noticeable hitch. Its last session ran 29 min at 59.0 fps: the dropout
+  detector never fired, `0 idle voices linked` throughout, and there were
+  two 32 ms dispatch-lock stalls.
 
 Next:
 1. Standing lane: why XACT's stream reader stops being asked for more (the
