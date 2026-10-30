@@ -945,12 +945,21 @@ yet good enough to replace `amped2-fixes`.**
      main thread's KPCR, so DirectSound skipped its lock. Since the fix, 6
      parallel runs have had no freeze in ML1 and no bug check. One run
      stalled before ML1, unexplained.
+  4. The user's first play test of that fix crashed in DirectSound and
+     XACT, and the music dropped out. Publishing KPCR.Irql at all is unsafe
+     without upstream's one-CPU gate. **Fixed (sync `6ebbbec`)**: it is now
+     published only under the gate. Recorded ML1 audio matches the
+     baseline.
+- **Play test of `6ebbbec` passed (2026-10-30):** about 57 minutes of
+  career play at 59 fps, Pro challenges included, with no crash and no
+  dropout. The one ~1.5 s hitch was the XACT DPC waiting on a DirectSound
+  critical section (CHANGELOG), which is not yet shown to be new.
 
 Next:
-1. More runs of the fix, to see whether the before-ML1 stall repeats.
-2. A play session.
-3. Then `amped2-fixes` moves.
-4. After that, upstream's APU changes one at a time, then its disassembler
+1. Find out whether the XACT DPC hitch also happens on `amped2-fixes`, or
+   is new with the merge.
+2. Then `amped2-fixes` moves.
+3. After that, upstream's APU changes one at a time, then its disassembler
    (seeding the real starts it drops).
 
 1. **Survey** `amped2-fixes..upstream/main` (333 commits on 2026-10-26).
