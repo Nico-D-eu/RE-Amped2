@@ -930,11 +930,12 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
 
 ### Phase 17: Toolkit upstream sync (xboxrecomp v0.16.0)
 
-**Status (2026-10-28): merged on the local branch `amped2-sync-v0.16`, not
-yet good enough to replace `amped2-fixes`.**
+**Status (2026-10-30): `amped2-fixes` is fast-forwarded to the sync
+(`1fad747`), 0 behind upstream v0.16.0.** The old tip is the local tag
+`amped2-fixes-pre-sync`. The history:
 - All 30 conflicting files are resolved. The toolkit builds, and the
   recompiler and disassembler tests pass.
-- Three findings so far (details in CHANGELOG):
+- Findings (details in CHANGELOG):
   1. Upstream's stricter disassembler drops real function starts, such as
      `0x00282C0A`. For now the analysis runs with our tools.
   2. The merged APU leaks XACT's sound heap. The sync keeps our APU, which
@@ -953,13 +954,19 @@ yet good enough to replace `amped2-fixes`.**
 - **Play test of `6ebbbec` passed (2026-10-30):** about 57 minutes of
   career play at 59 fps, Pro challenges included, with no crash and no
   dropout. The one ~1.5 s hitch was the XACT DPC waiting on a DirectSound
-  critical section (CHANGELOG), which is not yet shown to be new.
+  critical section (CHANGELOG).
+- **`amped2-fixes` moved (2026-10-30), at the user's call.** `1fad747`
+  keeps our `tools/disasm`, as `25f1d07` did for the APU. A full
+  `regen.ps1` on the moved branch gives `src/recomp/gen` byte-identical to
+  the play-tested build (14,737 functions, 109 stubs). The ML1 audio check
+  on `RE-Amped2.exe` (`xboxrecomp=1fad747`) passes: 0 s silent, 57.5 fps.
+- The XACT DPC hitch is older than the merge: `0x00318663` ran 157–719 ms
+  in the 2026-10-02 runs. It busy-waits on KeQuerySystemTime for up to
+  ~500 ms, waiting for something not yet known. This is a lead for the
+  standing lane.
 
 Next:
-1. Find out whether the XACT DPC hitch also happens on `amped2-fixes`, or
-   is new with the merge.
-2. Then `amped2-fixes` moves.
-3. After that, upstream's APU changes one at a time, then its disassembler
+1. Upstream's APU changes one at a time, then its disassembler
    (seeding the real starts it drops).
 
 1. **Survey** `amped2-fixes..upstream/main` (333 commits on 2026-10-26).
@@ -985,7 +992,8 @@ Next:
 **Exit criteria**
 
 - [ ] `amped2-fixes` contains `upstream/main` (0 behind) and builds from a
-      fresh checkout
+      fresh checkout (0 behind since 2026-10-30; a build from a fresh clone
+      has not been tried)
 - [ ] The full suite and the soak pass
 - [ ] The generated-code delta is written up in docs/DEVELOPING.md
 - [ ] The list of upstream candidates is written
