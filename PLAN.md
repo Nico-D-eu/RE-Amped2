@@ -961,12 +961,18 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
   the play-tested build (14,737 functions, 109 stubs). The ML1 audio check
   on `RE-Amped2.exe` (`xboxrecomp=1fad747`) passes: 0 s silent, 57.5 fps.
 - The XACT DPC hitch is older than the merge: `0x00318663` ran 157–719 ms
-  in the 2026-10-02 runs. It busy-waits on KeQuerySystemTime for up to
-  ~500 ms, waiting for something not yet known. This is a lead for the
-  standing lane.
+  in the 2026-10-02 runs.
+- **The music dropout is older too (2026-10-30 A/B).** The in-level music
+  stops being fed and loops 4 s of stale data. Under 4 parallel instances:
+  2 of 20 pre-sync runs, 4–5 of 20 post-sync. So it is a standing-lane bug,
+  not a reason to undo the move. Toolkit `a95c347` and amped2 `7821108`
+  detect it in-process and snapshot every thread (docs/DEVELOPING.md
+  "XACT, DirectSound and the music dropout").
 
 Next:
-1. Upstream's APU changes one at a time, then its disassembler
+1. Standing lane: why XACT's stream reader stops being asked for more (the
+   dropout), and what the 0.5–1.5 s XACT DPC waits on (the hitch).
+2. Upstream's APU changes one at a time, then its disassembler
    (seeding the real starts it drops).
 
 1. **Survey** `amped2-fixes..upstream/main` (333 commits on 2026-10-26).

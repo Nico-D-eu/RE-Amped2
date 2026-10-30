@@ -388,6 +388,55 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
 
+### XACT, DirectSound and the music dropout (2026-10-30)
+
+Two intermittent audio faults, both older than the v0.16 toolkit sync:
+
+- **The music dropout.** The in-level music stops being fed and its voice
+  keeps playing a 4 s ring of old data: the output repeats exactly every
+  4 s, with digital silence where the ring was never refilled. One-shot
+  effects keep playing. ML1 walks under 4 parallel instances: 2 of 20 on the
+  pre-sync build, 4–5 of 20 after the sync, every run with KPCR.Irql
+  published (fixed in `6ebbbec`). It is not tied to a track.
+- **The XACT DPC hitch.** XACT's DPC `0x00318663` runs for 0.5–1.5 s now
+  and then (157–719 ms on 2026-10-02 already), holding the dispatch lock,
+  so raises time out.
+
+What is known so far:
+
+- `0x00318663` is a thunk: DeferredContext → `[obj]` → vtable `+4`.
+- `sub_0030E385` is XACT/DirectSound's IRQL guard (`CIrql`): it reads
+  KPCR.Irql (`fs:[0x24]`), raises to DISPATCH through KfRaiseIrql if below,
+  and records whether it did at `+4`. Its partner calls KfLowerIrql.
+  `0x0030E3A3` (just after the raise) is the usual "longest hold" site in
+  `[HEALTH]`. Since KPCR.Irql reads 0 outside the gate, a DPC goes through
+  the raise and DirectSound's critical section too, where the console's
+  DPC would skip both.
+- `sub_00317C9B` / `sub_00317E25`: XACT elapsed-time reads
+  (KeQuerySystemTime), one call each, not loops.
+- XACT's stream reader thread is `sub_003120E9` → `sub_003123A9`. Its loop:
+  1. wait on the event handle at `[obj+0x9C]` with no timeout;
+  2. enter the critical section at `obj+0x7C`;
+  3. take the next request (`sub_0031245E`) and issue its read
+     (`sub_00310369`);
+  4. leave and wait again.
+
+  In every dropout snapshot it is idle in step 1, so the "read more" signal
+  is what stops coming.
+- DirectSound calls KeRemoveQueueDpc at `0x00293760` and `0x0029A012`.
+- Kernel thunks: KeQuerySystemTime `0x00336E04`, KfRaiseIrql `0x00336FE0`,
+  KfLowerIrql `0x00336F34`, RtlEnterCriticalSection `0x00336DE8`,
+  RtlLeaveCriticalSection `0x00336DE4`, KeRemoveQueueDpc `0x00336FF4`,
+  NtSetEvent `0x00336E44`.
+
+How to catch them:
+- The toolkit's stale-loop check prints `[AUDIO] the output repeats itself
+  4 s back`, and main.c then logs every thread (`[STALL]`).
+- A raise that gives up on the dispatch lock does the same.
+- In diag runs, `diag/sync-v0.16/ab_audio.ps1` (parallel A/B with
+  recording), `wav_loop.py` (the WAV verdict) and `tracks.py` (track
+  against verdict).
+
 ### Text aspect in 16:9 (2026-10-08)
 
 The GUI lays out on a 640x480 canvas. A scene's root is `Scale(W/640, H/480)`,
