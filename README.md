@@ -117,7 +117,8 @@ The roadmap, including the console plans, is in [PLAN.md](PLAN.md).
 2. Run it. The installer isn't code-signed yet, so Windows may show a
    SmartScreen warning ("Windows protected your PC"). If you want to check
    the file first, compare its SHA-256 with the one on the release page.
-   Then choose **More info → Run anyway**.
+   Then choose **More info → Run anyway**. Signed installers are coming;
+   see the [Code signing policy](#code-signing-policy).
 3. **Disc:** pick your disc image, or drag it onto the window.
 4. **Location:** choose a folder you own (for example `C:\Games\RE-Amped2`)
    and the options: a desktop shortcut, the RE-Amped2 menus, and the
@@ -265,6 +266,59 @@ SHA-256 on the release page if you like.
 
 **I only have the physical disc.** You need a disc image made from it. Any
 tool that rips original Xbox discs to `.iso` or `.xiso` works.
+
+---
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io),
+certificate by [SignPath Foundation](https://signpath.org).
+
+- **What is signed:** `RE-Amped2-Setup.exe`, the installer on the
+  [Releases page](../../releases). Releases up to 0.2.1 came out before
+  signing was set up and are not signed. The game itself, `RE-Amped2.exe`,
+  is compiled on your PC during the install, so it is never downloaded and
+  never signed.
+- **How it is built:** by the
+  [Installer workflow](.github/workflows/installer.yml) on GitHub Actions,
+  from this repository at the release tag and the toolkit fork
+  [Nico-D-eu/xboxrecomp](https://github.com/Nico-D-eu/xboxrecomp) at the
+  commit in [installer/toolkit.ref](installer/toolkit.ref). The two
+  third-party tools in it, xdvdfs and unluac, are downloaded at fixed
+  versions and checked by SHA-256. Every signing request is approved by
+  hand.
+- **Team:**
+  - Committers and reviewers: [Nico-D-eu](https://github.com/Nico-D-eu)
+  - Approvers: [Nico-D-eu](https://github.com/Nico-D-eu)
+
+  Changes from anyone else come in as pull requests and are reviewed before
+  they are merged.
+- **Checking a download:** right-click `RE-Amped2-Setup.exe`, then
+  Properties › Digital Signatures. The signer should be SignPath
+  Foundation. You can also compare its SHA-256 with the one on the release
+  page. If a signed file looks wrong, don't run it;
+  [open an issue](../../issues) with its SHA-256 and where you got it.
+
+### Privacy
+
+This program will not transfer any information to other networked systems
+unless specifically requested by the user or the person installing or
+operating it.
+
+- **The installer** downloads only while it installs, and sends nothing
+  about you or your PC:
+  - the build tools you agree to, through Windows' package manager
+    (winget), from their publishers;
+  - the recompiler's Python packages (Capstone, plus NumPy and Pillow for
+    the RE-Amped2 menus) from the Python Package Index.
+
+  These downloads fall under the
+  [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement),
+  the [PyPI Privacy Notice](https://policies.python.org/pypi.org/Privacy-Notice/)
+  and the privacy policies of each tool's publisher.
+- **The game** makes no network connections.
+- **Logs and crash reports** (`amped2.log`, `crash\`) stay on your PC unless
+  you attach them to a report yourself.
 
 ---
 
