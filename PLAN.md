@@ -1194,9 +1194,11 @@ game from the player's disc: a clean install from the tarball took 10.5 min
 under WSL and the result boots with sound. The title "unpaced after long
 uptime" was a missing flip pacer in the GL back end, not uptime: fixed, a
 steady 60. Visibility counts (lens flares, floodlight glows) are in, as
-GL occlusion queries. Open in the GL back end:
-volume textures, CPU-written pixels under a surface, texture packs,
-anisotropy, render scale. Found and fixed on the way to
+GL occlusion queries, and texture packs (with the D3D11 keys, so one pack
+serves both); the Linux install adds the RE-Amped2 look. Open in the GL
+back end: volume textures, CPU-written pixels under a surface,
+anisotropy, render scale, and faint vertical seams on the title's
+background. Found and fixed on the way to
 booting (details in DEVELOPING, "Linux bring-up"):
 - the lifted CRT's `close`/`read`/`write`/... took over libc's names;
 - the window's GL driver took the address range the guest windows need,
@@ -1247,9 +1249,9 @@ Not yet: Clang, `mod_loose.c` (stubbed on POSIX), the stall snapshot.
      runs `tools/linux/regen.sh` (`regen.ps1` in bash), then the build.
    - `tools/linux/package.sh`: the tarball of the sources and xdvdfs. No
      game data, as always.
-   - Still to do: the menu mod and the RE-Amped2 look on Linux, a GitHub
-     workflow for the tarball like `installer.yml`, and a test on a real
-     Linux PC (only WSL so far).
+   - Done since: the RE-Amped2 look, and `.github/workflows/linux.yml`.
+   - Still to do: the menu mod on Linux, and a test on a real Linux PC
+     (only WSL so far).
 7. **The suite on Linux.** `suite.ps1` and `diag.ps1` under PowerShell 7,
    with `-Samples` via `/proc`.
 

@@ -551,9 +551,13 @@ code or data in it.
   `install-info.txt` and an applications-menu entry. The link is removed
   before the work folder, so the delete never reaches `game/`. Saves in
   `game/UDATA` survive a reinstall. Log: `DIR/install.log`.
-- Not in the Linux release yet: the menu mod and the RE-Amped2 look
-  (`mod_loose.c` is stubbed on POSIX and the GL back end has no texture
-  packs), so no Java and no unluac.
+- The RE-Amped2 look goes in as on Windows: `branding/pack/textures` as
+  `mods/packs/re-amped2`, first in `mods/mods.json` (other packs kept),
+  minus `menu-mod-only.txt`'s keys; `--no-look` leaves it out and an
+  update then removes it. The GL back end reads packs with the D3D11 keys
+  (toolkit `fedcfd2`); the look's BC7 files need GL 4.2.
+- Not in the Linux release yet: the menu mod (no Java or unluac in the
+  installer) and loose archive entries (`mod_loose.c` is stubbed on POSIX).
 
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 

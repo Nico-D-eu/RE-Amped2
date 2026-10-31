@@ -11,8 +11,10 @@ Early access
   this folder; it is rewritten on every start, so copy it before starting
   the game again.
 
-  Not on Linux yet: the RE-Amped2 menus and look, texture packs and other
-  mods. The game draws with OpenGL 3.3 or newer.
+  Not on Linux yet: the RE-Amped2 menus, and mods that replace single
+  files inside the game's archives ("loose" files). Texture packs work.
+  The game draws with OpenGL 3.3 or newer; packs made of BC7 textures
+  (the RE-Amped2 look is) need OpenGL 4.2.
 
 Controls
   An Xbox-style controller works out of the box.
@@ -25,6 +27,9 @@ Controls
 Settings
   amped2.ini in this folder holds every setting; it is created the first
   time the game starts. Remove the ; in front of a line to use it.
+  The RE-Amped2 look (logo, splash, loading screen) is the mod pack in
+  mods/packs/re-amped2, listed in mods/mods.json. Install with --no-look
+  to leave it out.
 
 Your saves
   Career progress is saved in game/UDATA in this folder. Back it up before
@@ -41,5 +46,8 @@ About
   endorsed by Microsoft. Amped, Amped 2 and Xbox are trademarks of Microsoft.
   Amped 2 (c) Microsoft Corporation. This folder holds the game built on this
   PC from your own disc; none of it was downloaded.
+  RE-Amped2's art was created under Microsoft's "Game Content Usage Rules"
+  using assets from Amped 2, and it is not endorsed by or affiliated with
+  Microsoft: https://www.xbox.com/en-US/developers/rules
   The licences of RE-Amped2 (MIT) and the software it is built with are in
   the licenses folder.

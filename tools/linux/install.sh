@@ -7,6 +7,8 @@
 #   ./install.sh DISC.iso [INSTALL_DIR]      (default ~/Games/RE-Amped2)
 #
 #   --no-menu-entry   don't add RE-Amped2 to the applications menu
+#   --no-look         leave out the RE-Amped2 look (logo, splash, loading
+#                     screen); an update removes it
 #   --keep-temp       keep INSTALL_DIR/_install_temp (sources and build)
 #
 # Stages as on Windows: build tools, disc, recompiler, translate, compile,
@@ -17,11 +19,13 @@ set -euo pipefail
 TITLE_ID=4D530041
 
 MENU_ENTRY=1
+LOOK=1
 KEEP_TEMP=0
 ARGS=()
 for a in "$@"; do
     case "$a" in
         --no-menu-entry) MENU_ENTRY=0 ;;
+        --no-look) LOOK=0 ;;
         --keep-temp) KEEP_TEMP=1 ;;
         -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "install.sh: unknown option $a" >&2; exit 2 ;;
@@ -115,8 +119,19 @@ say "CMake:    $(cmake --version | head -1)"
 stage "Disc"
 [ -x "$XDVDFS" ] || fail "xdvdfs is missing from the download ($PAYLOAD/tools/xdvdfs)."
 logged "$XDVDFS" ls "$DISC" || fail "$DISC is not an Xbox disc image xdvdfs can read."
-# Existing files are overwritten; game/UDATA (saves) is not on the disc.
-logged "$XDVDFS" unpack "$DISC" "$DEST/game" || fail "the disc could not be extracted."
+# xdvdfs will not unpack over existing files (EEXIST on Linux), so a
+# reinstall unpacks beside game/ and moves each file over its old copy.
+# game/UDATA (saves) and whatever else the game wrote are not on the disc
+# and stay.
+DISC_TMP="$DEST/_install_disc"
+rm -rf "$DISC_TMP"
+logged "$XDVDFS" unpack "$DISC" "$DISC_TMP" || fail "the disc could not be extracted."
+mkdir -p "$DEST/game"
+(cd "$DISC_TMP" && find . -type f -print0) | while IFS= read -r -d '' f; do
+    mkdir -p "$DEST/game/$(dirname "$f")"
+    mv -f "$DISC_TMP/$f" "$DEST/game/$f"
+done
+rm -rf "$DISC_TMP"
 python3 - "$DEST/game/default.xbe" "$TITLE_ID" <<'EOF' || fail "this is not an Amped 2 disc (USA or Europe/Australia)."
 import struct, sys
 data = open(sys.argv[1], 'rb').read()
@@ -167,6 +182,34 @@ lic xboxrecomp/LICENSE xboxrecomp-LICENSE.txt
 lic xboxrecomp/NOTICE xboxrecomp-NOTICE.txt
 lic xboxrecomp/LICENSES/LGPL-2.1.txt LGPL-2.1.txt
 lic amped2/licenses/xdvdfs-LICENSE.txt xdvdfs-LICENSE.txt
+# The RE-Amped2 look, as the Windows installer adds it: branding/pack's
+# textures (RE-Amped2 art only, keyed by the originals' hashes) as the mod
+# pack mods/packs/re-amped2, first in mods/mods.json; other packs are kept.
+# The loading screen's controller pictures go only with their labels, which
+# the menu mod blanks, and Linux has no menu mod yet (menu-mod-only.txt).
+rm -rf "$DEST/mods/packs/re-amped2"
+if [ "$LOOK" = 1 ]; then
+    mkdir -p "$DEST/mods/packs/re-amped2"
+    cp -r "$PAYLOAD/amped2/branding/pack/textures" "$DEST/mods/packs/re-amped2/"
+    only="$PAYLOAD/amped2/branding/pack/menu-mod-only.txt"
+    if [ -f "$only" ]; then
+        while IFS= read -r key; do
+            key=$(echo "$key" | tr -d '[:space:]')
+            if [ -n "$key" ]; then rm -f "$DEST/mods/packs/re-amped2/textures/$key.dds"; fi
+        done < "$only"
+    fi
+fi
+mkdir -p "$DEST/mods"
+python3 - "$DEST/mods/mods.json" "$LOOK" <<'EOF' || say "Could not update mods/mods.json; the look may not show."
+import os, re, sys
+path, look = sys.argv[1], sys.argv[2] == '1'
+old = open(path).read() if os.path.exists(path) else ''
+packs = [p for p in re.findall(r'"([^"]+)"', old) if p not in ('packs', 're-amped2')]
+if look:
+    packs.insert(0, 're-amped2')
+open(path, 'w').write('{ "packs": [' + ', '.join('"%s"' % p for p in packs) + '] }\n')
+EOF
+if [ "$LOOK" = 1 ]; then say "Added the RE-Amped2 look (mods/packs/re-amped2)."; fi
 {
     echo "Installed $(date -u '+%Y-%m-%d %H:%M UTC') from $DISC"
     [ -f "$PAYLOAD/manifest.txt" ] && cat "$PAYLOAD/manifest.txt"
