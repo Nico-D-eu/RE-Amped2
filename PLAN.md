@@ -816,6 +816,7 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 | 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
 | 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
+| 21 | Linux build (then macOS and arm64), **next (user, 2026-10-31)** | Upstream v0.16 already has a POSIX runtime; the GPU back end is what's missing | Yes, under Linux |
 
 - **Standing lane:** bugs from the user's testing come before any phase.
   For each one: reproduce it, fix it, add a suite case, and ship the fix in
@@ -1130,6 +1131,88 @@ Next:
       byte-identical
 - [ ] glTF exports of a rider and a level chunk open correctly in Blender
 - [ ] A recipe-built custom character shows up in career creation in game
+
+### Phase 21: Linux build (then macOS and arm64)
+
+**Where things stand (survey 2026-10-31).** Phases 11 and 12 assumed the
+runtime was tied to Windows. Since v0.16, upstream's toolkit builds on
+Linux and macOS, on x86-64 and arm64:
+- a POSIX version of its Win32 layer (`src/platform/`);
+- SDL2 for the window (`src/video`), input (`src/input`) and audio
+  (`src/apu/apu_sdl2.c`);
+- a POSIX fault handler for the device registers, with an arm64 decoder
+  (`mmio_decode_a64.h`);
+- `tools/linux/install_deps.sh` and `Dockerfile.gcc`.
+
+Its OpenGL 3.3 back end (`d3d8_gl.c`) belongs to the high-level D3D8 layer.
+Amped 2 does not use that layer: D3D8LTCG runs recompiled and draws
+through the pushbuffer executor. **The executor's GPU back end
+(`nv2a_d3d11.c`, 4.3k lines, with `nv2a_hlsl.c`) is Windows-only.** On
+POSIX it compiles to empty stubs, which leaves the software rasteriser
+(about 1.6 fps in game). On the Amped 2 side, `main.c` uses a short list
+of Win32 calls:
+- the vectored exception handler;
+- the crash minidump and its dbghelp symbols;
+- the stall snapshot (SuspendThread, GetThreadContext);
+- the stderr pipe;
+- MessageBox and `_putenv`.
+
+`coverage.c` and `mod_loose.c` use a few more. The installer is .NET and
+Windows-only.
+
+1. **Build environment.**
+   - WSL2 with Ubuntu 24.04: WSLg gives a window, the GPU and sound. The
+     user installs it (admin rights).
+   - Then `tools/linux/install_deps.sh`.
+   - Docker Desktop is installed and works for compile-only checks
+     (`Dockerfile.gcc`), but has no display.
+2. **It compiles.** Amped 2's CMake on Linux with GCC and Clang: the
+   generated code (14,737 functions) plus the toolkit.
+   - `main.c` gets POSIX versions or `#ifdef`s:
+     - the fault handler goes through the toolkit's POSIX handler;
+     - a minimal crash report from a signal handler;
+     - stall snapshots off at first;
+     - the stderr pump on a pthread;
+     - SDL message boxes;
+     - `setenv`.
+   - `coverage.c` and `mod_loose.c` are small fixes.
+3. **It boots.** First to the title in a log (`RECOMP_HEADLESS`), then on
+   the software rasteriser in an SDL window under WSLg. Menus should be
+   usable; the game itself will be slow.
+4. **GPU: an OpenGL 3.3 back end for the executor** (`nv2a_gl.c`). Same
+   entry points as `nv2a_d3d11.c`: draw, clear, flip, zpass and reports.
+   - A GLSL emitter beside the HLSL one.
+   - The SDL2 and epoxy setup from upstream's `d3d8_gl.c` and video
+     window.
+   - This is most of the work. Do Phase 12's renderer split at the same
+     time (one NV2A front end, D3D11 and GL back ends), so the Windows
+     build keeps using the same front end. GL rather than Vulkan first:
+     upstream already links it, and it reaches macOS (up to 4.1).
+5. **Sound, pad, settings.**
+   - Our APU feeds `apu_sdl2.c` instead of XAudio2.
+   - The emulated USB pad reads SDL game controllers.
+   - `amped2.ini`, the keymap, F11 and the texture packs work as on
+     Windows.
+6. **For players.**
+   - `tools/linux/build.sh`: extract the player's disc (xdvdfs has Linux
+     builds), `regen.ps1` steps in Python or pwsh, then the build.
+   - A tarball or AppImage of the tools only. No game data, as always.
+7. **The suite on Linux.** `suite.ps1` and `diag.ps1` under PowerShell 7,
+   with `-Samples` via `/proc`.
+
+**macOS and arm64 afterwards.**
+- **macOS:** a 64-bit process cannot map below 4 GB (`__PAGEZERO`), so the
+  guest memory offset has to work at a high base. Check what upstream does.
+- **arm64:** the generated code's SSE helpers need portable versions (check
+  upstream's), and Apple Silicon caps OpenGL at 4.1.
+
+**Exit criteria**
+
+- [ ] Amped 2 builds on Ubuntu 24.04 with GCC and Clang from a clean
+      checkout plus the player's disc
+- [ ] Boots to the main menu on Linux (the suite's boot case, headless)
+- [ ] ML1 at ≥ 58 fps with the GL back end, with sound and a pad
+- [ ] The Windows build still passes the suite after the renderer split
 
 ---
 
