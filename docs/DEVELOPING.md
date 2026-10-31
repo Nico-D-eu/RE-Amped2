@@ -197,6 +197,64 @@ A double-clicked game also shows a dialog saying where the report is.
 `AMPED2_TEST_CRASH=1` faults on purpose just before the game starts, to
 check the whole path.
 
+**The regression suite** (`tools\suite.ps1`). One command that says
+whether anything regressed:
+
+```powershell
+.\tools\suite.ps1 -Quick                 # boot and ml1, about 4 minutes
+.\tools\suite.ps1                        # every case but the soak
+.\tools\suite.ps1 -Cases ml1 -Repeat 3   # one case, three times
+.\tools\suite.ps1 -Soak                  # everything, the 60-minute soak too
+.\tools\suite.ps1 -Cases ml1 -ExeName RE-Amped2.base.exe   # another build
+.\tools\suite.ps1 -Cases ml1 -Env @{ RECOMP_GPU_NODEPTH = '1' }   # inject a fault
+```
+
+The cases are in `tools\suite\cases.json`. Each one is an isolated
+`diag.ps1` run with a scripted pad, a time limit and checks:
+
+| Case | What it does | Time |
+|---|---|---|
+| `boot` (quick) | Fresh console: title, Choose a Look, Enter Name, Done, the main menu | 50 s |
+| `ml1` (quick) | A new career into ML1, then riding: weaving and jumping | 200 s |
+| `reload3` | ML1, then three times Pause → Leave Mountain and back onto the mountain | 250 s |
+| `movie` | No input: the boot movies to the end, then the title. Intro.xmv is 60.9 s | 240 s |
+| `texpack` | ML1 with `mods\texture_pack`: textures replaced, few misses (skipped without a pack) | 120 s |
+| `mods` | Loose entries merged at start-up (skipped without `mods\loose`) | 45 s |
+| `soak` | 60 min in ML1 (the old Start+A pulse walk; only with `-Soak`) | 62 min |
+
+The pad scripts are `tools\suite\pads\*.pad`, written by
+`tools\suite\pads\make_pads.py`, which also documents the menu path. The
+toolkit's script parser takes no comments and at most 256 steps. A case
+names one as `"RECOMP_PAD_SCRIPT": "@pads\\ml1.pad"`.
+`tools\suite\analyze.py` makes the checks on what the run left:
+
+| Check | From |
+|---|---|
+| No crash, watchdog, reboot into `Boom.xbe`, out-of-memory handler, bug check, or music replaying stale data | the log |
+| Markers in order (the files a screen loads, the save a step writes) | `[PATH]` lines |
+| Idle voices linked stay 0 | `[HEALTH]` |
+| Frame rate over a window from a marker on, and the slowest 10 s | `[GPU] frames` |
+| Pacing resyncs (frames 33 ms or more late) in that window | `[PACE]` (`RECOMP_PACE_TRACE`, always on in the suite) |
+| Private memory flat (±5 %) over the window | `diag.ps1 -Samples` |
+| Nothing reached beyond the coverage baseline | `[REACHED]` |
+| Shots not black, and close to the golden | `RECOMP_GPU_SHOT_PRESENT` |
+
+The log has no timestamps. `diag.ps1 -Samples` records the log's size and
+the process memory once a second, which dates every line to within a
+second.
+
+A pass writes `diag\suite-<date-time>\`: each case's log, samples, shots
+and result JSON, plus `report.md`. The goldens and the coverage baseline
+come from the game, so they stay local in `test\suite\` (git-ignored).
+`-UpdateGoldens` and `-UpdateBaseline` take them from the current pass;
+only do that on a build you trust. The screenshot compare is coarse on
+purpose: a 32×18 grid of mean colours, since the front end animates and
+shots are taken by wall-clock time.
+
+Cases that need something this tree may not have (`requires`, e.g.
+`mods\texture_pack`) are skipped and listed as such. The suite refuses to
+start while any RE-Amped2 is running, like every test run.
+
 ## Installer (for players)
 
 `installer\build.ps1` makes `installer\dist\RE-Amped2-Setup.exe`, a single-file
@@ -387,6 +445,78 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x0025A120` / `0x0025A15B` — `__SEH_prolog` / `__SEH_epilog` (auto-detected by `tools.recomp`)
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
+
+### The slow intro movie (2026-10-31, cause narrowed, not fixed)
+
+Since the v0.16 merge, `Movies\Intro.xmv` plays at about 0.4x. It is
+60.9 s long (1801 frames at 29.6 fps; the header and the audio track
+agree). The suite's movie case measures it from the file's open to the
+front-end boarder load:
+
+| Build | Intro to front end |
+|---|---|
+| Pre-sync `RE-Amped2.base.exe` | 79 s |
+| First merged `.cand` | 153 s |
+| HEAD | 152–237 s |
+| HEAD with `RECOMP_VBLANK=paced` | **60.8 s** |
+
+MGS and XSN play at the right speed. What was measured:
+
+- **The movie clock is fine.** XMV's clock is D3D's vblank count
+  (`device + 0x1DD8`, read via GetDisplayFieldStatus `0x0031AE50`), less
+  its start at `decoder + 0xB8`. It advances at about 57 a second on both
+  builds.
+- **The audio plays in real time.** It ends about 63–70 s after the
+  intro starts while the picture plays on, so the audio does not pace the
+  picture.
+- **The data arrives.** The reads (`0x00253F0B`) are synchronous and only
+  follow consumption.
+- **The decoder is neither CPU-bound nor short of packets.**
+  `AMPED2_XMV_STATS=1` prints a line a second from the GetNextFrame
+  wrapper (`0x002CDE60`). Up to 12 s behind its clock, about 55 of 62
+  calls return "no frame". The calls take 1–3 ms each, about 15% of the
+  main thread, and few have a packet request pending.
+- **Where the main thread sleeps.** The title's movie loop (`sub_00150FF0`)
+  calls GetNextFrame, UpdateOverlay (`0x00329420`), then
+  BlockUntilVerticalBlank (`0x0031AE90`, ours). It sleeps 75–86% of the
+  time in the vblank wait. The decoding (`sub_002CFFBE` and below) runs
+  inside GetNextFrame on the main thread. Right after it, GetNextFrame
+  calls DirectSound (`0x002906EE`, `0x002923BF`, `0x002904E3`,
+  `0x0028ED0A`, `0x00290723`).
+- **It is the timer loop.** `RECOMP_VBLANK=paced` or
+  `RECOMP_DISPATCH_GATE=1` (both run upstream's `kernel_timer_loop_ns`
+  instead of our `kernel_timer_loop_default`) play the intro in real time.
+- **Ruled out, one at a time in our loop:**
+  - `RECOMP_DPC_REMOVE=0`, `RECOMP_DPC_CS_KEEP_LOCK=1`;
+  - kernel timers on the performance counter instead of GetTickCount64;
+  - coalescing a vblank whose predecessor is unacknowledged, and honouring
+    `PMC_INTR_EN_0`;
+  - waking the loop when a DPC is queued.
+
+  `RECOMP_DISPATCH_LOCK=0` made it worse (no frames at all).
+- **Unchanged across the merge:**
+  - the vblank tick and its ISR call;
+  - the field pin (port `0x80C0`) once vblanks run;
+  - the TSC scaling and `qemu_clock_get_ns`;
+  - KeTickCount and KeInterruptTime;
+  - the async-handle registration on open.
+
+What paced mode costs, from one suite pass (`diag/suite-2026-10-31_1001`):
+- no `[HEALTH]` line, which only our loop prints;
+- a one-off 22 MB step in ml1's memory at about 130 s;
+- frame rate as before.
+
+It also replaces the DPC and dispatch-lock scheme that the audio fixes of
+2026-10-02 and 2026-10-30 were tuned on.
+
+**Ruled out (2026-10-31):** in paced mode the sound breaks up in ML1. The
+`[HEALTH]` line, which the paced loop now prints as well (toolkit), shows
+the APU at 1,500 frames/s in the front end. In the level it drops to
+about 145 frames/s, with 9,000–14,000 trapped front-end waits per 10 s:
+the APU's front-end handshake with DirectSound is not serviced in time
+in that loop. The user heard it as distorted, then no sound. The movie
+stays a known issue (start skips it) until the difference between the
+loops for XMV is found.
 
 ### XACT, DirectSound and the music dropout (2026-10-30)
 

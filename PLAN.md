@@ -12,6 +12,18 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-10-30, late): the regression suite runs** (Phase 16;
+`tools\suite.ps1 -Quick` in about 4 minutes). On its first day it found
+two things: the intro movie has played at about 0.4x since the v0.16
+merge, and an intermittent stutter in ML1. level2 (it needs a fixture
+save) and the soak are left.
+
+**Update (2026-10-30): v0.2.1 released on toolkit v0.16.0; the suite
+next.** Both PRs are merged, and `amped2-fixes` is on upstream v0.16.0. The
+user has played the installed 0.2.1 at length: no music dropout, no audio
+issues, no hitches they could notice. That closes Phase 15. Next comes
+Phase 16 (the suite), which Phase 17's last checks and v0.3.0 wait on.
+
 **Update (2026-10-28): Phase 15 done; the toolkit sync next.**
 - Test runs are isolated and safe to run next to the player's game.
 - Every run keeps a coverage list of reached guesses.
@@ -798,8 +810,8 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 
 | # | Phase | Why now | Runs the game? |
 |---|---|---|---|
-| 15 | Test isolation and coverage telemetry ✅ (2026-10-28, one check left) | Makes the user's runs useful; unblocks the rest | Short checks only |
-| 17 | Toolkit upstream sync (v0.16.0), **in progress** (merged on a branch; a kernel race left) | `amped2-fixes` is 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
+| 15 | Test isolation and coverage telemetry ✅ (2026-10-30) | Makes the user's runs useful; unblocks the rest | Short checks only |
+| 17 | Toolkit upstream sync (v0.16.0), merged and shipped in 0.2.1 (2026-10-30); the suite and write-ups left | `amped2-fixes` was 101 ahead and 333 behind upstream: five releases | Yes, isolated runs |
 | 16 | Automated regression suite | The safety net for 18 | Yes, in an isolated copy |
 | 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
@@ -878,9 +890,11 @@ differs from the steps above in these ways:
       (2026-10-28: two isolated instances reached ML1 at the same time, with
       no sharing violation. A run started next to another instance gets its
       own storage)
-- [ ] One user play session yields a log with the coverage sets and the
-      version line (needs a play session on this build; the installed
-      0.2.0 predates it)
+- [x] One user play session yields a log with the coverage sets and the
+      version line (2026-10-30, the installed 0.2.1: `[BOOT]` names
+      `amped2=abe1bbc xboxrecomp=a95c347`, and `[COVERAGE]` lists
+      2 flags-fallback and 5 unimpl addresses, written to
+      `amped2-coverage.txt`)
 - [x] A forced crash (e.g. `RECOMP_TEST_CRASH=1`) leaves a minidump that
       opens in Visual Studio with symbols, plus a guest call chain
       (2026-10-28: `AMPED2_TEST_CRASH=1` writes `crash\<date-time>\`. Its
@@ -918,13 +932,48 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
 6. **Report.** A summary table, plus logs and frames in
    `diag/suite-<date>/`.
 
+**Status (2026-10-30): the suite runs; level2 and the soak are left.**
+`tools\suite.ps1` with `tools\suite\cases.json`, `analyze.py` and pad
+scripts (docs/DEVELOPING.md "Testing"). Differences from the list above:
+- The cases are boot, ml1, reload3, movie, texpack, mods and soak.
+  - **level2 waits for a fixture:** a copy of the user's progressed
+    profile, taken only with their OK.
+  - texpack and mods are skipped on a tree without `mods\texture_pack` or
+    `mods\loose`. Phase 18's font pack will give texpack something to run on.
+- ml1 now rides (weaving and jumping, `pads\ml1.pad`). The old
+  `RECOMP_PAD_PRESS=0x110` walk spent ML1 toggling the pause menu.
+- "Idle voices linked stays 0" became "not steady": a few in one
+  `[HEALTH]` line is DirectSound's normal stop path. The APU rate is
+  checked too.
+- Goldens only for screens that hold still (the main menu). Shots of
+  riding or of a movie differ from run to run more than a fault changes
+  them.
+
+Found by the suite:
+- **The intro movie plays at about 0.4x since the v0.16 merge.** It takes
+  152–237 s from the intro to the front end, against 79 s before the sync.
+  `Intro.xmv` is 60.9 s. Marked known in the movie case; standing lane.
+  Narrowed on 2026-10-31 (docs/DEVELOPING.md "The slow intro movie"): our
+  default timer loop. Upstream's paced loop (`RECOMP_VBLANK=paced`) plays
+  it in 60.8 s, but replaces the loop the audio fixes were tuned on.
+- **An intermittent stutter:** 1 s bursts of 33–54 ms late frames every
+  10–20 s, all through a run, with the render thread idle. Seen in 2 of
+  about 12 riding runs (ml1 and reload3); `base.exe` and `.fix2` had none
+  in their one run each.
+
 **Exit criteria**
 
-- [ ] `suite.ps1 -Quick` (boot, ml1) takes ≤ 5 min; the full suite without
-      the soak takes ≤ 30 min, unattended
+- [x] `suite.ps1 -Quick` (boot, ml1) takes ≤ 5 min; the full suite without
+      the soak takes ≤ 30 min, unattended (2026-10-30: 4.2 min and about
+      13.5 min)
 - [ ] Three passes in a row on the current build (no flaky cases)
-- [ ] An injected regression (e.g. `RECOMP_GPU_NODEPTH=1`) fails the right
-      case
+      (2026-10-30: boot 3/3. ml1 3/3 apart from its riding golden, now
+      dropped. reload3 2/3: the stutter. movie 1/3: the slow intro left no
+      window, now 300 s)
+- [x] An injected regression fails the right case (2026-10-30:
+      `RECOMP_GPU=software` fails boot. `RECOMP_GPU_NODEPTH=1` and
+      `RECOMP_GPU_SCALE=8` were not caught: the shot compare is coarse,
+      and 8x still holds 60 fps)
 - [ ] The soak case reproduces `soak7` (60 min, no crash, ~59 fps, memory
       flat)
 
@@ -968,6 +1017,13 @@ One command that says "nothing regressed". It reuses `RECOMP_PAD_SCRIPT`,
   not a reason to undo the move. Toolkit `a95c347` and amped2 `7821108`
   detect it in-process and snapshot every thread (docs/DEVELOPING.md
   "XACT, DirectSound and the music dropout").
+- **Released as 0.2.1 (2026-10-30).** The user merged both PRs: amped2 by
+  squash (`998ffe6`; the detailed commits behind the build line `abe1bbc`
+  are kept under the local tag `v0.2.1-detail`), and the toolkit by merge
+  (`391d0a5`). Long play on the installed build had no dropout and no
+  noticeable hitch. Its last session ran 29 min at 59.0 fps: the dropout
+  detector never fired, `0 idle voices linked` throughout, and there were
+  two 32 ms dispatch-lock stalls.
 
 Next:
 1. Standing lane: why XACT's stream reader stops being asked for more (the

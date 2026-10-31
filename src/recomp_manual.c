@@ -461,8 +461,48 @@ void sub_003285F0(void)
  * never gets a frame. Fields: +0x1C/+0x20 the packet callbacks (get next,
  * release), +0x24 their context, +0x50 frames left in the packet, +0x60 the
  * current packet, +0x68/+0x74 end flags, +0x6C a packet requested.
+ *
+ * AMPED2_XMV_STATS=1: once a second, the calls, how many returned each
+ * status, how many found a packet request pending, and how far the next
+ * frame's time (+0xF8, ms) is behind the movie clock (D3D's vblank count
+ * at device + 0x1DD8, less the start at +0xB8, at 60 a second) -- whether
+ * a slow movie is waiting for data or for time.
  */
 extern void sub_002CDE60_gen(void);
+
+static void xmv_stats(uint32_t dec, uint32_t status, int req_before, double ms)
+{
+    static int on = -1;
+    static unsigned long t0;
+    static unsigned calls, st[4], req;
+    static double in_ms[2], max_ms[2];
+    if (on < 0)
+        on = getenv("AMPED2_XMV_STATS") != NULL;
+    if (!on || !dec)
+        return;
+    if (!t0)
+        t0 = GetTickCount();
+    calls++;
+    st[status < 3 ? status : 3]++;
+    req += req_before != 0;
+    in_ms[status == 1] += ms;
+    if (ms > max_ms[status == 1])
+        max_ms[status == 1] = ms;
+    if (GetTickCount() - t0 >= 1000) {
+        uint32_t dev = MEM32(0x0032CEF8u);
+        long clock_ms = dev ? (long)((MEM32(dev + 0x1DD8) - MEM32(dec + 0xB8)) * 1000u / 60u) : 0;
+        fprintf(stderr, "  [XMV] stats: %u calls, status 0/1/2/other %u/%u/%u/%u,"
+                " %u with a packet requested; next frame %u ms, clock %ld ms (%+ld);"
+                " in the call %.0f ms without a frame (longest %.1f), %.0f ms with"
+                " (longest %.1f)\n",
+                calls, st[0], st[1], st[2], st[3], req, MEM32(dec + 0xF8), clock_ms,
+                clock_ms - (long)MEM32(dec + 0xF8), in_ms[0], max_ms[0], in_ms[1], max_ms[1]);
+        t0 = GetTickCount();
+        calls = req = 0;
+        memset(st, 0, sizeof st);
+        in_ms[0] = in_ms[1] = max_ms[0] = max_ms[1] = 0;
+    }
+}
 
 void sub_002CDE60(void)
 {
@@ -471,7 +511,8 @@ void sub_002CDE60(void)
     static uint32_t last[6];
     uint32_t dec = MEM32(g_esp + 4), pstatus = MEM32(g_esp + 12);
     uint32_t cur[6];
-    int k, changed = 0;
+    int k, changed = 0, req_before = dec ? (int)MEM32(dec + 0x6C) : 0;
+    long long q0, q1, qf;
 
     if (trace < 0)
         trace = getenv("AMPED2_XMV_TRACE") != NULL;
@@ -481,7 +522,10 @@ void sub_002CDE60(void)
         for (k = 0; k < 6; k++)
             changed |= cur[k] != last[k];
     }
+    QueryPerformanceCounter(&q0);
     sub_002CDE60_gen();
+    QueryPerformanceCounter(&q1);
+    QueryPerformanceFrequency(&qf);
     if (trace && dec && (n < 12 || (changed && n < 400) || n % 120 == 0)) {
         fprintf(stderr, "  [XMV] #%u dec %08X cb %08X/%08X ctx %08X: frames %08X pkt %08X"
                 " end %08X/%08X req %08X +64 %08X -> status %u (eax %08X)\n", n, dec,
@@ -508,6 +552,8 @@ void sub_002CDE60(void)
         }
         memcpy(last, cur, sizeof last);
     }
+    xmv_stats(dec, pstatus ? MEM32(pstatus) : 3u, req_before,
+              (double)(q1 - q0) * 1000.0 / (double)qf);
     n++;
 }
 
