@@ -9,6 +9,12 @@
 
 ![RE-Amped2 on Windows at 1080p: the title screen, the main menu, the Mods screen, the career menu and the course select](screenshots/screenshots.gif)
 
+<p>
+  <img src="screenshots/1.png" width="32%" alt="A Backside 180 Stalefish off a kicker on a night run">
+  <img src="screenshots/2.png" width="32%" alt="A Frontside 720 Melon down a sunlit slope, with the rival rider ahead">
+  <img src="screenshots/3.png" width="32%" alt="A Backside 540 Stalefish over a stair rail, with the rider's shadow on the snow">
+</p>
+
 RE-Amped2 brings **Amped 2** (Microsoft Game Studios / Indie Built, 2003, for
 the original Xbox) to Windows as a native PC game. It isn't an emulator. The
 game's own code is translated to C and compiled into a Windows program, on
@@ -34,7 +40,7 @@ The details, and what the installer asks before it installs anything, are in
 [Getting started](#getting-started). Something not working? See
 [Known issues](#known-issues), then [tell us](#reporting-problems).
 
-RE-Amped2 is also listed in RecompLauncher:
+RE-Amped2 is also listed in RecompLauncher and Decomp Buddy:
 
 <p>
   <a href="https://recomplauncher.com/game/re-amped2"><picture>
@@ -47,6 +53,9 @@ RE-Amped2 is also listed in RecompLauncher:
     <img alt="Verified developer on RecompStore" src="https://recompstore.com/assets/press/verified-dark.svg" height="56">
   </picture></a>
 </p>
+
+[![Install With Decomp Buddy](https://decompbuddy.com/install-button.svg)](https://decompbuddy.com/games/amped-2-re-amped2-xbox?install)
+[![Listed on Decomp Buddy](https://decompbuddy.com/badge.svg)](https://decompbuddy.com/games/amped-2-re-amped2-xbox)
 
 ---
 
