@@ -507,7 +507,16 @@ What paced mode costs, from one suite pass (`diag/suite-2026-10-31_1001`):
 - frame rate as before.
 
 It also replaces the DPC and dispatch-lock scheme that the audio fixes of
-2026-10-02 and 2026-10-30 were tuned on. So it is not the default yet.
+2026-10-02 and 2026-10-30 were tuned on.
+
+**Ruled out (2026-10-31):** in paced mode the sound breaks up in ML1. The
+`[HEALTH]` line, which the paced loop now prints as well (toolkit), shows
+the APU at 1,500 frames/s in the front end. In the level it drops to
+about 145 frames/s, with 9,000–14,000 trapped front-end waits per 10 s:
+the APU's front-end handshake with DirectSound is not serviced in time
+in that loop. The user heard it as distorted, then no sound. The movie
+stays a known issue (start skips it) until the difference between the
+loops for XMV is found.
 
 ### XACT, DirectSound and the music dropout (2026-10-30)
 
