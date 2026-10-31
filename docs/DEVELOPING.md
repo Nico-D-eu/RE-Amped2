@@ -446,6 +446,41 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
 
+### Linux bring-up (2026-10-31, PLAN Phase 21)
+
+Built in WSL2 (Ubuntu 24.04, GCC 13) with the build directory on the Linux
+side and the sources read over `/mnt/c`:
+
+```bash
+cmake -S /mnt/c/Projects/recompilation/amped2 -B ~/build/a2 -G Ninja -DCMAKE_BUILD_TYPE=Release
+ninja -C ~/build/a2 -j3
+```
+
+What a Linux build needs that Windows hides:
+- **The lifted CRT owns libc's names.** The game's LIBCMT, as lifted, has
+  functions called `close`, `read`, `write`, `lseek`, `isatty`, `tzset` and
+  `fsopen` (MSVC's `_close` and so on). On Linux these took over libc's:
+  the toolkit's `xbox_path_init` called `close()` and ran `sub_0025E405`.
+  CMakeLists renames them to `guest_*` in the generated code. A new
+  clash shows up as a toolkit or library call landing in a `sub_` function;
+  `nm` the generated objects against `ldd`'s libraries to find it.
+- **Map the guest before the window.** The guest needs fixed windows above
+  2 GB of its 4 GB range (contiguous memory at `0x80000000`, NV2A, MCPX,
+  flash, the tiled alias). Once SDL's GL driver has mapped memory, those
+  fail with ENOMEM. `main.c` loads the XBE and maps memory (`amped2_load`)
+  before `xbox_HostWindowMain` opens the window.
+- **The game runs on a pthread.** SDL keeps the main thread
+  (`xbox_HostWindowMain`), so `amped2_run` is the guest thread's body.
+- **Trapped registers on x86-64.** APU, AC'97 and USB registers fault and
+  are decoded. On Linux `main.c`'s SIGSEGV handler offers each fault to
+  `xbox_PosixMmioFault`, which copies the registers into the Win32 CONTEXT
+  names and runs the same x86-64 decoder as Windows.
+- **Sound.** `apu_sdl2.c` drives SDL audio. Under WSLg, opening the
+  PulseAudio device hangs; `SDL_AUDIODRIVER=dummy` gets past it (silent).
+- **Where it stands:** XACT/DirectSound init fails after the banks load
+  and the title launches `Boom.xbe` (the documented "audio init failed"
+  path), with an `[AP]` sound-heap dump just before. No frame drawn yet.
+
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 
 Since the v0.16 merge, `Movies\Intro.xmv` plays at about 0.4x. It is

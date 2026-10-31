@@ -37,9 +37,19 @@
  *   Kernel imports: 158
  */
 
+#if !defined(_WIN32)
+#define _GNU_SOURCE     /* REG_RIP, dladdr, strsignal */
+#endif
+#if defined(_WIN32)
 #include <windows.h>
 #include <dbghelp.h>
 #include <tlhelp32.h>
+#else
+#include <dlfcn.h>
+#include <signal.h>
+#include <time.h>
+#include <ucontext.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -48,6 +58,7 @@
 
 /* xboxrecomp runtime headers */
 #include <xbox/xboxrecomp.h>
+#include "host.h"
 
 /*
  * If xboxrecomp.h is not an umbrella header in your setup, include
@@ -93,7 +104,7 @@ extern ptrdiff_t g_xbox_mem_offset;
  * the project root, from build\Release, by double-click or from Visual Studio.
  */
 #define YOUR_GAME_ENTRY_POINT   0x00254899  /* XBE entry point VA */
-#define YOUR_GAME_XBE_PATH      "game\\default.xbe"
+#define YOUR_GAME_XBE_PATH      HOST_PATH2("game", "default.xbe")
 #define YOUR_GAME_DIR            "game"
 
 /* ── Forward declarations ──────────────────────────────────── */
@@ -146,6 +157,7 @@ extern void xbe_entry_point(void);
  */
 static void print_guest_context(FILE *out, void *rip)
 {
+#if defined(_WIN32)
     /* SYMBOL_INFO is variable-length: the name is written past the struct, so
      * it must be over-allocated with MaxNameLen set to the slack. */
     char buf[sizeof(SYMBOL_INFO) + 256];
@@ -158,6 +170,14 @@ static void print_guest_context(FILE *out, void *rip)
     if (SymFromAddr(GetCurrentProcess(), (DWORD64)(uintptr_t)rip, &disp, sym))
         fprintf(out, "  in %s+0x%llX\n",
                 sym->Name, (unsigned long long)disp);
+#else
+    /* The executable exports its symbols (ENABLE_EXPORTS in CMakeLists), so
+     * dladdr names the generated function too. */
+    Dl_info di;
+    if (dladdr(rip, &di) && di.dli_sname)
+        fprintf(out, "  in %s+0x%llX\n", di.dli_sname,
+                (unsigned long long)((uintptr_t)rip - (uintptr_t)di.dli_saddr));
+#endif
 
     if (g_xbox_mem_offset && g_esp) {
         const uint32_t *sp =
@@ -233,8 +253,10 @@ static void print_guest_context(FILE *out, void *rip)
 typedef struct MCPXAPUState MCPXAPUState;
 extern MCPXAPUState *mcpx_apu_init_standalone(uint8_t *ram_ptr);
 extern MCPXAPUState *g_apu_state;
+#if defined(_WIN32)
 extern bool apu_hook_handle_mmio(PCONTEXT ctx, uintptr_t fault_addr,
                                  uint32_t fault_xbox_va, int is_write);
+#endif
 
 /* The trapped span, matching what MemoryLayoutInit unmaps: the APU's own
  * 512 KB, not the whole MCPX aperture. AC'97 above it stays plain memory,
@@ -254,6 +276,7 @@ extern int  xbox_OhciHandleMmio(void *ctx, uint32_t xbox_va);
 
 void amped2_stderr_drain(void);
 
+#if defined(_WIN32)
 static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
 {
     if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
@@ -313,7 +336,7 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
          * pushed for the deferred routine is exactly the thing that says
          * where the chain starts. */
         {
-            extern __declspec(thread) uint32_t g_xbox_current_dpc;
+            extern XBOX_THREAD_LOCAL uint32_t g_xbox_current_dpc;
             if (g_xbox_current_dpc)
                 fprintf(stderr, "  inside DPC routine 0x%08X\n",
                         g_xbox_current_dpc);
@@ -493,6 +516,7 @@ void amped2_stderr_drain(void)
     if (s_err_pump)
         stderr_drain();
 }
+#endif /* _WIN32 */
 
 /* ── Crash report ──────────────────────────────────────────── */
 
@@ -502,6 +526,7 @@ void amped2_coverage_init(const char *build);
 void amped2_coverage_flush(void);
 void amped2_coverage_summary(void);
 
+#if defined(_WIN32)
 /*
  * An exception nothing handled: write crash\<date-time>\ beside the game, so
  * a crash during someone's play leaves something to attach to a bug report.
@@ -730,7 +755,7 @@ static LONG WINAPI crash_report(PEXCEPTION_POINTERS ep)
                    "            esi=0x%08X edi=0x%08X esp=0x%08X\n",
                 g_eax, g_ecx, g_edx, g_ebx, g_esi, g_edi, g_esp);
         {
-            extern __declspec(thread) uint32_t g_xbox_current_dpc;
+            extern XBOX_THREAD_LOCAL uint32_t g_xbox_current_dpc;
             if (g_xbox_current_dpc)
                 fprintf(f, "inside DPC routine 0x%08X\n", g_xbox_current_dpc);
         }
@@ -758,6 +783,222 @@ static LONG WINAPI crash_report(PEXCEPTION_POINTERS ep)
     }
     return EXCEPTION_EXECUTE_HANDLER;
 }
+#else /* !_WIN32 */
+
+/* POSIX: the same jobs as the Windows code above, smaller.
+ *
+ * stderr goes through a pipe that a thread copies to the original stderr and
+ * to amped2.log, for the same reason as on Windows: a slow sink must not
+ * stall the threads that print. RECOMP_SYNC_STDERR=1 and AMPED2_NO_LOG work
+ * as there.
+ *
+ * A SIGSEGV/SIGBUS handler first offers the fault to the toolkit
+ * (xbox_PosixMmioFault: the APU, AC'97 and USB registers), then prints the
+ * VEH's [CRASH] block and writes crash/<date-time>/crash.txt with the log.
+ * No minidump: a core dump, where the system keeps one, stands in for it.
+ * The stall snapshot (every thread's stack at a dispatch-lock stall) is
+ * Windows-only for now. */
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/ioctl.h>
+
+static int s_err_out = -1, s_err_logfd = -1, s_err_pipe_r = -1;
+static int s_err_pumping;
+static pthread_t s_err_pump;
+
+static void *stderr_pump(void *unused)
+{
+    char buf[65536];
+    ssize_t n;
+    (void)unused;
+    while ((n = read(s_err_pipe_r, buf, sizeof buf)) > 0) {
+        if (s_err_out >= 0 && write(s_err_out, buf, (size_t)n) < 0)
+            s_err_out = -1;
+        if (s_err_logfd >= 0 && write(s_err_logfd, buf, (size_t)n) < 0)
+            s_err_logfd = -1;
+    }
+    return NULL;
+}
+
+/* Wait up to `ms` for the pump to empty the pipe. */
+static void stderr_wait(int ms)
+{
+    int avail = 0;
+    while (ms-- > 0 && ioctl(s_err_pipe_r, FIONREAD, &avail) == 0 && avail > 0)
+        usleep(1000);
+}
+
+static void stderr_drain(void)
+{
+    fflush(stderr);
+    stderr_wait(2000);
+    usleep(5000);
+}
+
+/* The window's close handler; see stderr_drain_quit on Windows. */
+static void stderr_drain_quit(void)
+{
+    static const char line[] = "  [WINDOW] closed -- exiting\n";
+
+    amped2_coverage_flush();
+    if (s_err_pumping)
+        stderr_wait(250);
+    if (s_err_out >= 0 && write(s_err_out, line, sizeof line - 1) < 0)
+        s_err_out = -1;
+    if (s_err_logfd >= 0 && write(s_err_logfd, line, sizeof line - 1) < 0)
+        s_err_logfd = -1;
+}
+
+static void stderr_async(void)
+{
+    struct stat st;
+    int fds[2], to_file;
+
+    if (getenv("RECOMP_SYNC_STDERR"))
+        return;
+    to_file = fstat(2, &st) == 0 && S_ISREG(st.st_mode);
+    s_err_out = fcntl(2, F_DUPFD_CLOEXEC, 3);
+    if (!to_file && !getenv("AMPED2_NO_LOG"))
+        s_err_logfd = open("amped2.log", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (s_err_out < 0 && s_err_logfd < 0)
+        return;
+    if (pipe(fds) != 0)
+        return;
+#ifdef F_SETPIPE_SZ
+    fcntl(fds[1], F_SETPIPE_SZ, 1 << 20);   /* as large as the Windows pipe */
+#endif
+    fflush(stderr);
+    if (dup2(fds[1], 2) < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return;
+    }
+    close(fds[1]);
+    s_err_pipe_r = fds[0];
+    setvbuf(stderr, NULL, _IONBF, 0);
+    if (pthread_create(&s_err_pump, NULL, stderr_pump, NULL) != 0) {
+        if (s_err_out >= 0)
+            dup2(s_err_out, 2);
+        return;
+    }
+    s_err_pumping = 1;
+    atexit(stderr_drain);
+    {
+        extern void (*g_xbox_flush_logs)(void);
+        extern void (*g_xbox_quit_logs)(void);
+        g_xbox_flush_logs = stderr_drain;
+        g_xbox_quit_logs = stderr_drain_quit;
+    }
+}
+
+void amped2_stderr_drain(void)
+{
+    if (s_err_pumping)
+        stderr_drain();
+}
+
+static void copy_log(const char *dir)
+{
+    char path[PATH_MAX + 16], buf[65536];
+    FILE *in, *out;
+    size_t n;
+
+    if (s_err_logfd < 0 || !(in = fopen("amped2.log", "rb")))
+        return;
+    snprintf(path, sizeof path, "%s/amped2.log", dir);
+    if ((out = fopen(path, "wb")) != NULL) {
+        while ((n = fread(buf, 1, sizeof buf, in)) > 0)
+            fwrite(buf, 1, n, out);
+        fclose(out);
+    }
+    fclose(in);
+}
+
+static void crash_report(int sig, uintptr_t addr, void *rip)
+{
+    static volatile int once;
+    const char *base = getenv("AMPED2_CRASH_DIR");
+    char dir[PATH_MAX], path[PATH_MAX + 16];
+    time_t now = time(NULL);
+    struct tm t;
+    FILE *f;
+
+    if (__atomic_exchange_n(&once, 1, __ATOMIC_SEQ_CST))
+        return;                                 /* a second thread: let it die */
+    amped2_coverage_flush();
+
+    localtime_r(&now, &t);
+    snprintf(dir, sizeof dir, "%s/%04d%02d%02d-%02d%02d%02d",
+             base && *base ? base : "crash", t.tm_year + 1900, t.tm_mon + 1,
+             t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+    host_mkdir(base && *base ? base : "crash");
+    host_mkdir(dir);
+
+    snprintf(path, sizeof path, "%s/crash.txt", dir);
+    if ((f = fopen(path, "w")) != NULL) {
+        extern XBOX_THREAD_LOCAL uint32_t g_xbox_current_dpc;
+        fprintf(f, "RE-Amped2 crash report, %04d-%02d-%02d %02d:%02d:%02d\n",
+                t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
+        fprintf(f, "build: %s\n", amped2_build_version);
+        fprintf(f, "signal %d (%s) at RIP=0x%llX, address 0x%llX (guest VA 0x%08X)\n",
+                sig, strsignal(sig), (unsigned long long)(uintptr_t)rip,
+                (unsigned long long)addr, (uint32_t)(addr - (uintptr_t)g_xbox_mem_offset));
+        fprintf(f, "guest regs: eax=0x%08X ecx=0x%08X edx=0x%08X ebx=0x%08X\n"
+                   "            esi=0x%08X edi=0x%08X esp=0x%08X\n",
+                g_eax, g_ecx, g_edx, g_ebx, g_esi, g_edi, g_esp);
+        if (g_xbox_current_dpc)
+            fprintf(f, "inside DPC routine 0x%08X\n", g_xbox_current_dpc);
+        print_guest_context(f, rip);
+        fclose(f);
+    }
+
+    fprintf(stderr, "[CRASH] report written to %s\n", dir);
+    amped2_stderr_drain();
+    copy_log(dir);
+}
+
+static void fault_handler(int sig, siginfo_t *si, void *ucv)
+{
+    extern XBOX_THREAD_LOCAL uint32_t g_xbox_current_dpc;
+    uintptr_t addr = (uintptr_t)si->si_addr;
+    void *rip = NULL;
+
+    if (xbox_PosixMmioFault(ucv, addr))
+        return;                     /* emulated register: resume after it */
+#if defined(__linux__) && defined(__x86_64__)
+    rip = (void *)((ucontext_t *)ucv)->uc_mcontext.gregs[REG_RIP];
+#elif defined(__linux__) && defined(__aarch64__)
+    rip = (void *)((ucontext_t *)ucv)->uc_mcontext.pc;
+#endif
+    fprintf(stderr, "[CRASH] %s at RIP=0x%llX, fault addr=0x%llX\n", strsignal(sig),
+            (unsigned long long)(uintptr_t)rip, (unsigned long long)addr);
+    fprintf(stderr, "  Xbox regs: eax=0x%08X ecx=0x%08X edx=0x%08X esp=0x%08X\n",
+            g_eax, g_ecx, g_edx, g_esp);
+    fprintf(stderr, "  Xbox regs: ebx=0x%08X esi=0x%08X edi=0x%08X\n",
+            g_ebx, g_esi, g_edi);
+    fprintf(stderr, "  Xbox VA of fault: 0x%08X\n",
+            (uint32_t)(addr - (uintptr_t)g_xbox_mem_offset));
+    print_guest_context(stderr, rip);
+    if (g_xbox_current_dpc)
+        fprintf(stderr, "  inside DPC routine 0x%08X\n", g_xbox_current_dpc);
+    crash_report(sig, addr, rip);
+
+    /* Returning re-runs the faulting instruction, which now gets the
+     * default action: the process dies of the same signal. */
+    signal(sig, SIG_DFL);
+}
+
+static void install_fault_handler(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sa_sigaction = fault_handler;
+    sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS, &sa, NULL);
+}
+#endif /* _WIN32 */
 
 /* amped2.ini, beside the exe: the player's settings, as the toolkit's runtime
  * switches. A switch already in the environment wins, so a diagnostic run can
@@ -841,7 +1082,7 @@ static void ini_set(const char *var, const char *value)
     if (getenv(var) || !*value)
         return;
     snprintf(buf, sizeof buf, "%s=%s", var, value);
-    _putenv(buf);
+    host_putenv(buf);
 }
 
 /* AMPED2_INI names another file (a test run's own settings; created with the
@@ -853,14 +1094,14 @@ static BOOL ini_path(char *path, size_t size)
     char *slash;
     const char *e = getenv("AMPED2_INI");
     if (e && *e) {
-        if (!resolved[0] && !GetFullPathNameA(e, sizeof resolved, resolved, NULL))
+        if (!resolved[0] && !host_full_path(e, resolved, sizeof resolved))
             return FALSE;
         snprintf(path, size, "%s", resolved);
         return TRUE;
     }
-    if (!GetModuleFileNameA(NULL, path, (DWORD)size))
+    if (!host_exe_path(path, size))
         return FALSE;
-    slash = strrchr(path, '\\');
+    slash = strrchr(path, HOST_SEP);
     if (!slash || (size_t)(slash - path) + 12 >= size)
         return FALSE;
     strcpy(slash + 1, "amped2.ini");
@@ -1001,7 +1242,7 @@ static void resolve_render_scale(void)
     }
     scale = (target + base - 1) / base;
     snprintf(buf, sizeof buf, "RECOMP_GPU_SCALE=%u", scale);
-    _putenv(buf);
+    host_putenv(buf);
 }
 
 static void load_settings(void)
@@ -1105,17 +1346,11 @@ static void coverage_at_exit(void)
     amped2_coverage_flush();
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-                   LPSTR lpCmdLine, int nCmdShow)
+/* The log, the settings, the runtime switches and the fault handler. Before
+ * anything else: on Linux and macOS xbox_HostWindowMain reads the switches
+ * (RECOMP_FB_WINDOW) before it starts the game. */
+static void amped2_setup(void)
 {
-    void *xbe_data = NULL;
-    size_t xbe_size = 0;
-
-    (void)hInstance;
-    (void)hPrevInstance;
-    (void)lpCmdLine;
-    (void)nCmdShow;
-
     /* Unbuffered output for immediate visibility during debugging */
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
@@ -1126,21 +1361,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     if (!getenv("RECOMP_BUILD_VERSION")) {
         char b[192];
         snprintf(b, sizeof b, "RECOMP_BUILD_VERSION=%s", amped2_build_version);
-        _putenv(b);
+        host_putenv(b);
     }
     load_settings();
     /* The game's own HD mode: with 720p reported it renders 1280x720, 16:9,
      * with its HUD and menus laid out for it (see README, "Built-in HD and
      * widescreen modes"). VideoModes=none in amped2.ini gives 640x480 4:3. */
     if (!getenv("RECOMP_VIDEO_MODES"))
-        _putenv("RECOMP_VIDEO_MODES=480p,720p,widescreen");
+        host_putenv("RECOMP_VIDEO_MODES=480p,720p,widescreen");
     resolve_render_scale();
     /* 16x anisotropic filtering on mipmapped, linearly filtered textures
      * (toolkit nv2a_d3d11.c); ini Anisotropic=1 turns it off. */
     if (!getenv("RECOMP_GPU_ANISO"))
-        _putenv("RECOMP_GPU_ANISO=16");
+        host_putenv("RECOMP_GPU_ANISO=16");
     if (!getenv("RECOMP_WINDOW_TITLE"))
-        _putenv("RECOMP_WINDOW_TITLE=RE-Amped2");
+        host_putenv("RECOMP_WINDOW_TITLE=RE-Amped2");
 
     /* Runtime switches Amped 2 cannot boot without, as defaults. They must be
      * set before xbox_MemoryLayoutInit, which reads them. Anything already in
@@ -1158,36 +1393,41 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      *   a fixed RECOMP_DSP_ACK=0x8106C810 here, which moved with any change
      *   to earlier contiguous allocations. RECOMP_DSP_ACK still adds words. */
     if (!getenv("RECOMP_AC97_READY"))
-        _putenv("RECOMP_AC97_READY=1");
+        host_putenv("RECOMP_AC97_READY=1");
     /* RECOMP_FORCE_RETURN: arms the forced return values the build was
      *   generated with (config/force_return.txt), such as XNet reporting "no
      *   network" instead of pending forever. */
     if (!getenv("RECOMP_FORCE_RETURN"))
-        _putenv("RECOMP_FORCE_RETURN=1");
+        host_putenv("RECOMP_FORCE_RETURN=1");
     /* Display. D3D8LTCG runs recompiled and drives the NV2A pushbuffer
      * itself, so the pushbuffer executor is the rendering path and the
      * framebuffer window is where it shows up; vblank paces the title's
      * frames. Without these three a run draws nothing and opens no window --
      * which is what "no window opens" was. */
     if (!getenv("RECOMP_VBLANK"))
-        _putenv("RECOMP_VBLANK=1");
+        host_putenv("RECOMP_VBLANK=1");
     if (!getenv("RECOMP_PB_EXEC"))
-        _putenv("RECOMP_PB_EXEC=1");
+        host_putenv("RECOMP_PB_EXEC=1");
     if (!getenv("RECOMP_FB_WINDOW"))
-        _putenv("RECOMP_FB_WINDOW=1");
+        host_putenv("RECOMP_FB_WINDOW=1");
     /* Draw on the GPU (the toolkit's D3D11 backend, nv2a_d3d11.c): about 46
      * fps in game where the software rasteriser managed 1.6.
-     * RECOMP_GPU=software keeps the software path. */
+     * RECOMP_GPU=software keeps the software path. Elsewhere the software
+     * path is all there is until an OpenGL back end exists (PLAN Phase 21). */
     if (!getenv("RECOMP_GPU"))
-        _putenv("RECOMP_GPU=d3d11");
+#if defined(_WIN32)
+        host_putenv("RECOMP_GPU=d3d11");
+#else
+        host_putenv("RECOMP_GPU=software");
+#endif
     /* Input: the emulated USB gamepad, fed by a real XInput pad on the PC or,
      * with the game window focused, the keyboard (Enter = START, arrows =
      * d-pad, Z X A S = A B X Y, Backspace = BACK; see
      * src/input/xinput_device.c). */
     if (!getenv("RECOMP_USB"))
-        _putenv("RECOMP_USB=1");
+        host_putenv("RECOMP_USB=1");
     if (!getenv("RECOMP_KEYBOARD"))
-        _putenv("RECOMP_KEYBOARD=1");
+        host_putenv("RECOMP_KEYBOARD=1");
 
     /* Movies play unless AMPED2_PLAY_MOVIES=0 (see sub_00150E80 in
      * lua_probe.c). XMV opens its file for overlapped reads and keeps
@@ -1200,7 +1440,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         g_amped2_skip_movies = play && *play == '0';
     }
     if (!getenv("RECOMP_ASYNC_IO"))
-        _putenv("RECOMP_ASYNC_IO=1");
+        host_putenv("RECOMP_ASYNC_IO=1");
     /* Mods (file overlays and texture packs): set up by mod_packs() once
      * find_game_root has made the project root the working directory. */
 
@@ -1211,6 +1451,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Load symbols up front rather than from inside the handler: at fault
      * time the process is already in a bad way, and SymInitialize
      * allocates. Failure is not fatal -- the handler prints no name. */
+#if defined(_WIN32)
     SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
     SymInitialize(GetCurrentProcess(), NULL, TRUE);
     AddVectoredExceptionHandler(1, veh_handler);
@@ -1226,14 +1467,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         if (getenv("AMPED2_STALL_SNAPSHOT_TEST"))
             CreateThread(NULL, 0, stall_snapshot_test, NULL, 0, NULL);
     }
+#else
+    install_fault_handler();
+#endif
+}
 
+/* Steps 1-2: find and load the XBE, map the guest's memory. Before the
+ * window on Linux and macOS: the window's GL driver maps memory of its own,
+ * and once it has, the guest's fixed windows above 2 GB (contiguous memory,
+ * the NV2A and MCPX apertures) can no longer be placed. */
+static void *s_xbe_data;
+static size_t s_xbe_size;
+
+static int amped2_load(void)
+{
     /* Step 1: Load XBE */
     {
         char searched[2048];
         char msg[2560];
 
         if (!find_game_root(searched, sizeof(searched))
-                || !load_xbe(YOUR_GAME_XBE_PATH, &xbe_data, &xbe_size)) {
+                || !load_xbe(YOUR_GAME_XBE_PATH, &s_xbe_data, &s_xbe_size)) {
             snprintf(msg, sizeof(msg),
                      "Failed to load default.xbe.\n"
                      "Place the extracted game files in a 'game' directory "
@@ -1244,8 +1498,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
             return 1;
         }
     }
-    printf("XBE loaded: %zu bytes\n", xbe_size);
-    describe_xbe((const uint8_t *)xbe_data, xbe_size);
+    printf("XBE loaded: %zu bytes\n", s_xbe_size);
+    describe_xbe((const uint8_t *)s_xbe_data, s_xbe_size);
     mod_packs();
     /* Reached guesses (src/coverage.c), kept in amped2-coverage.txt in the
      * game root, which is the working directory from here on. */
@@ -1254,11 +1508,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     /* Step 2: Initialize Xbox memory layout */
     printf("Initializing Xbox memory layout...\n");
-    if (!xbox_MemoryLayoutInit(xbe_data, xbe_size)) {
+    if (!xbox_MemoryLayoutInit(s_xbe_data, s_xbe_size)) {
         MessageBoxA(NULL, "Failed to initialize Xbox memory layout.\n"
                     "The required virtual address range may be unavailable.",
                     "Recomp", MB_ICONERROR);
-        free(xbe_data);
+        free(s_xbe_data);
         return 1;
     }
 
@@ -1282,6 +1536,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * before D3D has built it is harmless. Same shape as Wreckless's fence;
      * see xbox_Nv2aMirrorFence in xbox_memory_layout.h. */
     xbox_Nv2aMirrorFence(0x0032CEF8u, /*put_off=*/0x2Cu, /*get_ptr_off=*/0x30u);
+    return 0;
+}
+
+/* Steps 3-7: the devices, the kernel and the game. On Linux and macOS this
+ * runs on the thread xbox_HostWindowMain starts for it. */
+static int amped2_run(void)
+{
 
     /* Bring up the emulated APU.
      *
@@ -1306,12 +1567,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         const char *phys = getenv("AMPED2_APU_PHYS");
         if (!(phys && *phys == '0')) {
             if (!getenv("RECOMP_APU_GUEST_AUDIO"))
-                _putenv("RECOMP_APU_GUEST_AUDIO=1");
+                host_putenv("RECOMP_APU_GUEST_AUDIO=1");
             g_apu_state = mcpx_apu_init_standalone(
                 (uint8_t *)(xbox_GetMemoryOffset() + (ptrdiff_t)0x80000000u));
         } else {
             if (!getenv("RECOMP_APU_GUEST_AUDIO"))
-                _putenv("RECOMP_APU_GUEST_AUDIO=0");
+                host_putenv("RECOMP_APU_GUEST_AUDIO=0");
             g_apu_state = mcpx_apu_init_standalone((uint8_t *)xbox_GetMemoryBase());
         }
         fprintf(stderr, "[BOOT] emulated APU %s\n",
@@ -1367,7 +1628,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * reason, and it read as a hang.
      *
      * Optional by design: if the allocation fails the search still works,
-     * so a failure is worth one line and not a fatal error. */
+     * so a failure is worth one line and not a fatal error. Declared here,
+     * like the other generated-code entry points: main.c does not include
+     * recomp_types.h. */
+    extern int recomp_dispatch_init(void);
     if (!recomp_dispatch_init())
         fprintf(stderr, "[BOOT] flat dispatch unavailable; "
                         "indirect calls will use the binary search\n");
@@ -1404,7 +1668,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Cleanup */
     xbox_kernel_shutdown();
     xbox_MemoryLayoutShutdown();
-    free(xbe_data);
+    free(s_xbe_data);
 
     return 0;
 }
@@ -1432,29 +1696,29 @@ static BOOL find_game_root(char *searched, size_t searched_len)
 
     searched[0] = '\0';
 
-    if (GetCurrentDirectoryA(sizeof(dir), dir)) {
+    if (host_getcwd(dir, sizeof(dir))) {
         used += snprintf(searched + used, searched_len - used, "  %s\n", dir);
-        if (GetFileAttributesA(YOUR_GAME_XBE_PATH) != INVALID_FILE_ATTRIBUTES)
+        if (host_exists(YOUR_GAME_XBE_PATH))
             return TRUE;
     }
 
-    if (!GetModuleFileNameA(NULL, dir, sizeof(dir)))
+    if (!host_exe_path(dir, sizeof(dir)))
         return FALSE;
 
     for (level = 0; level < 5; level++) {
-        char *slash = strrchr(dir, '\\');
+        char *slash = strrchr(dir, HOST_SEP);
         if (!slash)
             break;
         *slash = '\0';  /* first pass strips the .exe name, later ones a dir */
 
-        snprintf(probe, sizeof(probe), "%s\\%s", dir, YOUR_GAME_XBE_PATH);
+        snprintf(probe, sizeof(probe), "%s" HOST_SEPS "%s", dir, YOUR_GAME_XBE_PATH);
         if (used < searched_len)
             used += snprintf(searched + used, searched_len - used,
                              "  %s\n", dir);
-        if (GetFileAttributesA(probe) != INVALID_FILE_ATTRIBUTES) {
-            if (!SetCurrentDirectoryA(dir))
+        if (host_exists(probe)) {
+            if (!host_chdir(dir))
                 return FALSE;
-            fprintf(stderr, "[BOOT] game directory: %s\\%s\n",
+            fprintf(stderr, "[BOOT] game directory: %s" HOST_SEPS "%s\n",
                     dir, YOUR_GAME_DIR);
             return TRUE;
         }
@@ -1531,7 +1795,7 @@ static void mod_packs(void)
 
     if (mods && *mods == '0')
         return;
-    f = use_packs ? fopen("mods\\mods.json", "rb") : NULL;
+    f = use_packs ? fopen("mods" HOST_SEPS "mods.json", "rb") : NULL;
     if (!use_packs)
         fprintf(stderr, "  mod packs and loose entries off (ModPacks=0)\n");
     if (f) {
@@ -1559,13 +1823,13 @@ static void mod_packs(void)
     }
     for (i = 0; i < n; i++) {
         char one[160];
-        snprintf(one, sizeof one, "mods\\packs\\%s\\game;", names[i]);
+        snprintf(one, sizeof one, "mods" HOST_SEPS "packs" HOST_SEPS "%s" HOST_SEPS "game;", names[i]);
         strncat(overlays, one, sizeof overlays - strlen(overlays) - 1);
-        snprintf(one, sizeof one, "mods\\packs\\%s\\textures;", names[i]);
+        snprintf(one, sizeof one, "mods" HOST_SEPS "packs" HOST_SEPS "%s" HOST_SEPS "textures;", names[i]);
         strncat(packs, one, sizeof packs - strlen(packs) - 1);
     }
-    strncat(overlays, "mods\\build\\game", sizeof overlays - strlen(overlays) - 1);
-    strncat(packs, "mods\\texture_pack", sizeof packs - strlen(packs) - 1);
+    strncat(overlays, "mods" HOST_SEPS "build" HOST_SEPS "game", sizeof overlays - strlen(overlays) - 1);
+    strncat(packs, "mods" HOST_SEPS "texture_pack", sizeof packs - strlen(packs) - 1);
     /* Loose archive entries (mod_loose.c): each pack's loose\ and then
      * mods\loose, merged into archives under mods\cache\loose, which is read
      * first. */
@@ -1574,12 +1838,12 @@ static void mod_packs(void)
         char roots[2048] = "", with_cache[2048];
         for (i = 0; i < n; i++) {
             char one[160];
-            snprintf(one, sizeof one, "mods\\packs\\%s\\loose;", names[i]);
+            snprintf(one, sizeof one, "mods" HOST_SEPS "packs" HOST_SEPS "%s" HOST_SEPS "loose;", names[i]);
             strncat(roots, one, sizeof roots - strlen(roots) - 1);
         }
-        strncat(roots, "mods\\loose", sizeof roots - strlen(roots) - 1);
+        strncat(roots, "mods" HOST_SEPS "loose", sizeof roots - strlen(roots) - 1);
         if (mod_loose_build(roots, overlays) > 0) {
-            snprintf(with_cache, sizeof with_cache, "mods\\cache\\loose;%s", overlays);
+            snprintf(with_cache, sizeof with_cache, "mods" HOST_SEPS "cache" HOST_SEPS "loose;%s", overlays);
             snprintf(overlays, sizeof overlays, "%s", with_cache);
         }
     }
@@ -1592,7 +1856,7 @@ static void mod_packs(void)
      * left, such as the installer's RE-Amped2 pack. Load those in place, so
      * textures drawn for a single frame -- the boot splash -- show too. */
     if (!getenv("RECOMP_TEXTURE_PACK_SYNC")
-            && GetFileAttributesA("mods\\texture_pack") == INVALID_FILE_ATTRIBUTES)
+            && !host_exists("mods" HOST_SEPS "texture_pack"))
         ini_set("RECOMP_TEXTURE_PACK_SYNC", "1");
 }
 
@@ -1624,10 +1888,37 @@ static void describe_xbe(const uint8_t *xbe, size_t size)
            size > 0x24543A && xbe[0x24543A] == 0xEB ? ", media-patched" : "");
 }
 
-/* Console entry point (for debugging -- lets you see printf output) */
+#if defined(_WIN32)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
+                   LPSTR lpCmdLine, int nCmdShow)
+{
+    (void)hInstance;
+    (void)hPrevInstance;
+    (void)lpCmdLine;
+    (void)nCmdShow;
+    amped2_setup();
+    if (amped2_load())
+        return 1;
+    return amped2_run();
+}
+#endif
+
+/* Console entry point (for debugging -- lets you see printf output). The
+ * only one on Linux and macOS, where the window needs the main thread
+ * (toolkit fb_present_sdl.c) and the game runs on another. */
 int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
-    return WinMain(GetModuleHandle(NULL), NULL, GetCommandLineA(), SW_SHOW);
+    amped2_setup();
+    if (amped2_load())
+        return 1;
+#if defined(_WIN32)
+    return amped2_run();
+#else
+    {
+        extern int xbox_HostWindowMain(int (*guest_main)(void));
+        return xbox_HostWindowMain(amped2_run);
+    }
+#endif
 }

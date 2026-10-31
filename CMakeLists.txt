@@ -56,11 +56,13 @@ set(GAME_SOURCES
     src/mod_loose.c         # loose archive entries merged at start-up
     src/lua_probe.c         # hand copies of generated functions, instrumented
     src/coverage.c          # which guessed or missing code a run reached
-    src/RE-Amped2.rc        # exe and window icon (branding/RE-Amped2.ico)
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c
 )
+if(WIN32)
+    list(APPEND GAME_SOURCES src/RE-Amped2.rc)  # exe and window icon (branding/RE-Amped2.ico)
+endif()
 
 # The recomp pipeline also generates a dispatch header and function declarations.
 # These are included by the generated .c files:
@@ -104,16 +106,38 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Windows SDK libraries needed at link time
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    d3d11
-    dxgi
-    dxguid
-    xinput
-    winmm
-    # Lets the fault handler resolve the host RIP back to the generated
-    # function's symbol, i.e. to the guest function that faulted.
-    dbghelp
-)
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        d3d11
+        dxgi
+        dxguid
+        xinput
+        winmm
+        # Lets the fault handler resolve the host RIP back to the generated
+        # function's symbol, i.e. to the guest function that faulted.
+        dbghelp
+    )
+else()
+    # The same job on Linux and macOS: export the generated functions so the
+    # fault handler's dladdr can name the one that faulted.
+    set_property(TARGET ${PROJECT_NAME} PROPERTY ENABLE_EXPORTS ON)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS} m)
+
+    # The game's own CRT, as lifted, has functions called close, read, write,
+    # lseek, isatty, tzset and fsopen (MSVC's _close and so on, underscore
+    # dropped). Windows' CRT keeps the underscore, but on Linux and macOS
+    # these are libc's names: the toolkit's close() -- and every shared
+    # library's, the symbols being exported -- would run game code. Renamed
+    # wherever the generated declarations are seen; main.c and coverage.c,
+    # which call libc's, are left alone.
+    set(AMPED2_GUEST_CRT_NAMES close read write lseek isatty tzset fsopen)
+    set(AMPED2_GUEST_CRT_RENAMES)
+    foreach(name ${AMPED2_GUEST_CRT_NAMES})
+        list(APPEND AMPED2_GUEST_CRT_RENAMES "${name}=guest_${name}")
+    endforeach()
+    set_source_files_properties(${RECOMP_GEN_SOURCES} src/recomp_manual.c src/lua_probe.c
+        PROPERTIES COMPILE_DEFINITIONS "${AMPED2_GUEST_CRT_RENAMES}")
+endif()
 
 # MSVC-specific: large address aware, increase section limit for big generated files
 if(MSVC)

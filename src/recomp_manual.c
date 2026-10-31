@@ -74,11 +74,20 @@ void amped2_diag(const char *fmt, ...)
 
 /* Timestamped event, for probes pasted into generated code: milliseconds
  * since the first event, the host thread, a tag and three values. */
+#if defined(_WIN32)
 __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void);
 __declspec(dllimport) int __stdcall QueryPerformanceCounter(long long *);
 __declspec(dllimport) int __stdcall QueryPerformanceFrequency(long long *);
 __declspec(dllimport) unsigned long __stdcall GetTickCount(void);
 __declspec(dllimport) void __stdcall Sleep(unsigned long);
+#else
+/* The toolkit's POSIX versions (win32_compat.c), whose DWORD is 32 bits. */
+uint32_t GetCurrentThreadId(void);
+int QueryPerformanceCounter(long long *);
+int QueryPerformanceFrequency(long long *);
+uint32_t GetTickCount(void);
+void Sleep(uint32_t);
+#endif
 void amped2_race(const char *tag, uint32_t a, uint32_t b, uint32_t c)
 {
     static long long f, t0;
@@ -89,7 +98,8 @@ void amped2_race(const char *tag, uint32_t a, uint32_t b, uint32_t c)
     }
     QueryPerformanceCounter(&now);
     fprintf(stderr, "[RACE] %9.3f ms t%-6lu %s %08X %08X %08X\n",
-            (double)(now - t0) * 1000.0 / (double)f, GetCurrentThreadId(), tag, a, b, c);
+            (double)(now - t0) * 1000.0 / (double)f,
+            (unsigned long)GetCurrentThreadId(), tag, a, b, c);
     fflush(stderr);
 }
 
@@ -104,13 +114,24 @@ void amped2_race(const char *tag, uint32_t a, uint32_t b, uint32_t c)
 static struct { uint32_t ptr; uint16_t site; } s_live[LIVE_SLOTS];
 static struct { uint32_t ret, news, deletes, bytes, flags; } s_site[SITE_SLOTS];
 static uint32_t s_news, s_deletes, s_unknown_deletes;
+#if defined(_MSC_VER)
 long _InterlockedExchange(long volatile *, long);
 void _mm_pause(void);
 #pragma intrinsic(_InterlockedExchange, _mm_pause)
+#define live_xchg(p, v) _InterlockedExchange((p), (v))
+#define live_pause()    _mm_pause()
+#else
+#define live_xchg(p, v) __atomic_exchange_n((p), (v), __ATOMIC_SEQ_CST)
+#if defined(__x86_64__) || defined(__i386__)
+#define live_pause()    __builtin_ia32_pause()
+#else
+#define live_pause()    ((void)0)
+#endif
+#endif
 static volatile long s_live_lock;
 
-static void live_lock(void)   { while (_InterlockedExchange(&s_live_lock, 1)) _mm_pause(); }
-static void live_unlock(void) { _InterlockedExchange(&s_live_lock, 0); }
+static void live_lock(void)   { while (live_xchg(&s_live_lock, 1)) live_pause(); }
+static void live_unlock(void) { live_xchg(&s_live_lock, 0); }
 
 static void live_report(void)
 {
@@ -1110,8 +1131,12 @@ void sub_001EDF30(void)
         if (row < AMPED2_MODS_ROWS) {
             const char *on = combo ? "1" : "0";
             amped2_ini_set("Game", k_mods_rows[row].key, on);
+#if defined(_WIN32)
             snprintf(buf, sizeof buf, "%s=%s", k_mods_rows[row].var, on);
             _putenv(buf);
+#else
+            setenv(k_mods_rows[row].var, on, 1);
+#endif
         }
     }
     SET_LO8(g_eax, 0);

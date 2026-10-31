@@ -18,11 +18,16 @@
  * archive's entries are sorted by name, ignoring case, new ones are put in
  * order; otherwise they go at the end.
  */
-#include <windows.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Windows only so far: the merge walks folders and swaps files with Win32
+ * calls. Elsewhere mod_loose_build says so and merges nothing; mod packs and
+ * texture packs still work, being paths the toolkit reads. */
+#if defined(_WIN32)
+#include <windows.h>
 
 #define LOOSE_CACHE "mods\\cache\\loose"
 #define MAX_ARCHIVES 256
@@ -545,3 +550,12 @@ int mod_loose_build(const char *loose_roots, const char *overlays)
     prune("", kept, served);
     return served;
 }
+#else
+int mod_loose_build(const char *loose_roots, const char *overlays)
+{
+    (void)loose_roots;
+    (void)overlays;
+    fprintf(stderr, "  [MODS] loose entries are not supported on this platform yet\n");
+    return 0;
+}
+#endif /* _WIN32 */
