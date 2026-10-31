@@ -137,6 +137,11 @@ else()
     endforeach()
     set_source_files_properties(${RECOMP_GEN_SOURCES} src/recomp_manual.c src/lua_probe.c
         PROPERTIES COMPILE_DEFINITIONS "${AMPED2_GUEST_CRT_RENAMES}")
+
+    # The lifted code reads guest memory through whatever type an
+    # instruction uses and relies on two's-complement wraparound, as MSVC
+    # (which never exploits either) has always compiled it.
+    target_compile_options(${PROJECT_NAME} PRIVATE -fno-strict-aliasing -fwrapv)
 endif()
 
 # MSVC-specific: large address aware, increase section limit for big generated files

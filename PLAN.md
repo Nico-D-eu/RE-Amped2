@@ -1165,15 +1165,20 @@ Windows-only.
 generated chunks compiled first time, in about 3 minutes). It boots in an
 SDL window under WSLg: the XBE loads, the kernel comes up, the USB pad
 enumerates, AC'97 and the APU registers are answered. It reads the
-archives, the music and the XACT banks. **Then DirectSound/XACT init fails
-and the title launches `Boom.xbe`** (the `[AP]` sound-heap dump just
-before), with no frame drawn yet. That is the next thing to look at. Found
-and fixed on the way (details in DEVELOPING, "Linux bring-up"):
+archives, music and XACT banks, the APU runs (about 1550 frames/s), and it
+gets as far as the boot movies (MGS, XSN, Intro) and the front end's GUI
+packages. **Drawing is the wall: 6 frames in 111 s on the software
+rasteriser**, so step 4 (the GL back end) decides whether Linux is
+playable. Found and fixed on the way (details in DEVELOPING, "Linux
+bring-up"):
 - the lifted CRT's `close`/`read`/`write`/... took over libc's names;
 - the window's GL driver took the address range the guest windows need,
   so memory is now mapped before the window opens;
 - x86-64 Linux had no decoder for trapped registers (APU, USB, AC'97);
-- a merge leftover stubbed out the SDL audio backend.
+- a merge leftover stubbed out the SDL audio backend;
+- file names are case-sensitive on Linux: the game caches
+  `z:\guipackages\...` and opens `z:\GuiPackages\...`, which failed, so
+  audio init gave up and the title launched `Boom.xbe`.
 
 Not yet: Clang, `mod_loose.c` (stubbed on POSIX), the stall snapshot,
 sound through WSLg's PulseAudio (opening the device hangs; runs use

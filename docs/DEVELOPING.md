@@ -477,9 +477,16 @@ What a Linux build needs that Windows hides:
   names and runs the same x86-64 decoder as Windows.
 - **Sound.** `apu_sdl2.c` drives SDL audio. Under WSLg, opening the
   PulseAudio device hangs; `SDL_AUDIODRIVER=dummy` gets past it (silent).
-- **Where it stands:** XACT/DirectSound init fails after the banks load
-  and the title launches `Boom.xbe` (the documented "audio init failed"
-  path), with an `[AP]` sound-heap dump just before. No frame drawn yet.
+- **Case.** FATX and NTFS ignore case; Linux does not. The game copies its
+  GUI packages to `z:\guipackages\` and opens `z:\GuiPackages\
+  PackageHierarchy.dat`. That failed, the `[AP]` dump followed and the title
+  launched `Boom.xbe` (the "audio init failed" exit). The toolkit's
+  `xbox_translate_path` now folds case on POSIX (`fold_case`, kernel_path.c).
+- **GCC.** The generated code builds with `-fno-strict-aliasing -fwrapv`,
+  the guarantees MSVC gives it implicitly.
+- **Where it stands:** boots through the movies to the front end, APU at
+  about 1550 frames/s, but the software rasteriser manages about 0.05 fps
+  (6 frames in 111 s). The GL back end is next.
 
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 
