@@ -93,7 +93,10 @@ workflow), so anyone can check where a release comes from:
   `-Unluac` to `build.ps1`).
 
 The installer comes out as a workflow artifact, with its SHA-256 in the run's
-summary. Signing through [SignPath Foundation](https://signpath.org/) is
+summary. `.github/workflows/linux.yml` packs the Linux tarball
+(`tools/linux/package.sh`, see DEVELOPING "Linux release") from the same two
+commits on the same triggers; the toolkit commit must include the Linux back
+end for that tarball to build. Signing through [SignPath Foundation](https://signpath.org/) is
 wired in and switches on when the repository variable
 `SIGNPATH_ORGANIZATION_ID` and the secret `SIGNPATH_API_TOKEN` are set; the
 project slug `RE-Amped2` and signing policy `release-signing` must match the
