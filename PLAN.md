@@ -1089,6 +1089,7 @@ Next:
 **Exit criteria**
 
 - [ ] Every 🟡 row in the README is ✅, or is listed under known issues
+      (the Linux row belongs to Phase 21)
 - [ ] A fresh install shows sharp text with the font option. With the HD
       option, ML1 uses the upscaled pack at ≥ 58 fps
 - [ ] Menu titles and icons are not stretched at 16:9 (a screenshot of
