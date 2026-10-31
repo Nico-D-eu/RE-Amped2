@@ -71,8 +71,9 @@ Windows 10 and 11 have built in) and git.
 ```
 
 It packs `obj\payload.zip` from the working trees of `amped2` (minus
-`installer\` and `.claude\`) and `..\xboxrecomp` (git-tracked plus untracked,
-not ignored, so never `game\`, `mods\`, generated code or build output),
+`installer\`, `.claude\` and `screenshots\`) and `..\xboxrecomp`
+(git-tracked plus untracked, not ignored, so never `game\`, `mods\`,
+generated code or build output),
 `tools\bin\unluac.jar` and `..\xdvdfs.exe`, then builds
 `installer\dist\RE-Amped2-Setup.exe`. Uncommitted changes are included;
 `manifest.txt` in the payload (and `install-info.txt` after an install)

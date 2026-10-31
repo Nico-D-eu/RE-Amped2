@@ -2,6 +2,12 @@
 
 **Amped 2 for Windows, rebuilt from your own disc.**
 
+[![Latest release](https://img.shields.io/github/v/release/Nico-D-eu/RE-Amped2?include_prereleases&label=download)](../../releases)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+
+![RE-Amped2 on Windows at 1080p: the title screen, the main menu, the Mods screen, the career menu and the course select](screenshots/screenshots.gif)
+
 RE-Amped2 brings **Amped 2** (Microsoft Game Studios / Indie Built, 2003, for
 the original Xbox) to Windows as a native PC game. It isn't an emulator. The
 game's own code is translated to C and compiled into a Windows program, on
@@ -14,6 +20,18 @@ up to 4K and beyond, with controller and keyboard support.
 
 **No game files are included or downloaded.** You need your own legally
 owned copy of Amped 2.
+
+### Quick start
+
+1. Make a disc image (`.iso`) of your Amped 2 disc, USA or European.
+2. Download and run **`RE-Amped2-Setup.exe`** from the
+   [Releases page](../../releases), and give it the disc image.
+3. Wait while it builds the game on your PC (10 to 35 minutes), then play
+   from the desktop shortcut.
+
+The details, and what the installer asks before it installs anything, are in
+[Getting started](#getting-started). Something not working? See
+[Known issues](#known-issues), then [tell us](#reporting-problems).
 
 ---
 
@@ -48,8 +66,9 @@ owned copy of Amped 2.
 | **Mods** | Mod packs, single-file replacements, script mods | ✅ |
 | | New characters and remixed levels | ⬜ planned |
 | **Platforms** | Windows 10 and 11 (64-bit) | ✅ |
+| | Linux | 🟡 in development: it builds and reaches the slopes from source, not ready for players yet |
+| | Steam Deck, macOS | ⬜ planned, after Linux |
 | | Xbox Series X\|S (Dev Mode) | ⬜ planned |
-| | Linux and Steam Deck | ⬜ planned |
 | | PlayStation 5 (homebrew) | ⬜ being explored |
 
 The roadmap, including the console plans, is in [PLAN.md](PLAN.md).
@@ -158,6 +177,24 @@ one of them, `re-amped2`. To make your own, see the modding sections of the
 
 ---
 
+## Known issues
+
+In the current release (0.2.1):
+
+- **The intro movie plays slowly** (at less than half speed). Press
+  **Start** (Enter on the keyboard) to skip it, or set `PlayMovies=0` in
+  `amped2.ini` to skip the intro movies altogether.
+- **Now and then the in-level music repeats the same few seconds** until the
+  next track starts. Sound effects keep working. Your `amped2.log` from such
+  a session helps.
+- **An occasional 1–2 second hitch** in a level, about once an hour.
+- **Menu pictures are stretched** in 16:9. Text is drawn at its own
+  proportions.
+- **Not checked yet:** a full career to the end, and the Legend challenges.
+  If you get that far, we'd like to hear how it went, good or bad.
+
+---
+
 ## Reporting problems
 
 Open an [issue](../../issues) and include:
@@ -191,8 +228,19 @@ and the result stays there.
 
 **Online play?** No. Xbox Live for the original Xbox shut down long ago.
 
-**Steam Deck, Linux, Xbox, PlayStation?** Planned or being explored; see
-[PLAN.md](PLAN.md), Part C.
+**Linux?** In development. The game already builds and plays from source
+on Ubuntu, but drawing, sound and pacing still need work, and there is no
+installer for it yet. Steam Deck and macOS come after it.
+
+**Xbox, PlayStation?** Planned or being explored; see [PLAN.md](PLAN.md),
+Parts C and D.
+
+**Windows says "Windows protected your PC".** The installer isn't
+code-signed yet. Choose **More info → Run anyway**, after checking the
+SHA-256 on the release page if you like.
+
+**I only have the physical disc.** You need a disc image made from it. Any
+tool that rips original Xbox discs to `.iso` or `.xiso` works.
 
 ---
 
@@ -229,7 +277,8 @@ and the result stays there.
 - This project's own code is under the **MIT licence** ([LICENSE](LICENSE)).
   Third-party components and their licences are listed in
   [NOTICE.md](NOTICE.md).
-- RE-Amped2's art was created under Microsoft's
+- RE-Amped2's art and the screenshots in this README were created under
+  Microsoft's
   ["Game Content Usage Rules"](https://www.xbox.com/en-US/developers/rules)
-  using assets from Amped 2, and it is not endorsed by or affiliated with
-  Microsoft.
+  using assets from Amped 2, and they are not endorsed by or affiliated
+  with Microsoft. The screenshots are not part of any download.

@@ -71,7 +71,7 @@ try {
     }
 
     foreach ($rel in Get-TreeFiles $Project) {
-        if ($rel -like 'installer/*' -or $rel -like '.claude/*') { continue }   # not needed to build the game
+        if ($rel -like 'installer/*' -or $rel -like '.claude/*' -or $rel -like 'screenshots/*') { continue }   # not needed to build the game
         Add-Entry (Join-Path $Project $rel) "amped2/$rel"
     }
     Add-Entry $Unluac 'amped2/tools/bin/unluac.jar'
