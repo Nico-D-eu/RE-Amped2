@@ -1167,10 +1167,20 @@ SDL window under WSLg: the XBE loads, the kernel comes up, the USB pad
 enumerates, AC'97 and the APU registers are answered. It reads the
 archives, music and XACT banks, the APU runs (about 1550 frames/s), and it
 gets as far as the boot movies (MGS, XSN, Intro) and the front end's GUI
-packages. **Drawing is the wall: 6 frames in 111 s on the software
-rasteriser**, so step 4 (the GL back end) decides whether Linux is
-playable. Found and fixed on the way (details in DEVELOPING, "Linux
-bring-up"):
+packages.
+
+**Step 4 started (same day): the OpenGL back end draws.** The shader
+generator emits GLSL 3.30 beside HLSL (HLSL byte-identical, checked on 801
+random shaders; all GLSL compiles), and the toolkit's `nv2a_gl.c` takes
+the executor's draws on Linux. With `GALLIUM_DRIVER=d3d12` WSLg runs it on
+the RTX 2070. The title screen draws correctly at 1280x720 and about
+58 fps, the main menu with its 3D rider at about 30 fps; the software
+rasteriser managed 0.45 fps on the same screens. Now the default on Linux.
+Missing in the GL back end: volume textures, shadow maps, CPU-written
+pixels under a surface, texture packs, visibility counts (lens flares),
+anisotropy, render scale, the video overlay (movies), and speed (the
+readback at every flip is synchronous). Found and fixed on the way to
+booting (details in DEVELOPING, "Linux bring-up"):
 - the lifted CRT's `close`/`read`/`write`/... took over libc's names;
 - the window's GL driver took the address range the guest windows need,
   so memory is now mapped before the window opens;

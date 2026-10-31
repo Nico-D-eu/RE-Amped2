@@ -484,9 +484,18 @@ What a Linux build needs that Windows hides:
   `xbox_translate_path` now folds case on POSIX (`fold_case`, kernel_path.c).
 - **GCC.** The generated code builds with `-fno-strict-aliasing -fwrapv`,
   the guarantees MSVC gives it implicitly.
-- **Where it stands:** boots through the movies to the front end, APU at
-  about 1550 frames/s, but the software rasteriser manages about 0.05 fps
-  (6 frames in 111 s). The GL back end is next.
+- **GPU.** The toolkit's `nv2a_gl.c` (OpenGL 3.3, shaders from
+  `nv2a_glsl_*`) is the default off Windows (`RECOMP_GPU=gl`). Under WSL
+  Mesa picks llvmpipe unless `GALLIUM_DRIVER=d3d12`, which main.c sets
+  when `/dev/dxg` exists. `RECOMP_GL_SHOT=<n>` writes every n-th frame as
+  `gl_shot_<frame>.ppm` in the working directory.
+- **Movies take minutes at boot.** With them on, the first two minutes are
+  the three boot movies (overlay, few flips): `AMPED2_PLAY_MOVIES=0` for
+  quick checks. That was the "0.05 fps" first measured; with movies off
+  the software rasteriser drew the menus at about 0.45 fps.
+- **Where it stands:** title screen at about 58 fps and main menu (3D
+  rider) at about 30 fps, drawn correctly; see PLAN Phase 21 for what the
+  GL back end still lacks.
 
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 

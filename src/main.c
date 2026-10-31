@@ -1412,13 +1412,19 @@ static void amped2_setup(void)
         host_putenv("RECOMP_FB_WINDOW=1");
     /* Draw on the GPU (the toolkit's D3D11 backend, nv2a_d3d11.c): about 46
      * fps in game where the software rasteriser managed 1.6.
-     * RECOMP_GPU=software keeps the software path. Elsewhere the software
-     * path is all there is until an OpenGL back end exists (PLAN Phase 21). */
+     * RECOMP_GPU=software keeps the software path. Elsewhere the toolkit's
+     * OpenGL back end (nv2a_gl.c), about 58 fps on the title screen where the
+     * software path managed 0.45. */
     if (!getenv("RECOMP_GPU"))
 #if defined(_WIN32)
         host_putenv("RECOMP_GPU=d3d11");
 #else
-        host_putenv("RECOMP_GPU=software");
+        host_putenv("RECOMP_GPU=gl");
+    /* Under WSL, Mesa picks llvmpipe (the CPU) unless told to use the GPU
+     * through Direct3D 12; /dev/dxg is WSL's GPU device. Never set on a
+     * Linux with its own GPU driver. */
+    if (!getenv("GALLIUM_DRIVER") && host_exists("/dev/dxg"))
+        host_putenv("GALLIUM_DRIVER=d3d12");
 #endif
     /* Input: the emulated USB gamepad, fed by a real XInput pad on the PC or,
      * with the game window focused, the keyboard (Enter = START, arrows =
