@@ -5,6 +5,7 @@
 [![Latest release](https://img.shields.io/github/v/release/Nico-D-eu/RE-Amped2?include_prereleases&label=download)](../../releases)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 ![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-optional-FFDD00?logo=buymeacoffee&logoColor=black)](#support-the-project)
 
 ![RE-Amped2 on Windows at 1080p: the title screen, the main menu, the Mods screen, the career menu and the course select](screenshots/screenshots.gif)
 
@@ -32,6 +33,20 @@ owned copy of Amped 2.
 The details, and what the installer asks before it installs anything, are in
 [Getting started](#getting-started). Something not working? See
 [Known issues](#known-issues), then [tell us](#reporting-problems).
+
+RE-Amped2 is also listed in RecompLauncher:
+
+<p>
+  <a href="https://recomplauncher.com/game/re-amped2"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://recomplauncher.com/assets/press/launcher/badge-light.svg">
+    <img alt="Get it on RecompLauncher" src="https://recomplauncher.com/assets/press/launcher/badge-dark.svg" height="56">
+  </picture></a>
+  &nbsp;&nbsp;
+  <a href="https://recompstore.com/dev/nico-d-eu"><picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://recompstore.com/assets/press/verified-light.svg">
+    <img alt="Verified developer on RecompStore" src="https://recompstore.com/assets/press/verified-dark.svg" height="56">
+  </picture></a>
+</p>
 
 ---
 
@@ -254,6 +269,13 @@ tool that rips original Xbox discs to `.iso` or `.xiso` works.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to help. The one rule is never to
   submit game files or anything made from them.
 - [AGENTS.md](AGENTS.md): rules for AI coding agents.
+
+## Support the project
+
+RE-Amped2 is free, and it stays free. If you'd like to say thanks, you can
+[buy me a coffee](https://buymeacoffee.com/nico.d). It's entirely optional
+and unlocks nothing: every player gets the same game, the same releases and
+the same help. Bug reports and play-testing help the project just as much.
 
 ## Credits
 

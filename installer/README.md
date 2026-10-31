@@ -71,12 +71,33 @@ Windows 10 and 11 have built in) and git.
 ```
 
 It packs `obj\payload.zip` from the working trees of `amped2` (minus
-`installer\` and `.claude\`) and `..\xboxrecomp` (git-tracked plus untracked,
+`installer\`, `.claude\` and `screenshots\`) and `..\xboxrecomp` (git-tracked plus untracked,
 not ignored, so never `game\`, `mods\`, generated code or build output),
 `tools\bin\unluac.jar` and `..\xdvdfs.exe`, then builds
 `installer\dist\RE-Amped2-Setup.exe`. Uncommitted changes are included;
 `manifest.txt` in the payload (and `install-info.txt` after an install)
 records the commits with `+modified`. Commit both repos first for a release.
+
+### Release builds on GitHub
+
+`.github/workflows/installer.yml` builds the same installer from the public
+repositories, on every `v*` tag or by hand (Actions › Installer › Run
+workflow), so anyone can check where a release comes from:
+
+- this repository at the tag;
+- the toolkit fork at the full commit in `toolkit.ref`. Push that commit
+  to `Nico-D-eu/xboxrecomp` and update the file before tagging;
+- xdvdfs and unluac from `fetch-tools.ps1`, which downloads fixed versions
+  and checks their SHA-256 (also handy locally:
+  `.\installer\fetch-tools.ps1 -OutDir ..\tools`, then pass `-Xdvdfs` and
+  `-Unluac` to `build.ps1`).
+
+The installer comes out as a workflow artifact, with its SHA-256 in the run's
+summary. Signing through [SignPath Foundation](https://signpath.org/) is
+wired in and switches on when the repository variable
+`SIGNPATH_ORGANIZATION_ID` and the secret `SIGNPATH_API_TOKEN` are set; the
+project slug `RE-Amped2` and signing policy `release-signing` must match the
+SignPath project. Publishing the release stays manual.
 
 The icon (the installer, its window, the installed `RE-Amped2.ico` and the
 desktop shortcut) is `..\branding\RE-Amped2.ico`, the same file

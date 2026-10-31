@@ -1,0 +1,95 @@
+# Builds RE-Amped2-Setup.exe from the public repositories, so anyone can
+# check that a release installer comes from this source and nothing else.
+#
+# - This repository at the tag (or the branch it was started on).
+# - The toolkit fork, Nico-D-eu/xboxrecomp, at the commit in
+#   installer/toolkit.ref. Push that commit to the fork before tagging.
+# - xdvdfs and unluac, downloaded by installer/fetch-tools.ps1 and checked
+#   against fixed SHA-256 hashes.
+#
+# The result is a workflow artifact; publishing a release stays manual.
+# Signing through SignPath Foundation turns on once the repository variable
+# SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN are set.
+
+name: Installer
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out RE-Amped2
+        uses: actions/checkout@v4
+        with:
+          path: amped2
+          persist-credentials: false
+
+      - name: Read the toolkit commit
+        id: toolkit
+        shell: powershell
+        run: |
+          $sha = (Get-Content amped2\installer\toolkit.ref -TotalCount 1).Trim()
+          if ($sha -notmatch '^[0-9a-f]{40}$') { throw "toolkit.ref must hold a full commit hash, not '$sha'" }
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - name: Check out the toolkit
+        uses: actions/checkout@v4
+        with:
+          repository: Nico-D-eu/xboxrecomp
+          ref: ${{ steps.toolkit.outputs.sha }}
+          path: xboxrecomp
+          persist-credentials: false
+
+      - name: Download xdvdfs and unluac
+        shell: powershell
+        run: amped2\installer\fetch-tools.ps1 -OutDir "$env:RUNNER_TEMP\tools"
+
+      - name: Build the installer
+        shell: powershell
+        run: |
+          amped2\installer\build.ps1 -Xdvdfs "$env:RUNNER_TEMP\tools\xdvdfs.exe" -Unluac "$env:RUNNER_TEMP\tools\unluac.jar"
+          $hash = (Get-FileHash amped2\installer\dist\RE-Amped2-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "Unsigned installer, SHA-256 ``$hash``" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload the unsigned installer
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Amped2-Setup-unsigned
+          path: amped2/installer/dist/RE-Amped2-Setup.exe
+          if-no-files-found: error
+
+      - name: Sign with SignPath
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: RE-Amped2
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Hash the signed installer
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: powershell
+        run: |
+          $hash = (Get-FileHash signed\RE-Amped2-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *RE-Amped2-Setup.exe" | Set-Content -Encoding ascii signed\SHA256SUMS.txt
+          "Signed installer, SHA-256 ``$hash`` (this one goes on the release page)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload the signed installer
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Amped2-Setup
+          path: signed/
+          if-no-files-found: error
