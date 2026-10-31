@@ -1193,9 +1193,10 @@ installer's payload (15 MB, no game data), and its `install.sh` builds the
 game from the player's disc: a clean install from the tarball took 10.5 min
 under WSL and the result boots with sound. The title "unpaced after long
 uptime" was a missing flip pacer in the GL back end, not uptime: fixed, a
-steady 60. Open in the GL back end:
+steady 60. Visibility counts (lens flares, floodlight glows) are in, as
+GL occlusion queries. Open in the GL back end:
 volume textures, CPU-written pixels under a surface, texture packs,
-visibility counts (lens flares), anisotropy, render scale. Found and fixed on the way to
+anisotropy, render scale. Found and fixed on the way to
 booting (details in DEVELOPING, "Linux bring-up"):
 - the lifted CRT's `close`/`read`/`write`/... took over libc's names;
 - the window's GL driver took the address range the guest windows need,

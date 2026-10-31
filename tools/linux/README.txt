@@ -12,7 +12,7 @@ Early access
   the game again.
 
   Not on Linux yet: the RE-Amped2 menus and look, texture packs and other
-  mods, lens flares. The game draws with OpenGL 3.3 or newer.
+  mods. The game draws with OpenGL 3.3 or newer.
 
 Controls
   An Xbox-style controller works out of the box.

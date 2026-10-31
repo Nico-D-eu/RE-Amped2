@@ -518,6 +518,11 @@ What a Linux build needs that Windows hides:
 - **Where it stands:** title a steady 60 fps, ML1 in game 44-50 with the
   render thread (pad script `tools/suite/pads/ml1.pad` works on Linux too:
   `RECOMP_PAD_SCRIPT=@<path>`). See PLAN Phase 21 for what is missing.
+- **Visibility counts** (floodlight glows, lens flares) are GL
+  `GL_SAMPLES_PASSED` queries, ported from the D3D11 back end (see
+  "Lights" below for how the game uses them). `RECOMP_VIS_TRACE=1` prints
+  the same tally on both: on ML1 with `ml1.pad` most reports see nothing
+  on either platform.
 
 ### Linux release (2026-10-31)
 
