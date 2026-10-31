@@ -556,8 +556,17 @@ code or data in it.
   minus `menu-mod-only.txt`'s keys; `--no-look` leaves it out and an
   update then removes it. The GL back end reads packs with the D3D11 keys
   (toolkit `fedcfd2`); the look's BC7 files need GL 4.2.
-- Not in the Linux release yet: the menu mod (no Java or unluac in the
-  installer) and loose archive entries (`mod_loose.c` is stubbed on POSIX).
+- The menu mod is built as on Windows (`tools/mods/menus.py`, unchanged)
+  after the compile, with numpy and pillow in the venv, Java on PATH and
+  unluac in `tools/bin` (`package.sh` downloads the same build as
+  `fetch-tools.ps1`, SHA-256 checked). Java is optional: the tool check
+  offers the package command, and without Java the menus are left out
+  (`--no-menus` does it on purpose). With the menus in, the look keeps
+  the controller pictures. The menus and mod packs need
+  `RECOMP_OVERLAY_DIR`, which the POSIX path code did not read until
+  toolkit `45fabe7`.
+- Not in the Linux release yet: loose archive entries (`mod_loose.c` is
+  stubbed on POSIX).
 
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 

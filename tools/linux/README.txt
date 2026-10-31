@@ -11,9 +11,8 @@ Early access
   this folder; it is rewritten on every start, so copy it before starting
   the game again.
 
-  Not on Linux yet: the RE-Amped2 menus, and mods that replace single
-  files inside the game's archives ("loose" files). Texture packs work.
-  The game draws with OpenGL 3.3 or newer; packs made of BC7 textures
+  Not on Linux yet: mods that replace single files inside the game's
+  archives ("loose" files). Mod packs and texture packs work. The game draws with OpenGL 3.3 or newer; packs made of BC7 textures
   (the RE-Amped2 look is) need OpenGL 4.2.
 
 Controls
@@ -25,6 +24,10 @@ Controls
   F3 shows the frame rate.
 
 Settings
+  Options and Mods > Game Options has WINDOW and RESOLUTION (with the
+  RE-Amped2 menus), and Options and Mods > Mods turns the mod packs and
+  textures on or off. The RE-Amped2 menus are built into mods/build/game
+  (they need Java while installing; --no-menus leaves them out).
   amped2.ini in this folder holds every setting; it is created the first
   time the game starts. Remove the ; in front of a line to use it.
   The RE-Amped2 look (logo, splash, loading screen) is the mod pack in

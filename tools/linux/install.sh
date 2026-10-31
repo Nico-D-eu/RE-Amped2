@@ -9,10 +9,12 @@
 #   --no-menu-entry   don't add RE-Amped2 to the applications menu
 #   --no-look         leave out the RE-Amped2 look (logo, splash, loading
 #                     screen); an update removes it
+#   --no-menus        leave out the RE-Amped2 menus (the menu mod, which
+#                     needs Java); an update removes them
 #   --keep-temp       keep INSTALL_DIR/_install_temp (sources and build)
 #
 # Stages as on Windows: build tools, disc, recompiler, translate, compile,
-# finish. Saves in INSTALL_DIR/game/UDATA survive a reinstall. The work
+# menu mod, finish (with the look). Saves in INSTALL_DIR/game/UDATA survive a reinstall. The work
 # happens in INSTALL_DIR/_install_temp; the full log is INSTALL_DIR/install.log.
 set -euo pipefail
 
@@ -20,14 +22,16 @@ TITLE_ID=4D530041
 
 MENU_ENTRY=1
 LOOK=1
+MENUS=1
 KEEP_TEMP=0
 ARGS=()
 for a in "$@"; do
     case "$a" in
         --no-menu-entry) MENU_ENTRY=0 ;;
         --no-look) LOOK=0 ;;
+        --no-menus) MENUS=0 ;;
         --keep-temp) KEEP_TEMP=1 ;;
-        -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
         -*) echo "install.sh: unknown option $a" >&2; exit 2 ;;
         *) ARGS+=("$a") ;;
     esac
@@ -114,6 +118,27 @@ if [ ${#missing[@]} -gt 0 ]; then
 fi
 say "Compiler: $(cc --version | head -1)"
 say "CMake:    $(cmake --version | head -1)"
+# Java only for the RE-Amped2 menus (unluac decompiles the game's Lua), so
+# without it the game is built and the menus are left out.
+if [ "$MENUS" = 1 ] && ! command -v java >/dev/null; then
+    . /etc/os-release 2>/dev/null || true
+    case " ${ID:-} ${ID_LIKE:-} " in
+        *" debian "*|*" ubuntu "*) jcmd="sudo apt-get install -y default-jre-headless" ;;
+        *" arch "*) jcmd="sudo pacman -S --needed jre-openjdk-headless" ;;
+        *" fedora "*|*" rhel "*) jcmd="sudo dnf install -y java-21-openjdk-headless" ;;
+        *) jcmd="" ;;
+    esac
+    say "The RE-Amped2 menus need Java, which is not installed."
+    if [ -n "$jcmd" ] && [ -t 0 ]; then
+        say "  $jcmd"
+        read -r -p "Install it now (asks for your password)? [y/N] " yn
+        if [[ "$yn" =~ ^[Yy] ]]; then $jcmd 2>&1 | tee -a "$LOG" || true; fi
+    fi
+    if ! command -v java >/dev/null; then
+        MENUS=0
+        say "Leaving the RE-Amped2 menus out; install Java and run this again to add them."
+    fi
+fi
 
 # ── Disc ──────────────────────────────────────────────────────────────
 stage "Disc"
@@ -169,6 +194,26 @@ logged cmake -S "$WORK/src/amped2" -B "$WORK/build" "${gen[@]}" -DCMAKE_BUILD_TY
     fail "CMake could not configure the build."
 logged cmake --build "$WORK/build" --parallel "$jobs" || fail "the compile stopped."
 
+# ── Menu mod ──────────────────────────────────────────────────────────
+# tools/mods/menus.py edits the player's own GUI archives into
+# mods/build/game, which the game reads over game/. A failure here only
+# leaves the menus out, as on Windows.
+MENUS_OK=0
+rm -rf "$DEST/mods/build/game"
+if [ "$MENUS" = 1 ]; then
+    stage "RE-Amped2 menus"
+    if logged "$WORK/venv/bin/pip" install --disable-pip-version-check numpy pillow &&
+            (cd "$WORK/src/amped2" && logged "$WORK/venv/bin/python" tools/mods/menus.py) &&
+            [ -d "$WORK/src/amped2/mods/build/game" ]; then
+        mkdir -p "$DEST/mods/build"
+        cp -r "$WORK/src/amped2/mods/build/game" "$DEST/mods/build/"
+        MENUS_OK=1
+        say "Added the RE-Amped2 menus (mods/build/game)."
+    else
+        say "The RE-Amped2 menus could not be built and are left out (details in $LOG)."
+    fi
+fi
+
 # ── Finish ────────────────────────────────────────────────────────────
 stage "Finish"
 install -m 755 "$WORK/build/RE-Amped2" "$DEST/RE-Amped2"
@@ -182,17 +227,18 @@ lic xboxrecomp/LICENSE xboxrecomp-LICENSE.txt
 lic xboxrecomp/NOTICE xboxrecomp-NOTICE.txt
 lic xboxrecomp/LICENSES/LGPL-2.1.txt LGPL-2.1.txt
 lic amped2/licenses/xdvdfs-LICENSE.txt xdvdfs-LICENSE.txt
+lic amped2/licenses/unluac-LICENSE.txt unluac-LICENSE.txt
 # The RE-Amped2 look, as the Windows installer adds it: branding/pack's
 # textures (RE-Amped2 art only, keyed by the originals' hashes) as the mod
 # pack mods/packs/re-amped2, first in mods/mods.json; other packs are kept.
 # The loading screen's controller pictures go only with their labels, which
-# the menu mod blanks, and Linux has no menu mod yet (menu-mod-only.txt).
+# the menu mod blanks (menu-mod-only.txt).
 rm -rf "$DEST/mods/packs/re-amped2"
 if [ "$LOOK" = 1 ]; then
     mkdir -p "$DEST/mods/packs/re-amped2"
     cp -r "$PAYLOAD/amped2/branding/pack/textures" "$DEST/mods/packs/re-amped2/"
     only="$PAYLOAD/amped2/branding/pack/menu-mod-only.txt"
-    if [ -f "$only" ]; then
+    if [ "$MENUS_OK" = 0 ] && [ -f "$only" ]; then
         while IFS= read -r key; do
             key=$(echo "$key" | tr -d '[:space:]')
             if [ -n "$key" ]; then rm -f "$DEST/mods/packs/re-amped2/textures/$key.dds"; fi

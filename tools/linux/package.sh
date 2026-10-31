@@ -2,12 +2,12 @@
 # package.sh - Pack the Linux release: RE-Amped2-<version>-linux.tar.gz in
 # installer/dist, the counterpart of installer/build.ps1's payload.
 #
-#   tools/linux/package.sh [--xdvdfs PATH]
+#   tools/linux/package.sh [--xdvdfs PATH] [--unluac PATH]
 #
 # The tarball holds the working trees of amped2 (minus installer/, .claude/,
 # screenshots/) and ../xboxrecomp (git-tracked plus untracked, not ignored,
 # so never game/, mods/, generated code or build output), xdvdfs for Linux
-# (downloaded and checked against its SHA-256 unless --xdvdfs is given), the
+# and unluac (downloaded and checked against their SHA-256 unless given), the
 # icon as a PNG, manifest.txt with both repos' commits, and install.sh at the
 # top. Uncommitted changes are included and marked +modified in the
 # manifest; commit both repos first for a release. The version is the
@@ -15,9 +15,11 @@
 set -euo pipefail
 
 XDVDFS=''
+UNLUAC=''
 while [ $# -gt 0 ]; do
     case "$1" in
         --xdvdfs) XDVDFS="$2"; shift 2 ;;
+        --unluac) UNLUAC="$2"; shift 2 ;;
         *) echo "package.sh: unknown argument $1" >&2; exit 2 ;;
     esac
 done
@@ -64,6 +66,19 @@ copy_tree() {
 copy_tree "$PROJECT" "$ROOT/amped2" installer .claude screenshots
 copy_tree "$TOOLKIT" "$ROOT/xboxrecomp"
 
+# unluac 2025-12-23 (MIT), for the menu mod; the build installer/fetch-tools
+# .ps1 takes, where build.ps1's payload puts it.
+UNLUAC_URL=https://downloads.sourceforge.net/project/unluac/Unstable/unluac_2025_12_23.jar
+UNLUAC_SHA=98be0fa84ac73ca66dce2842a2e4512226f4c611b6500dc96415571fc5538fcc
+if [ -z "$UNLUAC" ]; then
+    curl -fsSL -o "$STAGE/unluac.jar" "$UNLUAC_URL"
+    UNLUAC="$STAGE/unluac.jar"
+fi
+echo "$UNLUAC_SHA  $UNLUAC" | sha256sum -c --quiet ||
+    { echo "$UNLUAC is not the expected unluac build" >&2; exit 1; }
+mkdir -p "$ROOT/amped2/tools/bin"
+install -m 644 "$UNLUAC" "$ROOT/amped2/tools/bin/unluac.jar"
+
 describe() {
     local c; c=$(git -C "$1" rev-parse HEAD)
     # autocrlf as the Windows checkout has it, or every file reads as changed.
@@ -76,6 +91,7 @@ describe() {
     echo "amped2     $(describe "$PROJECT")"
     echo "xboxrecomp $(describe "$TOOLKIT")"
     echo "xdvdfs     0.8.3"
+    echo "unluac     2025-12-23"
 } > "$ROOT/manifest.txt"
 
 # The icon's largest image, for the applications menu (Vista-style ICOs keep
@@ -112,8 +128,9 @@ this PC from your own Amped 2 disc image (USA or Europe/Australia):
   ./install.sh "Amped 2.iso" ~/somewhere/else
 
 It needs a C compiler, CMake, Ninja, pkg-config, Python 3 with venv and the
-SDL2, libepoxy and OpenSSL headers, and offers to install what is missing
-(apt, pacman or dnf). It downloads one Python package (capstone). The build
+SDL2, libepoxy and OpenSSL headers, plus Java for the RE-Amped2 menus, and
+offers to install what is missing (apt, pacman or dnf). It downloads three
+Python packages (capstone; numpy and pillow for the menus). The build
 takes 10-30 minutes and about 4 GB of disk while it runs.
 
 Saves in INSTALL_DIR/game/UDATA are kept when you install again.
