@@ -446,6 +446,69 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
 
+### The slow intro movie (2026-10-31, cause narrowed, not fixed)
+
+Since the v0.16 merge, `Movies\Intro.xmv` plays at about 0.4x. It is
+60.9 s long (1801 frames at 29.6 fps; the header and the audio track
+agree). The suite's movie case measures it from the file's open to the
+front-end boarder load:
+
+| Build | Intro to front end |
+|---|---|
+| Pre-sync `RE-Amped2.base.exe` | 79 s |
+| First merged `.cand` | 153 s |
+| HEAD | 152–237 s |
+| HEAD with `RECOMP_VBLANK=paced` | **60.8 s** |
+
+MGS and XSN play at the right speed. What was measured:
+
+- **The movie clock is fine.** XMV's clock is D3D's vblank count
+  (`device + 0x1DD8`, read via GetDisplayFieldStatus `0x0031AE50`), less
+  its start at `decoder + 0xB8`. It advances at about 57 a second on both
+  builds.
+- **The audio plays in real time.** It ends about 63–70 s after the
+  intro starts while the picture plays on, so the audio does not pace the
+  picture.
+- **The data arrives.** The reads (`0x00253F0B`) are synchronous and only
+  follow consumption.
+- **The decoder is neither CPU-bound nor short of packets.**
+  `AMPED2_XMV_STATS=1` prints a line a second from the GetNextFrame
+  wrapper (`0x002CDE60`). Up to 12 s behind its clock, about 55 of 62
+  calls return "no frame". The calls take 1–3 ms each, about 15% of the
+  main thread, and few have a packet request pending.
+- **Where the main thread sleeps.** The title's movie loop (`sub_00150FF0`)
+  calls GetNextFrame, UpdateOverlay (`0x00329420`), then
+  BlockUntilVerticalBlank (`0x0031AE90`, ours). It sleeps 75–86% of the
+  time in the vblank wait. The decoding (`sub_002CFFBE` and below) runs
+  inside GetNextFrame on the main thread. Right after it, GetNextFrame
+  calls DirectSound (`0x002906EE`, `0x002923BF`, `0x002904E3`,
+  `0x0028ED0A`, `0x00290723`).
+- **It is the timer loop.** `RECOMP_VBLANK=paced` or
+  `RECOMP_DISPATCH_GATE=1` (both run upstream's `kernel_timer_loop_ns`
+  instead of our `kernel_timer_loop_default`) play the intro in real time.
+- **Ruled out, one at a time in our loop:**
+  - `RECOMP_DPC_REMOVE=0`, `RECOMP_DPC_CS_KEEP_LOCK=1`;
+  - kernel timers on the performance counter instead of GetTickCount64;
+  - coalescing a vblank whose predecessor is unacknowledged, and honouring
+    `PMC_INTR_EN_0`;
+  - waking the loop when a DPC is queued.
+
+  `RECOMP_DISPATCH_LOCK=0` made it worse (no frames at all).
+- **Unchanged across the merge:**
+  - the vblank tick and its ISR call;
+  - the field pin (port `0x80C0`) once vblanks run;
+  - the TSC scaling and `qemu_clock_get_ns`;
+  - KeTickCount and KeInterruptTime;
+  - the async-handle registration on open.
+
+What paced mode costs, from one suite pass (`diag/suite-2026-10-31_1001`):
+- no `[HEALTH]` line, which only our loop prints;
+- a one-off 22 MB step in ml1's memory at about 130 s;
+- frame rate as before.
+
+It also replaces the DPC and dispatch-lock scheme that the audio fixes of
+2026-10-02 and 2026-10-30 were tuned on. So it is not the default yet.
+
 ### XACT, DirectSound and the music dropout (2026-10-30)
 
 Two intermittent audio faults, both older than the v0.16 toolkit sync:

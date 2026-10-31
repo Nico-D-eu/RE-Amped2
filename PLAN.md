@@ -953,6 +953,9 @@ Found by the suite:
 - **The intro movie plays at about 0.4x since the v0.16 merge.** It takes
   152–237 s from the intro to the front end, against 79 s before the sync.
   `Intro.xmv` is 60.9 s. Marked known in the movie case; standing lane.
+  Narrowed on 2026-10-31 (docs/DEVELOPING.md "The slow intro movie"): our
+  default timer loop. Upstream's paced loop (`RECOMP_VBLANK=paced`) plays
+  it in 60.8 s, but replaces the loop the audio fixes were tuned on.
 - **An intermittent stutter:** 1 s bursts of 33–54 ms late frames every
   10–20 s, all through a run, with the render thread idle. Seen in 2 of
   about 12 riding runs (ml1 and reload3); `base.exe` and `.fix2` had none
