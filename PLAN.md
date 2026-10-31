@@ -1176,10 +1176,14 @@ the executor's draws on Linux. With `GALLIUM_DRIVER=d3d12` WSLg runs it on
 the RTX 2070. The title screen draws correctly at 1280x720 and about
 58 fps, the main menu with its 3D rider at about 30 fps; the software
 rasteriser managed 0.45 fps on the same screens. Now the default on Linux.
-Missing in the GL back end: volume textures, shadow maps, CPU-written
-pixels under a surface, texture packs, visibility counts (lens flares),
-anisotropy, render scale, the video overlay (movies), and speed (the
-readback at every flip is synchronous). Found and fixed on the way to
+**In game (ML1 with the suite's pad script): drawn correctly at a steady
+30 fps** after the speed work (persistent streaming rings, asynchronous
+readback; 5 fps before). The GL work is about 21 ms a frame, so the title
+halves to 30; the index section (about 6.7 ms, probably fence waits) is
+the first place to look for the 60. Missing in the GL back end: volume
+textures, shadow maps, CPU-written pixels under a surface, texture packs,
+visibility counts (lens flares), anisotropy, render scale, the video
+overlay (movies). Found and fixed on the way to
 booting (details in DEVELOPING, "Linux bring-up"):
 - the lifted CRT's `close`/`read`/`write`/... took over libc's names;
 - the window's GL driver took the address range the guest windows need,

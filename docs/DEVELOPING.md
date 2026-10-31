@@ -493,9 +493,14 @@ What a Linux build needs that Windows hides:
   the three boot movies (overlay, few flips): `AMPED2_PLAY_MOVIES=0` for
   quick checks. That was the "0.05 fps" first measured; with movies off
   the software rasteriser drew the menus at about 0.45 fps.
-- **Where it stands:** title screen at about 58 fps and main menu (3D
-  rider) at about 30 fps, drawn correctly; see PLAN Phase 21 for what the
-  GL back end still lacks.
+- **GL speed.** `RECOMP_GL_PROFILE=1` adds the draw split into sections
+  to the `[GL]` report (prepare, targets, vertices, indices, uniforms,
+  textures, state, draw call; ms per frame). Under Mesa's d3d12 driver a
+  buffer re-specified or mapped per draw costs 60-120 us, so the back end
+  streams through persistently mapped rings; keep it that way.
+- **Where it stands:** title about 58 fps, main menu about 30, ML1 in game
+  a steady 30 (pad script `tools/suite/pads/ml1.pad` works on Linux too:
+  `RECOMP_PAD_SCRIPT=@<path>`). See PLAN Phase 21 for what is missing.
 
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 
