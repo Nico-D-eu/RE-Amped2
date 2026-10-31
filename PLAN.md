@@ -1210,7 +1210,7 @@ booting (details in DEVELOPING, "Linux bring-up"):
   `z:\guipackages\...` and opens `z:\GuiPackages\...`, which failed, so
   audio init gave up and the title launched `Boom.xbe`.
 
-Not yet: Clang, `mod_loose.c` (stubbed on POSIX), the stall snapshot.
+Not yet: Clang, the stall snapshot.
 
 1. **Build environment.**
    - WSL2 with Ubuntu 24.04: WSLg gives a window, the GPU and sound. The
@@ -1250,10 +1250,9 @@ Not yet: Clang, `mod_loose.c` (stubbed on POSIX), the stall snapshot.
      runs `tools/linux/regen.sh` (`regen.ps1` in bash), then the build.
    - `tools/linux/package.sh`: the tarball of the sources and xdvdfs. No
      game data, as always.
-   - Done since: the RE-Amped2 look and menus, mod-pack overlays on
-     POSIX, and `.github/workflows/linux.yml`.
-   - Still to do: loose archive entries (`mod_loose.c`) on POSIX, and a
-     test on a real Linux PC (only WSL so far).
+   - Done since: the RE-Amped2 look and menus, mod-pack overlays and
+     loose archive entries on POSIX, and `.github/workflows/linux.yml`.
+   - Still to do: a test on a real Linux PC (only WSL so far).
 7. **The suite on Linux.** `suite.ps1` and `diag.ps1` under PowerShell 7,
    with `-Samples` via `/proc`.
 

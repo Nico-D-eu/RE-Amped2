@@ -22,14 +22,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-/* Windows only so far: the merge walks folders and swaps files with Win32
- * calls. Elsewhere mod_loose_build says so and merges nothing; mod packs and
- * texture packs still work, being paths the toolkit reads. */
-#if defined(_WIN32)
-#include <windows.h>
+#include "host.h"
 
-#define LOOSE_CACHE "mods\\cache\\loose"
+#if !defined(_WIN32)
+#include <dirent.h>
+#ifndef MAX_PATH
+#define MAX_PATH 1024
+#endif
+#define _stricmp strcasecmp
+#endif
+
+#define LOOSE_CACHE HOST_PATH3("mods", "cache", "loose")
 #define MAX_ARCHIVES 256
 
 static const char *const k_archive_exts[] = { ".gfx", ".res", ".rui", ".ruirr" };
@@ -73,6 +78,9 @@ static int is_archive_name(const char *name)
     return 0;
 }
 
+/* ---- the host's files and folders --------------------------------------- */
+
+#if defined(_WIN32)
 static int file_info(const char *path, uint64_t *size, uint64_t *mtime)
 {
     WIN32_FILE_ATTRIBUTE_DATA a;
@@ -90,15 +98,167 @@ static int is_dir(const char *path)
     return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+static void make_dir(const char *path) { CreateDirectoryA(path, NULL); }
+
+/* Replace `to` with `from` in one step. */
+static int replace_file(const char *from, const char *to)
+{
+    return MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING) != 0;
+}
+
+static unsigned long now_ms(void) { return GetTickCount(); }
+
+/* One folder's entries, "." and ".." left out. */
+typedef struct {
+    HANDLE h;
+    WIN32_FIND_DATAA fd;
+    int first;
+} DirIter;
+
+static int dir_open(DirIter *it, const char *dir)
+{
+    char pat[MAX_PATH];
+    snprintf(pat, sizeof pat, "%s\\*", dir);
+    it->h = FindFirstFileA(pat, &it->fd);
+    it->first = 1;
+    return it->h != INVALID_HANDLE_VALUE;
+}
+
+static const char *dir_next(DirIter *it, const char *dir, int *isdir)
+{
+    (void)dir;
+    for (;;) {
+        if (!it->first && !FindNextFileA(it->h, &it->fd))
+            return NULL;
+        it->first = 0;
+        if (strcmp(it->fd.cFileName, ".") && strcmp(it->fd.cFileName, "..")) {
+            *isdir = (it->fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            return it->fd.cFileName;
+        }
+    }
+}
+
+static void dir_close(DirIter *it) { FindClose(it->h); }
+
+static void fold_case(char *path, size_t base_len) { (void)path; (void)base_len; }
+#else
+static int file_info(const char *path, uint64_t *size, uint64_t *mtime)
+{
+    struct stat st;
+    if (stat(path, &st) != 0 || S_ISDIR(st.st_mode))
+        return 0;
+    *size = (uint64_t)st.st_size;
+#if defined(__APPLE__)
+    *mtime = (uint64_t)st.st_mtimespec.tv_sec * 1000000000ull + (uint64_t)st.st_mtimespec.tv_nsec;
+#else
+    *mtime = (uint64_t)st.st_mtim.tv_sec * 1000000000ull + (uint64_t)st.st_mtim.tv_nsec;
+#endif
+    return 1;
+}
+
+static int is_dir(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static void make_dir(const char *path) { mkdir(path, 0755); }
+
+static int replace_file(const char *from, const char *to) { return rename(from, to) == 0; }
+
+static unsigned long now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (unsigned long)ts.tv_sec * 1000ul + (unsigned long)(ts.tv_nsec / 1000000);
+}
+
+typedef struct {
+    DIR *d;
+} DirIter;
+
+static int dir_open(DirIter *it, const char *dir)
+{
+    return (it->d = opendir(dir)) != NULL;
+}
+
+static const char *dir_next(DirIter *it, const char *dir, int *isdir)
+{
+    struct dirent *e;
+    while ((e = readdir(it->d)) != NULL) {
+        char path[MAX_PATH];
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+            continue;
+        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+        *isdir = is_dir(path);
+        return e->d_name;
+    }
+    return NULL;
+}
+
+static void dir_close(DirIter *it) { closedir(it->d); }
+
+/* Folders on the disc and in a player's loose folders may disagree on
+ * case, which Windows ignores: each component past base_len that does not
+ * exist is looked up ignoring case (kernel_path.c does the same for the
+ * game's own paths). The first one with no match ends the walk. */
+static void fold_case(char *path, size_t base_len)
+{
+    char *p = path + base_len;
+    struct stat st;
+
+    if (stat(path, &st) == 0)
+        return;
+    while (*p) {
+        char *end, saved = 0;
+        while (*p == '/')
+            p++;
+        if (!*p || p == path)
+            return;
+        if ((end = strchr(p, '/')) != NULL) {
+            saved = *end;
+            *end = '\0';
+        }
+        if (stat(path, &st) != 0) {
+            size_t len = strlen(p);
+            int found = 0;
+            DIR *d;
+            p[-1] = '\0';
+            d = opendir(path[0] ? path : "/");
+            p[-1] = '/';
+            if (d) {
+                struct dirent *e;
+                while ((e = readdir(d)) != NULL)
+                    if (strlen(e->d_name) == len && !strcasecmp(e->d_name, p)) {
+                        memcpy(p, e->d_name, len);
+                        found = 1;
+                        break;
+                    }
+                closedir(d);
+            }
+            if (!found) {
+                if (end)
+                    *end = saved;
+                return;
+            }
+        }
+        if (!end)
+            return;
+        *end = saved;
+        p = end + 1;
+    }
+}
+#endif
+
 static void make_dirs(const char *path)          /* every directory above path */
 {
     char buf[MAX_PATH], *p;
     snprintf(buf, sizeof buf, "%s", path);
     for (p = buf; *p; p++)
-        if (*p == '\\') {
+        if (*p == HOST_SEP && p != buf) {
             *p = 0;
-            CreateDirectoryA(buf, NULL);
-            *p = '\\';
+            make_dir(buf);
+            *p = HOST_SEP;
         }
 }
 
@@ -117,22 +277,18 @@ typedef struct {
 
 static void loose_walk(const char *dir, const char *prefix, LooseList *out)
 {
-    char pat[MAX_PATH];
-    WIN32_FIND_DATAA fd;
-    HANDLE h;
+    DirIter it;
+    const char *fn;
+    int isdir;
 
-    snprintf(pat, sizeof pat, "%s\\*", dir);
-    h = FindFirstFileA(pat, &fd);
-    if (h == INVALID_HANDLE_VALUE)
+    if (!dir_open(&it, dir))
         return;
-    do {
+    while ((fn = dir_next(&it, dir, &isdir)) != NULL) {
         char path[MAX_PATH], name[MAX_PATH];
         int i, dup = 0;
-        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
-            continue;
-        snprintf(path, sizeof path, "%s\\%s", dir, fd.cFileName);
-        snprintf(name, sizeof name, "%s%s", prefix, fd.cFileName);
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        snprintf(path, sizeof path, "%s" HOST_SEPS "%s", dir, fn);
+        snprintf(name, sizeof name, "%s%s", prefix, fn);
+        if (isdir) {
             strncat(name, "/", sizeof name - strlen(name) - 1);
             loose_walk(path, name, out);
             continue;
@@ -149,29 +305,28 @@ static void loose_walk(const char *dir, const char *prefix, LooseList *out)
         snprintf(out->v[out->n].path, sizeof out->v[0].path, "%s", path);
         file_info(path, &out->v[out->n].size, &out->v[out->n].mtime);
         out->n++;
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    }
+    dir_close(&it);
 }
 
-/* Archive folders (relative paths, '\'-separated) under one loose root. */
+/* Archive folders (relative paths, host-separated) under one loose root. */
 static void find_archives(const char *root, const char *rel, char (*found)[MAX_PATH], int *n)
 {
-    char pat[MAX_PATH];
-    WIN32_FIND_DATAA fd;
-    HANDLE h;
+    char dir[MAX_PATH];
+    DirIter it;
+    const char *fn;
+    int isdir;
 
-    snprintf(pat, sizeof pat, "%s%s%s\\*", root, *rel ? "\\" : "", rel);
-    h = FindFirstFileA(pat, &fd);
-    if (h == INVALID_HANDLE_VALUE)
+    snprintf(dir, sizeof dir, "%s%s%s", root, *rel ? HOST_SEPS : "", rel);
+    if (!dir_open(&it, dir))
         return;
-    do {
+    while ((fn = dir_next(&it, dir, &isdir)) != NULL) {
         char sub[MAX_PATH];
         int i, dup = 0;
-        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-                || !strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
+        if (!isdir)
             continue;
-        snprintf(sub, sizeof sub, "%s%s%s", rel, *rel ? "\\" : "", fd.cFileName);
-        if (!is_archive_name(fd.cFileName)) {
+        snprintf(sub, sizeof sub, "%s%s%s", rel, *rel ? HOST_SEPS : "", fn);
+        if (!is_archive_name(fn)) {
             find_archives(root, sub, found, n);
             continue;
         }
@@ -179,8 +334,8 @@ static void find_archives(const char *root, const char *rel, char (*found)[MAX_P
             if (!_stricmp(found[i], sub)) { dup = 1; break; }
         if (!dup && *n < MAX_ARCHIVES)
             snprintf(found[(*n)++], MAX_PATH, "%s", sub);
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    }
+    dir_close(&it);
 }
 
 /* ---- merging ------------------------------------------------------------ */
@@ -217,12 +372,12 @@ static int copy_bytes(FILE *in, FILE *out, uint32_t from, uint32_t len)
     return 1;
 }
 
-static void dos_now(uint16_t *time, uint16_t *date)
+static void dos_now(uint16_t *time_, uint16_t *date)
 {
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    *time = (uint16_t)(st.wHour << 11 | st.wMinute << 5 | st.wSecond / 2);
-    *date = (uint16_t)((st.wYear - 1980) << 9 | st.wMonth << 5 | st.wDay);
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    *time_ = (uint16_t)(t->tm_hour << 11 | t->tm_min << 5 | t->tm_sec / 2);
+    *date = (uint16_t)((t->tm_year + 1900 - 1980) << 9 | (t->tm_mon + 1) << 5 | t->tm_mday);
 }
 
 /* Write base + loose entries to out_path. Returns the number of loose
@@ -398,39 +553,37 @@ done:
  * overlay, so a stale one would go on standing in for the game's. */
 static void prune(const char *rel, char (*keep)[MAX_PATH], int nkeep)
 {
-    char pat[MAX_PATH];
-    WIN32_FIND_DATAA fd;
-    HANDLE h;
+    char dir[MAX_PATH];
+    DirIter it;
+    const char *fn;
+    int isdir;
 
-    snprintf(pat, sizeof pat, LOOSE_CACHE "%s%s\\*", *rel ? "\\" : "", rel);
-    h = FindFirstFileA(pat, &fd);
-    if (h == INVALID_HANDLE_VALUE)
+    snprintf(dir, sizeof dir, LOOSE_CACHE "%s%s", *rel ? HOST_SEPS : "", rel);
+    if (!dir_open(&it, dir))
         return;
-    do {
+    while ((fn = dir_next(&it, dir, &isdir)) != NULL) {
         char sub[MAX_PATH];
-        size_t n = strlen(fd.cFileName);
+        size_t n = strlen(fn);
         int i, kept = 0;
-        if (!strcmp(fd.cFileName, ".") || !strcmp(fd.cFileName, ".."))
-            continue;
-        snprintf(sub, sizeof sub, "%s%s%s", rel, *rel ? "\\" : "", fd.cFileName);
-        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+        snprintf(sub, sizeof sub, "%s%s%s", rel, *rel ? HOST_SEPS : "", fn);
+        if (isdir) {
             prune(sub, keep, nkeep);
             continue;
         }
-        if (!is_archive_name(fd.cFileName) || n < 4)
+        if (!is_archive_name(fn) || n < 4)
             continue;
         for (i = 0; i < nkeep; i++)
             if (!_stricmp(keep[i], sub)) { kept = 1; break; }
         if (!kept) {
             char path[MAX_PATH];
-            snprintf(path, sizeof path, LOOSE_CACHE "\\%s", sub);
-            DeleteFileA(path);
+            snprintf(path, sizeof path, LOOSE_CACHE HOST_SEPS "%s", sub);
+            remove(path);
             strncat(path, ".sig", sizeof path - strlen(path) - 1);
-            DeleteFileA(path);
+            remove(path);
             fprintf(stderr, "  [MODS] loose: %s has no loose entries any more\n", sub);
         }
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
+    }
+    dir_close(&it);
 }
 
 /* ---- entry point --------------------------------------------------------- */
@@ -469,19 +622,23 @@ int mod_loose_build(const char *loose_roots, const char *overlays)
         while (o && *o && !*base) {
             const char *end = strchr(o, ';');
             int len = end ? (int)(end - o) : (int)strlen(o);
-            snprintf(tmp, sizeof tmp, "%.*s\\%s", len, o, archives[i]);
-            if (GetFileAttributesA(tmp) != INVALID_FILE_ATTRIBUTES)
+            snprintf(tmp, sizeof tmp, "%.*s" HOST_SEPS "%s", len, o, archives[i]);
+            fold_case(tmp, (size_t)len);
+            if (host_exists(tmp))
                 snprintf(base, sizeof base, "%s", tmp);
             o = end ? end + 1 : NULL;
         }
-        if (!*base)
-            snprintf(base, sizeof base, "game\\%s", archives[i]);
+        if (!*base) {
+            snprintf(base, sizeof base, "game" HOST_SEPS "%s", archives[i]);
+            fold_case(base, 4);
+        }
         if (!file_info(base, &bsize, &bmtime)) {
             fprintf(stderr, "  [MODS] loose: no archive %s to put entries in\n", archives[i]);
             continue;
         }
         for (j = 0; j < nroots; j++) {
-            snprintf(tmp, sizeof tmp, "%s\\%s", roots[j], archives[i]);
+            snprintf(tmp, sizeof tmp, "%s" HOST_SEPS "%s", roots[j], archives[i]);
+            fold_case(tmp, strlen(roots[j]));
             if (is_dir(tmp))
                 loose_walk(tmp, "", &list);
         }
@@ -506,7 +663,7 @@ int mod_loose_build(const char *loose_roots, const char *overlays)
             memcpy(sig + siglen, line, (size_t)len + 1);
             siglen += (size_t)len;
         }
-        snprintf(cache, sizeof cache, LOOSE_CACHE "\\%s", archives[i]);
+        snprintf(cache, sizeof cache, LOOSE_CACHE HOST_SEPS "%s", archives[i]);
         snprintf(sigpath, sizeof sigpath, "%s.sig", cache);
         {
             FILE *f = fopen(sigpath, "rb");
@@ -517,16 +674,16 @@ int mod_loose_build(const char *loose_roots, const char *overlays)
                 fclose(f);
             }
         }
-        if (old && sig && !strcmp(old, sig) && GetFileAttributesA(cache) != INVALID_FILE_ATTRIBUTES) {
+        if (old && sig && !strcmp(old, sig) && host_exists(cache)) {
             fprintf(stderr, "  [MODS] loose: %s, %d entr%s (cached)\n", archives[i], list.n,
                     list.n == 1 ? "y" : "ies");
             snprintf(kept[served++], MAX_PATH, "%s", archives[i]);
         } else {
-            DWORD t0 = GetTickCount();
+            unsigned long t0 = now_ms();
             snprintf(tmp, sizeof tmp, "%s.tmp", cache);
             make_dirs(cache);
             n = merge(base, &list, tmp);
-            if (n >= 0 && MoveFileExA(tmp, cache, MOVEFILE_REPLACE_EXISTING)) {
+            if (n >= 0 && replace_file(tmp, cache)) {
                 FILE *f = fopen(sigpath, "wb");
                 if (f) {
                     fwrite(sig, 1, siglen, f);
@@ -534,12 +691,12 @@ int mod_loose_build(const char *loose_roots, const char *overlays)
                 }
                 fprintf(stderr, "  [MODS] loose: %s, %d entr%s merged into %s (%lu ms)\n",
                         archives[i], n, n == 1 ? "y" : "ies", base,
-                        (unsigned long)(GetTickCount() - t0));
+                        now_ms() - t0);
                 snprintf(kept[served++], MAX_PATH, "%s", archives[i]);
             } else {
-                DeleteFileA(tmp);
-                DeleteFileA(sigpath);
-                DeleteFileA(cache);          /* an older merge would still be served */
+                remove(tmp);
+                remove(sigpath);
+                remove(cache);               /* an older merge would still be served */
                 fprintf(stderr, "  [MODS] loose: could not merge %s into %s\n", archives[i], base);
             }
         }
@@ -550,12 +707,3 @@ int mod_loose_build(const char *loose_roots, const char *overlays)
     prune("", kept, served);
     return served;
 }
-#else
-int mod_loose_build(const char *loose_roots, const char *overlays)
-{
-    (void)loose_roots;
-    (void)overlays;
-    fprintf(stderr, "  [MODS] loose entries are not supported on this platform yet\n");
-    return 0;
-}
-#endif /* _WIN32 */

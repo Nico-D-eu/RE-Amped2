@@ -11,9 +11,9 @@ Early access
   this folder; it is rewritten on every start, so copy it before starting
   the game again.
 
-  Not on Linux yet: mods that replace single files inside the game's
-  archives ("loose" files). Mod packs and texture packs work. The game draws with OpenGL 3.3 or newer; packs made of BC7 textures
-  (the RE-Amped2 look is) need OpenGL 4.2.
+  Mod packs, texture packs and loose files work as on Windows. The game
+  draws with OpenGL 3.3 or newer; packs made of BC7 textures (the
+  RE-Amped2 look is) need OpenGL 4.2.
 
 Controls
   An Xbox-style controller works out of the box.

@@ -391,7 +391,8 @@ added to the archive. At start-up `src/mod_loose.c` merges them into
 `mods\cache\loose\` over whichever archive the game would otherwise read,
 and reuses that until a source file changes; the log says
 `[MODS] loose: ...`. Loose entries win over a repacked archive of the same
-name. Entry paths are as `tools/assets` `unpack` lists them.
+name. Entry paths are as `tools/assets` `unpack` lists them. The same on
+Linux (with `/`); folder names there may differ in case from the disc's.
 
 **Script mods.** The game's scripts are compiled Lua, but it compiles plain
 source just as well, so a decompiled and edited script (`tools/assets`
@@ -565,8 +566,9 @@ code or data in it.
   the controller pictures. The menus and mod packs need
   `RECOMP_OVERLAY_DIR`, which the POSIX path code did not read until
   toolkit `45fabe7`.
-- Not in the Linux release yet: loose archive entries (`mod_loose.c` is
-  stubbed on POSIX).
+- Loose archive entries work on Linux too: `mod_loose.c` has a small
+  host layer (stat, opendir, rename) beside the Win32 one, and folds case
+  where a loose folder and the disc spell an archive differently.
 
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 
