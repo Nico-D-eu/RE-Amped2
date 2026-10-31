@@ -1185,8 +1185,14 @@ the first place to look for the 60. Since then (same evening): a render
 thread like D3D11's (ML1 about 43-50 fps), the video overlay (boot movies
 play), shadow maps, and sound through PulseAudio (two toolkit bugs: a
 458 KB static TLS that stopped SDL's audio thread, and an APU clock that
-overflowed after 2.5 h of uptime). Open: the APU at half speed with
-PulseAudio, the title unpaced after long uptime, and in the GL back end
+overflowed after 2.5 h of uptime). The APU "at half speed" with
+PulseAudio is WSLg's sound server stalling (DEVELOPING, "Linux bring-up").
+**Step 6 started (same evening): a Linux release.**
+`tools/linux/package.sh` packs a source tarball like the Windows
+installer's payload (15 MB, no game data), and its `install.sh` builds the
+game from the player's disc: a clean install from the tarball took 10.5 min
+under WSL and the result boots with sound. Open: the title unpaced after
+long uptime, and in the GL back end
 volume textures, CPU-written pixels under a surface, texture packs,
 visibility counts (lens flares), anisotropy, render scale. Found and fixed on the way to
 booting (details in DEVELOPING, "Linux bring-up"):
@@ -1199,9 +1205,7 @@ booting (details in DEVELOPING, "Linux bring-up"):
   `z:\guipackages\...` and opens `z:\GuiPackages\...`, which failed, so
   audio init gave up and the title launched `Boom.xbe`.
 
-Not yet: Clang, `mod_loose.c` (stubbed on POSIX), the stall snapshot,
-sound through WSLg's PulseAudio (opening the device hangs; runs use
-`SDL_AUDIODRIVER=dummy` for now).
+Not yet: Clang, `mod_loose.c` (stubbed on POSIX), the stall snapshot.
 
 1. **Build environment.**
    - WSL2 with Ubuntu 24.04: WSLg gives a window, the GPU and sound. The
@@ -1236,10 +1240,14 @@ sound through WSLg's PulseAudio (opening the device hangs; runs use
    - The emulated USB pad reads SDL game controllers.
    - `amped2.ini`, the keymap, F11 and the texture packs work as on
      Windows.
-6. **For players.**
-   - `tools/linux/build.sh`: extract the player's disc (xdvdfs has Linux
-     builds), `regen.ps1` steps in Python or pwsh, then the build.
-   - A tarball or AppImage of the tools only. No game data, as always.
+6. **For players.** Done in its first form (DEVELOPING, "Linux release"):
+   - `tools/linux/install.sh`: extracts the player's disc with xdvdfs,
+     runs `tools/linux/regen.sh` (`regen.ps1` in bash), then the build.
+   - `tools/linux/package.sh`: the tarball of the sources and xdvdfs. No
+     game data, as always.
+   - Still to do: the menu mod and the RE-Amped2 look on Linux, a GitHub
+     workflow for the tarball like `installer.yml`, and a test on a real
+     Linux PC (only WSL so far).
 7. **The suite on Linux.** `suite.ps1` and `diag.ps1` under PowerShell 7,
    with `-Samples` via `/proc`.
 

@@ -475,8 +475,19 @@ What a Linux build needs that Windows hides:
   are decoded. On Linux `main.c`'s SIGSEGV handler offers each fault to
   `xbox_PosixMmioFault`, which copies the registers into the Win32 CONTEXT
   names and runs the same x86-64 decoder as Windows.
-- **Sound.** `apu_sdl2.c` drives SDL audio. Under WSLg, opening the
-  PulseAudio device hangs; `SDL_AUDIODRIVER=dummy` gets past it (silent).
+- **Sound.** `apu_sdl2.c` drives SDL audio, through PulseAudio under
+  WSLg. Opening the device used to hang: SDL's audio thread could not
+  start, since the toolkit's static TLS (458 KB, mostly the upstream
+  executor's DXT cache) was larger than SDL's 256 KB thread stack. The
+  cache is allocated now. `SDL_AUDIODRIVER=dummy` still gives a silent run
+  that drains in real time.
+- **WSLg's PulseAudio stalls.** After 5-25 s it stops pulling: a small SDL
+  test that keeps a push queue topped up saw about 51k samples a second,
+  then 0-1k, with no game running. The APU pacer follows the device, so the
+  `[HEALTH]` line drops from 1500 to 750 frames/s and the sound stops.
+  `apu_sdl2.c` now drops periods past 32 queued device buffers (`device is
+  not pulling`), so the queue no longer grows by 96 KB a second. A WSLg
+  problem, not ours; `wsl --shutdown` restarts its sound server.
 - **Case.** FATX and NTFS ignore case; Linux does not. The game copies its
   GUI packages to `z:\guipackages\` and opens `z:\GuiPackages\
   PackageHierarchy.dat`. That failed, the `[AP]` dump followed and the title
@@ -501,6 +512,37 @@ What a Linux build needs that Windows hides:
 - **Where it stands:** title about 58 fps, main menu about 30, ML1 in game
   a steady 30 (pad script `tools/suite/pads/ml1.pad` works on Linux too:
   `RECOMP_PAD_SCRIPT=@<path>`). See PLAN Phase 21 for what is missing.
+
+### Linux release (2026-10-31)
+
+The Linux counterpart of `RE-Amped2-Setup.exe` is a source tarball that
+builds on the player's PC from their own disc, with the same rule: no game
+code or data in it.
+
+- `tools/linux/package.sh` (run on Linux or WSL) writes
+  `installer/dist/RE-Amped2-<version>-linux.tar.gz` and its `.sha256`. It
+  holds the working trees of amped2 (minus `installer/`, `.claude/`,
+  `screenshots/`) and `../xboxrecomp` as `build.ps1` packs them, xdvdfs
+  0.8.3 for Linux (downloaded, SHA-256 checked), the icon as a PNG,
+  `manifest.txt` with both commits (`+modified` for uncommitted changes) and
+  a top-level `install.sh`. The version is the installer's. Shell scripts
+  are made LF on the way in (a Windows checkout has CRLF; `.gitattributes`
+  now keeps `*.sh` LF in both repos).
+- `./install.sh DISC.iso [DIR]` (`tools/linux/install.sh`; default
+  `~/Games/RE-Amped2`) runs the installer's stages: checks the build tools
+  (offers the apt, pacman or dnf command for what is missing, and runs it
+  only on a yes), unpacks the disc with xdvdfs and checks the title ID,
+  copies the sources to `DIR/_install_temp` with `game` linked to
+  `DIR/game`, makes a venv with capstone, runs `tools/linux/regen.sh`
+  (`regen.ps1`'s steps 2-5 in bash, without Ghidra or `no_optimize.txt`),
+  builds with CMake and Ninja (jobs: cores, RAM/3 GB, 2..8), and installs
+  `RE-Amped2`, `README.txt` (`tools/linux/README.txt`), `licenses/`,
+  `install-info.txt` and an applications-menu entry. The link is removed
+  before the work folder, so the delete never reaches `game/`. Saves in
+  `game/UDATA` survive a reinstall. Log: `DIR/install.log`.
+- Not in the Linux release yet: the menu mod and the RE-Amped2 look
+  (`mod_loose.c` is stubbed on POSIX and the GL back end has no texture
+  packs), so no Java and no unluac.
 
 ### The slow intro movie (2026-10-31, cause narrowed, not fixed)
 
