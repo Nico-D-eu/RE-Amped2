@@ -1180,10 +1180,14 @@ rasteriser managed 0.45 fps on the same screens. Now the default on Linux.
 30 fps** after the speed work (persistent streaming rings, asynchronous
 readback; 5 fps before). The GL work is about 21 ms a frame, so the title
 halves to 30; the index section (about 6.7 ms, probably fence waits) is
-the first place to look for the 60. Missing in the GL back end: volume
-textures, shadow maps, CPU-written pixels under a surface, texture packs,
-visibility counts (lens flares), anisotropy, render scale, the video
-overlay (movies). Found and fixed on the way to
+the first place to look for the 60. Since then (same evening): a render
+thread like D3D11's (ML1 about 43-50 fps), the video overlay (boot movies
+play), shadow maps, and sound through PulseAudio (two toolkit bugs: a
+458 KB static TLS that stopped SDL's audio thread, and an APU clock that
+overflowed after 2.5 h of uptime). Open: the APU at half speed with
+PulseAudio, the title unpaced after long uptime, and in the GL back end
+volume textures, CPU-written pixels under a surface, texture packs,
+visibility counts (lens flares), anisotropy, render scale. Found and fixed on the way to
 booting (details in DEVELOPING, "Linux bring-up"):
 - the lifted CRT's `close`/`read`/`write`/... took over libc's names;
 - the window's GL driver took the address range the guest windows need,
