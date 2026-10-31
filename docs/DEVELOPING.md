@@ -509,8 +509,14 @@ What a Linux build needs that Windows hides:
   textures, state, draw call; ms per frame). Under Mesa's d3d12 driver a
   buffer re-specified or mapped per draw costs 60-120 us, so the back end
   streams through persistently mapped rings; keep it that way.
-- **Where it stands:** title about 58 fps, main menu about 30, ML1 in game
-  a steady 30 (pad script `tools/suite/pads/ml1.pad` works on Linux too:
+- **Flip pacing.** D3D11's render thread holds flips to 60 Hz itself
+  (`pace_display`); the SDL window's vsync only paces the window thread.
+  The GL render thread lacked that, and once GL got fast the title ran at
+  150-175 fps (it looked uptime-dependent and was not). `nv2a_gl.c` has
+  the same pacer now (`RECOMP_FLIP_NOWAIT` turns it off). `[GPU] frames:`
+  is cumulative: compare the differences between lines.
+- **Where it stands:** title a steady 60 fps, ML1 in game 44-50 with the
+  render thread (pad script `tools/suite/pads/ml1.pad` works on Linux too:
   `RECOMP_PAD_SCRIPT=@<path>`). See PLAN Phase 21 for what is missing.
 
 ### Linux release (2026-10-31)
