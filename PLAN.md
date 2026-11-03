@@ -15,7 +15,7 @@ can't be tested, and they grow the surface area we have to debug.
 **Update (2026-10-30, late): the regression suite runs** (Phase 16;
 `tools\suite.ps1 -Quick` in about 4 minutes). On its first day it found
 two things: the intro movie has played at about 0.4x since the v0.16
-merge, and an intermittent stutter in ML1. level2 (it needs a fixture
+merge (fixed 2026-11-03), and an intermittent stutter in ML1. level2 (it needs a fixture
 save) and the soak are left.
 
 **Update (2026-10-30): v0.2.1 released on toolkit v0.16.0; the suite
@@ -953,10 +953,12 @@ scripts (docs/DEVELOPING.md "Testing"). Differences from the list above:
 Found by the suite:
 - **The intro movie plays at about 0.4x since the v0.16 merge.** It takes
   152–237 s from the intro to the front end, against 79 s before the sync.
-  `Intro.xmv` is 60.9 s. Marked known in the movie case; standing lane.
-  Narrowed on 2026-10-31 (docs/DEVELOPING.md "The slow intro movie"): our
-  default timer loop. Upstream's paced loop (`RECOMP_VBLANK=paced`) plays
-  it in 60.8 s, but replaces the loop the audio fixes were tuned on.
+  `Intro.xmv` is 60.9 s. **Fixed 2026-11-03** (docs/DEVELOPING.md "The
+  slow movies"): XMV paces the picture on D3D's vblank count, which lost
+  1–4 counts a second in our timer loop, and the audio-sync feedback
+  turned that into 0.4x. GetDisplayFieldStatus (`0x0031AE50`) now reports
+  the kernel's 60 Hz tick: the intro takes 60.8 s, and the movie case's
+  "known" mark is gone.
 - **An intermittent stutter:** 1 s bursts of 33–54 ms late frames every
   10–20 s, all through a run, with the render thread idle. Seen in 2 of
   about 12 riding runs (ml1 and reload3); `base.exe` and `.fix2` had none

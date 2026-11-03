@@ -491,12 +491,16 @@ void sub_003285F0(void)
  */
 extern void sub_002CDE60_gen(void);
 
+static uint32_t xmv_vblank_count(void);   /* the count XMV sees (0x0031AE50) */
+
 static void xmv_stats(uint32_t dec, uint32_t status, int req_before, double ms)
 {
     static int on = -1;
     static unsigned long t0;
-    static unsigned calls, st[4], req;
-    static double in_ms[2], max_ms[2];
+    static unsigned calls, st[4], req, why[4], drained;
+    static double in_ms[2], max_ms[2], drain_ms, drain_max;
+    static long long drain_t0;
+    long long now, qf;
     if (on < 0)
         on = getenv("AMPED2_XMV_STATS") != NULL;
     if (!on || !dec)
@@ -509,19 +513,48 @@ static void xmv_stats(uint32_t dec, uint32_t status, int req_before, double ms)
     in_ms[status == 1] += ms;
     if (ms > max_ms[status == 1])
         max_ms[status == 1] = ms;
+    /* Why a call had no frame: 0 the spent packet waits for its audio
+     * (+0x68 set, +0x74 clear: a stream packet still pending), 1 a packet
+     * read is requested, 2 a frame is decoded but not due, 3 other. */
+    if (status == 0)
+        why[MEM32(dec + 0x68) && !MEM32(dec + 0x74) ? 0 : MEM32(dec + 0x6C) ? 1 :
+            MEM32(dec + 0xF8) != 0xFFFFFFFFu ? 2 : 3]++;
+    /* How long each spent packet waited for its audio. */
+    QueryPerformanceCounter(&now);
+    QueryPerformanceFrequency(&qf);
+    if (MEM32(dec + 0x68) && !drain_t0)
+        drain_t0 = now;
+    else if (!MEM32(dec + 0x68) && drain_t0) {
+        double d = (double)(now - drain_t0) * 1000.0 / (double)qf;
+        drain_ms += d;
+        if (d > drain_max)
+            drain_max = d;
+        drained++;
+        drain_t0 = 0;
+    }
     if (GetTickCount() - t0 >= 1000) {
+        extern volatile long g_xbox_vblank_count;
+        static uint32_t last_d3d, last_ours;
         uint32_t dev = MEM32(0x0032CEF8u);
-        long clock_ms = dev ? (long)((MEM32(dev + 0x1DD8) - MEM32(dec + 0xB8)) * 1000u / 60u) : 0;
+        uint32_t d3d = dev ? MEM32(dev + 0x1DD8) : 0, ours = (uint32_t)g_xbox_vblank_count;
+        long clock_ms = dev ? (long)((xmv_vblank_count() - MEM32(dec + 0xB8)) * 1000u / 60u) : 0;
         fprintf(stderr, "  [XMV] stats: %u calls, status 0/1/2/other %u/%u/%u/%u,"
                 " %u with a packet requested; next frame %u ms, clock %ld ms (%+ld);"
                 " in the call %.0f ms without a frame (longest %.1f), %.0f ms with"
-                " (longest %.1f)\n",
+                " (longest %.1f); no frame: audio %u read %u early %u other %u;"
+                " %u packets waited %.0f ms for audio (longest %.0f); c8 %d ms;"
+                " vblanks D3D %u ours %u\n",
                 calls, st[0], st[1], st[2], st[3], req, MEM32(dec + 0xF8), clock_ms,
-                clock_ms - (long)MEM32(dec + 0xF8), in_ms[0], max_ms[0], in_ms[1], max_ms[1]);
+                clock_ms - (long)MEM32(dec + 0xF8), in_ms[0], max_ms[0], in_ms[1], max_ms[1],
+                why[0], why[1], why[2], why[3], drained, drain_ms, drain_max,
+                (int)MEM32(dec + 0xC8), d3d - last_d3d, ours - last_ours);
+        last_d3d = d3d;
+        last_ours = ours;
         t0 = GetTickCount();
-        calls = req = 0;
+        calls = req = drained = 0;
         memset(st, 0, sizeof st);
-        in_ms[0] = in_ms[1] = max_ms[0] = max_ms[1] = 0;
+        memset(why, 0, sizeof why);
+        in_ms[0] = in_ms[1] = max_ms[0] = max_ms[1] = drain_ms = drain_max = 0;
     }
 }
 
@@ -698,6 +731,50 @@ void sub_0031AE90(void)
     while (g_xbox_vblank_count == v && GetTickCount() - t0 < 50)
         Sleep(1);
     g_esp += 4; /* ret */
+}
+
+/*
+ * 0x0031AE50: D3DDevice_GetDisplayFieldStatus(PD3DFIELD_STATUS), stdcall 4.
+ * Writes the field (+0: 1 odd, 2 even, 3 progressive, from the device's mode
+ * flags at +0x1DCC and its current field at +0x1DE8) and the vblank count
+ * (+4). Its one caller is XMV's GetNextFrame (0x002CE181), which shows a
+ * frame once that count, at 59.94 a second, passes the frame's time plus an
+ * audio offset (decoder + 0xC8).
+ *
+ * D3D's count (device + 0x1DD8) only moves in its vblank DPC, and only when
+ * its parity matches the field our HAL reports from g_xbox_vblank_count. Two
+ * ticks before one DPC run (a late timer pass) cost it a count, so it ran at
+ * 56-59 a second. That was enough to sink the movies: the picture ran a few
+ * percent slow, its packets were freed late, the audio stream (two packets of
+ * about 0.28 s) ran dry, and every gap went into the audio offset and delayed
+ * the picture further. The intro then fell behind at about 0.6 s a second
+ * from 15 s in (AMPED2_XMV_STATS, 2026-11-03), and the long career movies
+ * crawled. Report the kernel's own tick instead, the one the movie loop
+ * already waits on (0x0031AE90 above). AMPED2_XMV_CLOCK=d3d restores D3D's
+ * count.
+ */
+static uint32_t xmv_vblank_count(void)
+{
+    extern volatile long g_xbox_vblank_count;
+    static int d3d_clock = -1;
+
+    if (d3d_clock < 0) {
+        const char *s = getenv("AMPED2_XMV_CLOCK");
+        d3d_clock = s && strcmp(s, "d3d") == 0;
+    }
+    return d3d_clock ? MEM32(MEM32(0x32CEF8) + 0x1DD8) : (uint32_t)g_xbox_vblank_count;
+}
+
+void sub_0031AE50(void)
+{
+    uint32_t dev = MEM32(0x32CEF8), out = MEM32(g_esp + 4);
+
+    MEM32(out + 4) = xmv_vblank_count();
+    if (MEM32(dev + 0x1DCC) & 0x1200000u)       /* interlaced: which field */
+        MEM32(out) = MEM32(dev + 0x1DE8) == 0 ? 2u : 1u;
+    else
+        MEM32(out) = 3;
+    g_esp += 4 + 4; /* ret 4 */
 }
 
 void sub_0002B6C0(void)

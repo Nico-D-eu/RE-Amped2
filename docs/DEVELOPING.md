@@ -570,77 +570,70 @@ code or data in it.
   host layer (stat, opendir, rename) beside the Win32 one, and folds case
   where a loose folder and the disc spell an archive differently.
 
-### The slow intro movie (2026-10-31, cause narrowed, not fixed)
+### The slow movies (fixed 2026-11-03)
 
-Since the v0.16 merge, `Movies\Intro.xmv` plays at about 0.4x. It is
-60.9 s long (1801 frames at 29.6 fps; the header and the audio track
-agree). The suite's movie case measures it from the file's open to the
-front-end boarder load:
+Since the v0.16 merge, every movie longer than a few seconds played slowly:
+`Movies\Intro.xmv` (60.9 s; 1801 frames at 29.6 fps) took 150–237 s, and
+the career movies (`Port_Career_Number1.xmv`, about 100 MB) crawled until
+the player had to kill the game. The pre-sync build was slow too, only less
+so (79 s). Now the intro takes 60.8 s.
 
-| Build | Intro to front end |
-|---|---|
-| Pre-sync `RE-Amped2.base.exe` | 79 s |
-| First merged `.cand` | 153 s |
-| HEAD | 152–237 s |
-| HEAD with `RECOMP_VBLANK=paced` | **60.8 s** |
+**How XMV paces the picture.** GetNextFrame (`0x002CDE60`) shows a decoded
+frame once D3D's vblank count, less the start at `decoder + 0xB8`, passes
+the frame's time plus an audio offset at `decoder + 0xC8`. It converts
+milliseconds to vblanks at 59.94 a second (`decoder + 0xBC` = 0x10AEF0).
+The count comes from GetDisplayFieldStatus (`0x0031AE50`), whose one
+caller this is. The offset is set by the movie's DirectSound stream
+callback (`0x002CDC71`, registered in `0x002CDCC2`). On each completed
+audio packet it stores the TSC time since the start (`decoder + 0xB0`,
+ticks per ms at `0x2F5268`) less the packet's timestamp. In short, the
+picture follows the audio, and the audio's lateness holds the picture
+back.
 
-MGS and XSN play at the right speed. What was measured:
+**The packet cycle.** A packet holds about 0.28 s of the intro, both
+streams. The decoder keeps two: `+0x60` is loaded next and `+0x64` is
+being shown. When `+0x64` runs out of frames, it moves to `+0x68` and
+waits until DirectSound has finished its audio (a packet status at
+`[+0x148][i]` still `0x8000000A` means pending; `0x00290723` is
+DirectSoundDoWork). Only then is a new packet read. So the audio
+stream never has more than about two packets queued.
 
-- **The movie clock is fine.** XMV's clock is D3D's vblank count
-  (`device + 0x1DD8`, read via GetDisplayFieldStatus `0x0031AE50`), less
-  its start at `decoder + 0xB8`. It advances at about 57 a second on both
-  builds.
-- **The audio plays in real time.** It ends about 63–70 s after the
-  intro starts while the picture plays on, so the audio does not pace the
-  picture.
-- **The data arrives.** The reads (`0x00253F0B`) are synchronous and only
-  follow consumption.
-- **The decoder is neither CPU-bound nor short of packets.**
-  `AMPED2_XMV_STATS=1` prints a line a second from the GetNextFrame
-  wrapper (`0x002CDE60`). Up to 12 s behind its clock, about 55 of 62
-  calls return "no frame". The calls take 1–3 ms each, about 15% of the
-  main thread, and few have a packet request pending.
-- **Where the main thread sleeps.** The title's movie loop (`sub_00150FF0`)
-  calls GetNextFrame, UpdateOverlay (`0x00329420`), then
-  BlockUntilVerticalBlank (`0x0031AE90`, ours). It sleeps 75–86% of the
-  time in the vblank wait. The decoding (`sub_002CFFBE` and below) runs
-  inside GetNextFrame on the main thread. Right after it, GetNextFrame
-  calls DirectSound (`0x002906EE`, `0x002923BF`, `0x002904E3`,
-  `0x0028ED0A`, `0x00290723`).
-- **It is the timer loop.** `RECOMP_VBLANK=paced` or
-  `RECOMP_DISPATCH_GATE=1` (both run upstream's `kernel_timer_loop_ns`
-  instead of our `kernel_timer_loop_default`) play the intro in real time.
-- **Ruled out, one at a time in our loop:**
-  - `RECOMP_DPC_REMOVE=0`, `RECOMP_DPC_CS_KEEP_LOCK=1`;
-  - kernel timers on the performance counter instead of GetTickCount64;
-  - coalescing a vblank whose predecessor is unacknowledged, and honouring
-    `PMC_INTR_EN_0`;
-  - waking the loop when a DPC is queued.
+**What went wrong.** D3D's count (`device + 0x1DD8`) moves only in its
+vblank DPC (`0x0031C3B1`), and only when the count's parity matches the
+field from the HAL's AV query, which is `g_xbox_vblank_count & 1`. Two of
+our ticks before one DPC run (a late timer pass) cost D3D a count, so it
+ran at 56–59 a second while ours ran at 60. The picture therefore ran a
+few percent slow, packets were freed late, and the audio stream ran dry.
+Each gap went into `+0xC8` and held the picture back further. From about
+15 s into the intro the offset grew 0.5–0.7 s every second. MGS and XSN
+were too short to reach that point. `RECOMP_VBLANK=paced` (upstream's
+loop) "fixed" it because D3D lost no counts there, but it broke the
+in-level sound (2026-10-31).
 
-  `RECOMP_DISPATCH_LOCK=0` made it worse (no frames at all).
-- **Unchanged across the merge:**
-  - the vblank tick and its ISR call;
-  - the field pin (port `0x80C0`) once vblanks run;
-  - the TSC scaling and `qemu_clock_get_ns`;
-  - KeTickCount and KeInterruptTime;
-  - the async-handle registration on open.
+**The fix** (`recomp_manual.c`): `0x0031AE50` reports the kernel's own
+60 Hz tick, the one the movie loop's BlockUntilVerticalBlank
+(`0x0031AE90`) already waits on. The field status is unchanged.
+`AMPED2_XMV_CLOCK=d3d` brings back D3D's count. Gameplay is untouched:
+nothing else calls GetDisplayFieldStatus. The cause of D3D's lost counts
+(coalesced ticks in our timer loop) is still there, but nothing else is
+known to depend on that count.
 
-What paced mode costs, from one suite pass (`diag/suite-2026-10-31_1001`):
-- no `[HEALTH]` line, which only our loop prints;
-- a one-off 22 MB step in ml1's memory at about 130 s;
-- frame rate as before.
+**Diagnostics.** `AMPED2_XMV_STATS=1` prints a line a second:
+- the calls and their statuses;
+- why each "no frame" call had none: the spent packet waiting for its
+  audio, a read requested, or a decoded frame not yet due;
+- how long spent packets waited for their audio;
+- `+0xC8`;
+- the vblanks D3D counted against ours.
 
-It also replaces the DPC and dispatch-lock scheme that the audio fixes of
-2026-10-02 and 2026-10-30 were tuned on.
+Before the fix, nearly every "no frame" call held a frame that was 10 s
+or more behind and still "not due" (`diag/xmv-slow/why2.txt`). After it,
+`+0xC8` stays within ±10 ms (`fix1.txt`).
 
-**Ruled out (2026-10-31):** in paced mode the sound breaks up in ML1. The
-`[HEALTH]` line, which the paced loop now prints as well (toolkit), shows
-the APU at 1,500 frames/s in the front end. In the level it drops to
-about 145 frames/s, with 9,000–14,000 trapped front-end waits per 10 s:
-the APU's front-end handshake with DirectSound is not serviced in time
-in that loop. The user heard it as distorted, then no sound. The movie
-stays a known issue (start skips it) until the difference between the
-loops for XMV is found.
+Ruled out on the way (2026-10-31): the TSC scaling, kernel timers on QPC,
+DPC removal and lock variants, coalescing unacknowledged vblanks, honouring
+`PMC_INTR_EN_0`, waking the loop on queued DPCs, read starvation, and
+decode cost.
 
 ### XACT, DirectSound and the music dropout (2026-10-30)
 

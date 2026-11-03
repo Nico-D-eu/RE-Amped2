@@ -205,9 +205,11 @@ one of them, `re-amped2`. To make your own, see the modding sections of the
 
 In the current release (0.2.1):
 
-- **The intro movie plays slowly** (at less than half speed). Press
-  **Start** (Enter on the keyboard) to skip it, or set `PlayMovies=0` in
-  `amped2.ini` to skip the intro movies altogether.
+- **Movies play slowly** (at less than half speed): the intro, and the
+  long career movies such as the one for reaching rank #1. Fixed for the
+  next release. Until then, press **Start** (Enter on the keyboard) to skip
+  the intro, or set `PlayMovies=0` in `amped2.ini` to skip the movies
+  altogether.
 - **Now and then the in-level music repeats the same few seconds** until the
   next track starts. Sound effects keep working. Your `amped2.log` from such
   a session helps.
