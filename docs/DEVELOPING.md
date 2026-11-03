@@ -480,8 +480,9 @@ Measured on the RTX 2070 (2026-11-03):
 | `realesrgan-x4plus`, 4x | 2.1 s | about an hour |
 | Lanczos | - | seconds |
 
-All movies come to roughly 60,000 frames, so about two hours with the fast
-model. The career movies are live footage with interlacing combs in the
+All 50 movies come to 53.5 minutes (about 96,000 frames). At the intro's
+pace (6 minutes per minute of video, counting decode and encode) that is
+5–6 hours with the fast model. The career movies are live footage with interlacing combs in the
 source. The fast model smooths those, and some snow texture with them;
 x4plus keeps the texture but sharpens the combs. Use `--deinterlace`
 (bwdif) for those movies.

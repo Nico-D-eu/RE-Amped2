@@ -17,8 +17,9 @@ Steps per movie:
      copy keeps the original times.
   2. --upscale ai (the default): Real-ESRGAN (realesrgan-ncnn-vulkan, on
      the GPU through Vulkan) upscales 3x with its fast video model
-     realesr-animevideov3, about 9 frames/s on an RTX 2070: 3 minutes for
-     the intro, about 2 hours for all movies. --model realesrgan-x4plus
+     realesr-animevideov3, about 9 frames/s on an RTX 2070. With decode
+     and encode, 6 minutes for the 61 s intro and 5-6 hours for all 50
+     movies (53.5 minutes). --model realesrgan-x4plus
      keeps more texture but takes about 2 s a frame.
      --upscale lanczos: a plain resize, minutes for everything.
   3. FFmpeg scales to --height (4:3, so 1440x1080 by default) and encodes

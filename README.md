@@ -204,8 +204,8 @@ one of them, `re-amped2`. To make your own, see the modding sections of the
 Real-ESRGAN, into `mods\movie_pack\`. The game then shows them in place of
 the original 640x480 pictures; sound, timing and skipping are unchanged.
 It needs FFmpeg and Real-ESRGAN (see the
-[developer guide](docs/DEVELOPING.md#the-movie-pack)) and takes about two
-hours on an RTX 2070 for all movies.
+[developer guide](docs/DEVELOPING.md#the-movie-pack)) and takes 5–6 hours
+on an RTX 2070 for all movies.
 
 ---
 
