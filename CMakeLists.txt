@@ -56,6 +56,7 @@ set(GAME_SOURCES
     src/mod_loose.c         # loose archive entries merged at start-up
     src/lua_probe.c         # hand copies of generated functions, instrumented
     src/coverage.c          # which guessed or missing code a run reached
+    src/movie_pack.c        # mods\movie_pack: higher-resolution movie pictures
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c
@@ -113,6 +114,11 @@ if(WIN32)
         dxguid
         xinput
         winmm
+        # The movie pack's decoder (Media Foundation, part of Windows).
+        mfplat
+        mfreadwrite
+        mfuuid
+        ole32
         # Lets the fault handler resolve the host RIP back to the generated
         # function's symbol, i.e. to the guest function that faulted.
         dbghelp

@@ -346,6 +346,7 @@ environment variable that is already set wins over the file.
 | | `Mods` | `1` (default), `0` plays the original data | `AMPED2_MODS` |
 | | `ModPacks` | `1` (default), `0` leaves out the `mods.json` packs and `mods\loose` | `AMPED2_MOD_PACKS` |
 | | `TexturePack` | `1` (default; uses `mods\texture_pack\` if present), `0` off | `RECOMP_TEXTURE_PACK` |
+| | `MoviePack` | `1` (default; uses `mods\movie_pack\` if present), `0` off | `AMPED2_MOVIE_PACK` |
 | `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
 
 **Mods.** The runtime reads `mods\build\game\` over `game\`
@@ -437,6 +438,90 @@ button mask at a time after the first pad poll. Mask bits 16–19 push the
 left stick down, up, left and right. A mask of 0 holds
 `RECOMP_PAD_PRESS` pulses off for its hold time. For example,
 `14000:0:16000,16000:0x02:250,17000:0x02:250,18500:0x100` opens Tutorials.
+
+### The movie pack
+
+`mods\movie_pack\<Name>.mp4` replaces the picture of `game\Movies\<Name>.xmv`
+(Windows, D3D11 renderer). Only the picture is replaced. The game's own
+XMV decoder still runs underneath, so the timing, the sound, Start to skip
+and the end of the movie behave as they always did.
+
+**Making the copies** (`tools\mods\movie_pack.py`, a recipe: nothing
+derived from the game is committed):
+
+```
+python tools\mods\movie_pack.py                 # every movie, AI upscale
+python tools\mods\movie_pack.py Intro XSN       # just these
+python tools\mods\movie_pack.py --upscale lanczos   # a plain resize, minutes
+python tools\mods\movie_pack.py --deinterlace Port_Career_Number1
+```
+
+1. FFmpeg decodes each XMV (WMV2 640x480 with six Xbox ADPCM tracks) to
+   PNG frames and keeps each frame's time. The frames are not evenly
+   spaced (Intro: 1801 frames in 60.86 s, 33 or 34 ms apart with a few
+   long gaps).
+2. Real-ESRGAN (`realesrgan-ncnn-vulkan`, Vulkan on the GPU) upscales 3x
+   with its fast video model `realesr-animevideov3`.
+3. FFmpeg scales to 1440x1080 and encodes H.264 (OpenH264) with the
+   original frame times and millisecond timestamps (with FFmpeg's default
+   1/25 s timebase, 291 of the intro's frames were dropped).
+
+Tools: `tools\bin\ffmpeg\` (BtbN's FFmpeg-Builds, `ffmpeg-n9.0-latest-win64-lgpl-shared`,
+LGPL, so it can be shipped with the installer later) and
+`tools\bin\realesrgan\` (xinntao/Real-ESRGAN `realesrgan-ncnn-vulkan-20220424-windows`,
+BSD-3-Clause). Both are git-ignored. Neither has been added to `NOTICE.md`
+yet, because nothing ships them.
+
+Measured on the RTX 2070 (2026-11-03):
+
+| Upscaler | Time per 640x480 frame | Intro (1801 frames) |
+|---|---|---|
+| `realesr-animevideov3`, 3x | 0.11 s | 6 min including decode and encode, 99 MB |
+| `realesrgan-x4plus`, 4x | 2.1 s | about an hour |
+| Lanczos | - | seconds |
+
+All movies come to roughly 60,000 frames, so about two hours with the fast
+model. The career movies are live footage with interlacing combs in the
+source. The fast model smooths those, and some snow texture with them;
+x4plus keeps the texture but sharpens the combs. Use `--deinterlace`
+(bwdif) for those movies.
+
+**At run time** (`src/movie_pack.c`):
+- **Hooks.** It is on when `mods\movie_pack` exists (`MoviePack=0` turns it
+  off). It hooks the kernel's path translation (`g_xbox_path_hook`): when
+  the game opens `Movies\<Name>.xmv` and a copy exists, a thread decodes
+  the copy with Media Foundation (built into Windows) into a ring of four
+  BGRA frames.
+- **Frame times.** The GetNextFrame wrapper (`0x002CDE60`) reports the time
+  of each frame the game shows (`decoder + 0xE4`, in ms) and the end of
+  the movie (status 2).
+- **Drawing.** The toolkit's overlay source (`g_xbox_overlay_source`,
+  `overlay_source.h`) lets the D3D11 renderer draw the copy's frame for
+  that time into the overlay's rectangle, with linear filtering and the
+  colour key. With no frame ready, the game's own picture shows.
+- **Opens.** The game opens each movie three times (twice briefly).
+  Each open restarts the decoder.
+- **Ending.** A skip with Start never reports the end. So a decoder whose
+  full ring nobody has drawn from for 10 s ends itself: Media Foundation
+  and the ring hold about 110 MB, which the quick suite's memory figures
+  showed (boot 411 -> 523 MB before this). With `PlayMovies=0` the game
+  still opens the movies, so the hook does nothing then.
+- `AMPED2_MOVIE_TRACE=1` prints the game's frame time against the copy's
+  every 300 presents.
+
+**Measured** (`diag/movie-pack/mp3`, `mp4`):
+- All 1801 intro frames were decoded.
+- The copy's frame stayed 0–37 ms behind the game's (about one frame),
+  with 2–4 frames queued.
+- The intro still ends at 60 s and the front end loads.
+- Start at 40 s skips cleanly.
+- MGS, which has no copy, shows its own picture.
+
+**Not done yet:**
+- the GL renderer (Linux) and a Linux decoder;
+- an installer option (download the two tools, then convert in the
+  background);
+- converting all movies (about 2 h).
 
 ## Bring-up notes
 

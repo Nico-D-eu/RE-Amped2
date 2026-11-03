@@ -1067,6 +1067,9 @@ static const char k_ini_default[] =
     "; Use the texture pack in mods\\texture_pack (the asset toolkit's\r\n"
     "; tex-pack) when it is there: 1 on, 0 shows the original textures.\r\n"
     ";TexturePack=1\r\n"
+    "; Show the higher-resolution movies in mods\\movie_pack\r\n"
+    "; (tools\\mods\\movie_pack.py) when they are there: 1 on, 0 off.\r\n"
+    ";MoviePack=1\r\n"
     "; Console memory in MB: 64 (a retail Xbox) or 128 (a debug kit). 128\r\n"
     "; doubles the game's heap and lets its graphics pool reach its full 60 MB\r\n"
     "; (about 48 MB at 64): headroom for mods with bigger content.\r\n"
@@ -1264,6 +1267,7 @@ static void load_settings(void)
         { "Game",    "Mods",           "AMPED2_MODS" },
         { "Game",    "ModPacks",       "AMPED2_MOD_PACKS" },
         { "Game",    "TexturePack",    "AMPED2_TEXTURE_PACK" },
+        { "Game",    "MoviePack",      "AMPED2_MOVIE_PACK" },
         { "Game",    "Memory",         "RECOMP_GUEST_RAM_MB" },
     };
     char path[MAX_PATH], line[1024], section[64] = "";
@@ -1507,6 +1511,10 @@ static int amped2_load(void)
     printf("XBE loaded: %zu bytes\n", s_xbe_size);
     describe_xbe((const uint8_t *)s_xbe_data, s_xbe_size);
     mod_packs();
+    {   /* mods\movie_pack: higher-resolution pictures for the movies */
+        extern void movie_pack_init(void);
+        movie_pack_init();
+    }
     /* Reached guesses (src/coverage.c), kept in amped2-coverage.txt in the
      * game root, which is the working directory from here on. */
     amped2_coverage_init(amped2_build_version);

@@ -189,7 +189,7 @@ writes it the first time it starts, with each line commented out. Remove the
 | `[Audio]` | `Volume` | `0` to `100` |
 | `[Game]` | `PlayMovies` | `1` (default), `0` skips the intro movies |
 | | `Mods` | `1` (default), `0` plays the original game data |
-| | `ModPacks`, `TexturePack` | `1` (default) or `0` |
+| | `ModPacks`, `TexturePack`, `MoviePack` | `1` (default) or `0` |
 
 ### Mods and texture packs
 
@@ -198,6 +198,14 @@ files. `mods\mods.json` lists the packs to use, and each pack is a folder in
 `mods\packs\`. The RE-Amped2 look (logo, splash and loading screen) is
 one of them, `re-amped2`. To make your own, see the modding sections of the
 [developer guide](docs/DEVELOPING.md#settings-amped2ini).
+
+**HD movies (Windows, experimental).** `tools\mods\movie_pack.py` makes
+1440x1080 copies of the game's movies from your own copy, upscaled with
+Real-ESRGAN, into `mods\movie_pack\`. The game then shows them in place of
+the original 640x480 pictures; sound, timing and skipping are unchanged.
+It needs FFmpeg and Real-ESRGAN (see the
+[developer guide](docs/DEVELOPING.md#the-movie-pack)) and takes about two
+hours on an RTX 2070 for all movies.
 
 ---
 

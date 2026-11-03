@@ -608,6 +608,14 @@ void sub_002CDE60(void)
     }
     xmv_stats(dec, pstatus ? MEM32(pstatus) : 3u, req_before,
               (double)(q1 - q0) * 1000.0 / (double)qf);
+    {   /* The movie pack (movie_pack.c) follows the frame shown, +0xE4 (ms). */
+        extern void movie_pack_frame(uint32_t ms), movie_pack_end(void);
+        uint32_t st = pstatus ? MEM32(pstatus) : 0;
+        if (dec && st == 1)
+            movie_pack_frame(MEM32(dec + 0xE4));
+        else if (st == 2)
+            movie_pack_end();
+    }
     n++;
 }
 
