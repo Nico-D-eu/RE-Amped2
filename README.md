@@ -83,7 +83,7 @@ RE-Amped2 is also listed in RecompLauncher and Decomp Buddy:
 | | HD texture pack and sharper fonts out of the box | ⬜ planned |
 | **Sound and video** | Sound effects, the soundtrack, rumble | ✅ |
 | | Intro and in-game movies | ✅ (at their original resolution) |
-| | Sharper movies | ⬜ planned |
+| | Sharper movies | 🟡 optional HD copies, made on your PC by the installer (Windows) |
 | **Controls** | Xbox-style controllers | ✅ |
 | | Keyboard: two layouts, fully remappable | ✅ |
 | **Comfort** | Window or borderless full screen (F11), window size and resolution in the menus, Quit Game in the main menu | ✅ |
