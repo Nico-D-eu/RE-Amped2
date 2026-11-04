@@ -1,0 +1,62 @@
+# Packs the Linux release (RE-Amped2-<version>-linux.tar.gz) from the public
+# repositories, as installer.yml does for the Windows installer:
+#
+# - This repository at the tag (or the branch it was started on).
+# - The toolkit fork, Nico-D-eu/xboxrecomp, at the commit in
+#   installer/toolkit.ref. Push that commit to the fork before tagging.
+# - xdvdfs for Linux, downloaded by tools/linux/package.sh and checked
+#   against a fixed SHA-256 hash.
+#
+# The tarball holds sources only; install.sh in it builds the game from the
+# player's own disc. The result is a workflow artifact; publishing a
+# release stays manual.
+
+name: Linux
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out RE-Amped2
+        uses: actions/checkout@v4
+        with:
+          path: amped2
+          persist-credentials: false
+
+      - name: Read the toolkit commit
+        id: toolkit
+        run: |
+          sha=$(head -1 amped2/installer/toolkit.ref | tr -d '[:space:]')
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "toolkit.ref must hold a full commit hash, not '$sha'"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the toolkit
+        uses: actions/checkout@v4
+        with:
+          repository: Nico-D-eu/xboxrecomp
+          ref: ${{ steps.toolkit.outputs.sha }}
+          path: xboxrecomp
+          persist-credentials: false
+
+      - name: Pack the tarball
+        run: |
+          bash amped2/tools/linux/package.sh
+          cd amped2/installer/dist
+          echo "Linux tarball, SHA-256 \`$(cut -d' ' -f1 RE-Amped2-*-linux.tar.gz.sha256)\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Amped2-linux
+          path: |
+            amped2/installer/dist/RE-Amped2-*-linux.tar.gz
+            amped2/installer/dist/RE-Amped2-*-linux.tar.gz.sha256
+          if-no-files-found: error

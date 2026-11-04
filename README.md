@@ -70,7 +70,7 @@ RE-Amped2 is also listed in RecompLauncher and Decomp Buddy:
 | **Gameplay** | Career, Free Ride and Tutorials | ✅ |
 | | Pro challenges, snowskate runs | ✅ |
 | | Saves | ✅ |
-| | A full career to the end | 🟡 being checked |
+| | A full career to the end | ✅ |
 | | Legend challenges (they unlock after the career) | 🟡 not tested yet |
 | | Split-screen multiplayer | ⬜ hidden for now |
 | | Xbox Live | ➖ the service is gone |
@@ -83,14 +83,14 @@ RE-Amped2 is also listed in RecompLauncher and Decomp Buddy:
 | | HD texture pack and sharper fonts out of the box | ⬜ planned |
 | **Sound and video** | Sound effects, the soundtrack, rumble | ✅ |
 | | Intro and in-game movies | ✅ (at their original resolution) |
-| | Sharper movies | ⬜ planned |
+| | Sharper movies | 🟡 optional HD copies, made on your PC by the installer (Windows) |
 | **Controls** | Xbox-style controllers | ✅ |
 | | Keyboard: two layouts, fully remappable | ✅ |
 | **Comfort** | Window or borderless full screen (F11), window size and resolution in the menus, Quit Game in the main menu | ✅ |
 | **Mods** | Mod packs, single-file replacements, script mods | ✅ |
 | | New characters and remixed levels | ⬜ planned |
 | **Platforms** | Windows 10 and 11 (64-bit) | ✅ |
-| | Linux | 🟡 in development: it builds and reaches the slopes from source, not ready for players yet |
+| | Linux | 🟡 preview: an install script that builds the game from your disc. Tested only under WSL2 (Ubuntu 24.04) so far, not yet on a real Linux PC |
 | | Steam Deck, macOS | ⬜ planned, after Linux |
 | | Xbox Series X\|S (Dev Mode) | ⬜ planned |
 | | PlayStation 5 (homebrew) | ⬜ being explored |
@@ -138,6 +138,34 @@ settings are kept.
 **Uninstalling:** back up your saves (`game\UDATA` in the install folder),
 then delete the folder. The build tools are normal programs you can remove in
 Settings › Apps if you don't need them.
+
+### On Linux (preview)
+
+Linux support is new in 0.3.0 and has **only been tested under WSL2**
+(Ubuntu 24.04 on Windows), not on a real Linux PC yet. Expect rough edges,
+and please report how it goes.
+
+1. Download **`RE-Amped2-<version>-linux.tar.gz`** and its `.sha256` from
+   the [Releases page](../../releases), and check it with
+   `sha256sum -c RE-Amped2-*-linux.tar.gz.sha256`.
+2. Unpack it and run the install script with your disc image:
+
+   ```bash
+   tar xzf RE-Amped2-*-linux.tar.gz
+   cd RE-Amped2-*-linux
+   ./install.sh "/path/to/Amped 2.iso"
+   ```
+
+   It installs to `~/Games/RE-Amped2` unless you give a folder after the
+   disc image. Like the Windows installer, it compiles the game on your PC.
+   If build tools are missing, it shows the `apt`, `dnf` or `pacman` command
+   for them and runs it only if you agree. On Bazzite, Silverblue and other
+   image-based distros it offers a Distrobox container instead.
+3. Start **RE-Amped2** from your applications menu, or `./RE-Amped2` in the
+   install folder.
+
+You need OpenGL 3.3 or newer, and 4.2 for the RE-Amped2 look. Java is only
+needed for the RE-Amped2 menus; without it they are left out.
 
 ---
 
@@ -190,7 +218,7 @@ writes it the first time it starts, with each line commented out. Remove the
 | `[Audio]` | `Volume` | `0` to `100` |
 | `[Game]` | `PlayMovies` | `1` (default), `0` skips the intro movies |
 | | `Mods` | `1` (default), `0` plays the original game data |
-| | `ModPacks`, `TexturePack` | `1` (default) or `0` |
+| | `ModPacks`, `TexturePack`, `MoviePack` | `1` (default) or `0` |
 
 ### Mods and texture packs
 
@@ -200,23 +228,42 @@ files. `mods\mods.json` lists the packs to use, and each pack is a folder in
 one of them, `re-amped2`. To make your own, see the modding sections of the
 [developer guide](docs/DEVELOPING.md#settings-amped2ini).
 
+**HD movies (Windows, experimental).** Tick *Convert the movies to HD* in
+the installer. It downloads two free tools, FFmpeg and Real-ESRGAN (with
+your consent; 120 MB). After the install it makes 1440x1080 copies of the
+game's movies from your own disc, upscaled on your graphics card, into
+`mods\movie_pack\`. The game shows each copy in place of the original
+640x480 picture as soon as it is done; sound, timing and skipping are
+unchanged.
+
+All 50 movies take a few hours (4 h 48 min on an RTX 2070 laptop GPU) and
+about 5 GB. The conversion runs in a minimised window. If you close it,
+`Convert HD movies.cmd` in the install folder carries on where it stopped.
+`MoviePack=0` in `amped2.ini` turns the copies off. The recipe is
+`tools\mods\movie_pack.py` (see the
+[developer guide](docs/DEVELOPING.md#the-movie-pack)).
+
 ---
 
 ## Known issues
 
-In the current release (0.2.1):
+In the current release (0.3.0):
 
-- **The intro movie plays slowly** (at less than half speed). Press
-  **Start** (Enter on the keyboard) to skip it, or set `PlayMovies=0` in
-  `amped2.ini` to skip the intro movies altogether.
+- **Linux is a preview.** It has only been tested under WSL2 (Ubuntu 24.04
+  on Windows): install, menus and riding a level. It has not been run on a
+  real Linux PC yet, and a controller has not been tried on Linux. Reports
+  from Ubuntu, Fedora, Arch, Bazzite and others are very welcome, working
+  or not.
+- **HD movies are Windows-only** for now. On Linux the movies play at their
+  original resolution.
 - **Now and then the in-level music repeats the same few seconds** until the
   next track starts. Sound effects keep working. Your `amped2.log` from such
   a session helps.
 - **An occasional 1–2 second hitch** in a level, about once an hour.
 - **Menu pictures are stretched** in 16:9. Text is drawn at its own
   proportions.
-- **Not checked yet:** a full career to the end, and the Legend challenges.
-  If you get that far, we'd like to hear how it went, good or bad.
+- **Not checked yet:** the Legend challenges. If you get that far, we'd
+  like to hear how it went, good or bad.
 
 ---
 
@@ -253,9 +300,9 @@ and the result stays there.
 
 **Online play?** No. Xbox Live for the original Xbox shut down long ago.
 
-**Linux?** In development. The game already builds and plays from source
-on Ubuntu, but drawing, sound and pacing still need work, and there is no
-installer for it yet. Steam Deck and macOS come after it.
+**Linux?** A preview since 0.3.0: see [On Linux (preview)](#on-linux-preview).
+So far it has only been tested under WSL2 on Windows, not on a real Linux
+PC. Steam Deck and macOS come after it.
 
 **Xbox, PlayStation?** Planned or being explored; see [PLAN.md](PLAN.md),
 Parts C and D.

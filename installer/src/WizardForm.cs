@@ -63,7 +63,7 @@ namespace Amped2Installer
         // ── Page 2: location ─────────────────────────────────────────
         TextBox _dirBox;
         Label _spaceLabel, _existingLabel, _toolsNote, _timeNote;
-        CheckBox _shortcutBox, _menuBox, _lookBox;
+        CheckBox _shortcutBox, _menuBox, _lookBox, _hdBox;
         TableLayoutPanel _toolsList;
         LinkLabel _recheck;
         Toolchain _tools;
@@ -332,9 +332,22 @@ namespace Amped2Installer
                 Text = "Use the RE-Amped2 look (new logo, start-up splash and loading screen)",
                 Checked = true,
                 AutoSize = true,
-                Margin = new Padding(0, 0, 0, 12),
+                Margin = new Padding(0, 0, 0, 2),
             };
             Add(page, _lookBox);
+            _hdBox = new CheckBox
+            {
+                Text = "Convert the movies to HD (1440x1080, upscaled on your graphics card)",
+                Checked = false,
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 0),
+            };
+            _hdBox.CheckedChanged += (s, e) => UpdateSpace();
+            Add(page, _hdBox);
+            var hdNote = Para("Runs after the install, in the background: a few hours and about 5 GB. " +
+                              "Downloads two free tools, FFmpeg and Real-ESRGAN (120 MB).", Muted, _small);
+            hdNote.Margin = new Padding(18, 0, 0, 12);
+            Add(page, hdNote);
             _menuBox.Margin = new Padding(0, 2, 0, 2);
 
             var toolsHead = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 0, 4) };
@@ -403,7 +416,10 @@ namespace Amped2Installer
         {
             // The disc is unpacked next to an existing game\ before it replaces
             // it, so an update needs the full size too, for a while.
-            return (_disc?.GameBytes ?? 4300000000L) + 2L * 1024 * 1024 * 1024;
+            // The HD movies: 4.3 GB of copies, the tools, and up to 2 GB of
+            // work files while a movie converts.
+            return (_disc?.GameBytes ?? 4300000000L) + 2L * 1024 * 1024 * 1024 +
+                   (_hdBox != null && _hdBox.Checked ? 6500L * 1024 * 1024 : 0);
         }
 
         void UpdateSpace()
@@ -652,12 +668,15 @@ namespace Amped2Installer
         {
             approved = new HashSet<string>();
             var missing = _tools.Describe(_menuBox.Checked).Where(t => !t.Found && t.CanInstall).ToList();
-            if (missing.Count == 0)
+            if (missing.Count == 0 && !_hdBox.Checked)
                 return true;
-            if (!ConsentDialog.Ask(this, missing, _menuBox.Checked))
+            if (!ConsentDialog.Ask(this, missing, _menuBox.Checked, _hdBox.Checked))
                 return false;
             foreach (var t in missing)
                 approved.Add(t.Name);
+            if (_hdBox.Checked)
+                foreach (var t in MovieTools.Tools)
+                    approved.Add(t.Name);
             return true;
         }
 
@@ -684,6 +703,7 @@ namespace Amped2Installer
                 DesktopShortcut = _shortcutBox.Checked,
                 MenuMod = _menuBox.Checked,
                 Look = _lookBox.Checked,
+                HdMovies = _hdBox.Checked,
                 ApprovedTools = approvedTools,
             };
             _installIntro.Text = "Sit back: the installer is building RE-Amped2 from your disc image, right here on your PC. " +
@@ -703,6 +723,7 @@ namespace Amped2Installer
             for (int i = 0; i < InstallJob.StageTitles.Length; i++)
             {
                 if (i == 5 && !options.MenuMod) continue;
+                if (i == 6 && !options.HdMovies) continue;
                 int row = _stageTable.RowCount++;
                 _stageTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 var mark = new Label { Text = "\u25CB", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 3, 0, 3) };
@@ -855,6 +876,12 @@ namespace Amped2Installer
                 };
                 if (r.MenuModNote != null)
                     tips.Add(r.MenuModNote + " The game plays fine without them.");
+                if (r.HdMoviesStarted)
+                    tips.Add("The movies are being converted to HD in a window on the taskbar. It takes a few hours, and each movie " +
+                             "switches to HD as soon as it is done, so you can play meanwhile. If you close that window, " +
+                             "\"Convert HD movies.cmd\" in the install folder carries on where it stopped.");
+                if (r.HdMoviesNote != null)
+                    tips.Add(r.HdMoviesNote);
                 tips.AddRange(r.Warnings);
                 foreach (var tip in tips)
                     Add(page, Bullet(tip));

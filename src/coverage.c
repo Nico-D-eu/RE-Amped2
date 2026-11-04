@@ -27,7 +27,11 @@
  * amped2_coverage_note() for the other three.
  */
 
-#include <windows.h>
+#include "host.h"            /* windows.h on Windows */
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include "xbox_winnt.h"      /* SRWLOCK, CreateThread, Sleep: the toolkit's POSIX versions */
+#endif
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -117,17 +121,51 @@ void recomp_reached(int kind, uint32_t va)
     amped2_coverage_note(kind, va);
 }
 
-/* Write what is queued. Win32 file calls only, so it is safe from the quit
- * path, which must not touch stdio (see stderr_drain_quit in main.c). */
+/* The file, appended to with the OS's own calls and no stdio. */
+#if defined(_WIN32)
+typedef HANDLE cov_file;
+#define COV_NONE INVALID_HANDLE_VALUE
+static cov_file cov_open(int *empty)
+{
+    HANDLE h = CreateFileA(s_file, FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+                           OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    *empty = h != INVALID_HANDLE_VALUE && GetFileSize(h, NULL) == 0;
+    return h;
+}
+static void cov_write(cov_file h, const char *p, int n)
+{
+    DWORD w;
+    WriteFile(h, p, (DWORD)n, &w, NULL);
+}
+static void cov_close(cov_file h) { CloseHandle(h); }
+#else
+typedef int cov_file;
+#define COV_NONE (-1)
+static cov_file cov_open(int *empty)
+{
+    struct stat st;
+    int fd = open(s_file, O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0644);
+    *empty = fd >= 0 && fstat(fd, &st) == 0 && st.st_size == 0;
+    return fd;
+}
+static void cov_write(cov_file fd, const char *p, int n)
+{
+    if (write(fd, p, (size_t)n) < 0)
+        return;
+}
+static void cov_close(cov_file fd) { close(fd); }
+#endif
+
+/* Write what is queued. No stdio, so it is safe from the quit path, which
+ * must not touch it (see stderr_drain_quit in main.c). */
 void amped2_coverage_flush(void)
 {
     uint64_t batch[PENDING];
-    int n, i;
+    int n, i, empty;
     char line[256], date[16];
     time_t now = time(NULL);
     struct tm tm;
-    HANDLE h;
-    DWORD w;
+    cov_file h;
 
     AcquireSRWLockExclusive(&s_lock);
     n = s_npending;
@@ -137,19 +175,22 @@ void amped2_coverage_flush(void)
     if (!n || !s_file_on)
         return;
 
+#if defined(_WIN32)
     localtime_s(&tm, &now);
+#else
+    localtime_r(&now, &tm);
+#endif
     strftime(date, sizeof date, "%Y-%m-%d", &tm);
-    h = CreateFileA(s_file, FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
-                    OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE)
+    h = cov_open(&empty);
+    if (h == COV_NONE)
         return;
-    if (GetFileSize(h, NULL) == 0) {
+    if (empty) {
         static const char head[] =
             "# RE-Amped2 coverage: guessed or missing code that play reached.\r\n"
             "# One line per address, the first time any session reached it:\r\n"
             "# kind, guest address, date, build. Written by the game (src/coverage.c);\r\n"
             "# delete the file to start over.\r\n";
-        WriteFile(h, head, sizeof head - 1, &w, NULL);
+        cov_write(h, head, (int)sizeof head - 1);
     }
     for (i = 0; i < n; i++) {
         int kind = (int)(batch[i] >> 32);
@@ -157,9 +198,9 @@ void amped2_coverage_flush(void)
                            k_kind_name[kind < KINDS ? kind : 0],
                            (uint32_t)batch[i], date, s_build);
         if (len > 0)
-            WriteFile(h, line, (DWORD)len, &w, NULL);
+            cov_write(h, line, len);
     }
-    CloseHandle(h);
+    cov_close(h);
 }
 
 /* "[COVERAGE]" summary for the log: this session's totals by kind. */
@@ -229,8 +270,8 @@ void amped2_coverage_init(const char *build)
         snprintf(s_build, sizeof s_build, "%s", build);
     s_file_on = !(e && !strcmp(e, "0"));
     if (s_file_on) {
-        if (!GetFullPathNameA(e && *e ? e : "amped2-coverage.txt",
-                              sizeof s_file, s_file, NULL))
+        if (!host_full_path(e && *e ? e : "amped2-coverage.txt",
+                            s_file, sizeof s_file))
             s_file_on = 0;
         else
             load_file();

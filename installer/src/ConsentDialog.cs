@@ -7,9 +7,10 @@ using System.Windows.Forms;
 namespace Amped2Installer
 {
     /// <summary>
-    /// Asked when Install is clicked and some build tools are missing: lists
-    /// each tool the installer would fetch with winget (publisher, size,
-    /// licence terms) and installs nothing unless the player ticks the box
+    /// Asked when Install is clicked and some build tools are missing, or the
+    /// HD movies are ticked: lists each tool the installer would fetch with
+    /// winget, and the HD movie tools it would download (publisher, size,
+    /// licence terms), and fetches nothing unless the player ticks the box
     /// and clicks "Agree and install". winget is only told to accept the
     /// package agreements after that.
     /// </summary>
@@ -27,13 +28,13 @@ namespace Amped2Installer
         readonly Font _small = new Font("Segoe UI", 8.75f);
 
         /// <summary>Shows the dialog; true only when the player agreed.</summary>
-        public static bool Ask(IWin32Window owner, IList<ToolStatus> tools, bool menuPackages)
+        public static bool Ask(IWin32Window owner, IList<ToolStatus> tools, bool menuPackages, bool hdMovies)
         {
-            using (var d = new ConsentDialog(tools, menuPackages))
+            using (var d = new ConsentDialog(tools, menuPackages, hdMovies))
                 return d.ShowDialog(owner) == DialogResult.OK;
         }
 
-        ConsentDialog(IList<ToolStatus> tools, bool menuPackages)
+        ConsentDialog(IList<ToolStatus> tools, bool menuPackages, bool hdMovies)
         {
             SuspendLayout();
             Text = "RE-Amped2 Installer";
@@ -56,42 +57,57 @@ namespace Amped2Installer
             page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             void Add(Control c) { page.RowCount++; page.RowStyles.Add(new RowStyle(SizeType.AutoSize)); page.Controls.Add(c, 0, page.RowCount - 1); }
 
-            Add(Line(tools.Count == 1 ? "Install this free tool?" : $"Install these {tools.Count} free tools?", _h1, Ink, 8));
-            Add(Line("Building RE-Amped2 needs " + (tools.Count == 1 ? "a tool" : "some tools") +
-                     " this PC doesn't have yet. With your permission, the installer downloads " +
-                     (tools.Count == 1 ? "it" : "them") + " from the publisher with Windows' package manager (winget) " +
-                     "and installs " + (tools.Count == 1 ? "it" : "them") + " like any other program.", _base, Body, 12));
-
-            foreach (var t in tools)
+            void AddTool(string name, string publisher, string purpose, string note, string licenseUrl)
             {
-                Add(Line(t.Name, _bold, Ink, 0));
-                Add(Line($"{t.Publisher} · {Capital(t.Purpose)} · {t.InstallNote}", _small, Body, 0));
+                Add(Line(name, _bold, Ink, 0));
+                Add(Line($"{publisher} · {Capital(purpose)} · {note}", _small, Body, 0));
                 const string lead = "Licence terms: ";
                 var link = new LinkLabel
                 {
-                    Text = lead + t.LicenseUrl,
+                    Text = lead + licenseUrl,
                     AutoSize = true,
                     Font = _small,
-                    LinkArea = new LinkArea(lead.Length, t.LicenseUrl.Length),
+                    LinkArea = new LinkArea(lead.Length, licenseUrl.Length),
                     ForeColor = Body,
                     Margin = new Padding(0, 0, 0, 10),
                 };
-                var url = t.LicenseUrl;
-                link.LinkClicked += (s, e) => Links.Open(url);
+                link.LinkClicked += (s, e) => Links.Open(licenseUrl);
                 Add(link);
             }
 
-            Add(Line("They stay on your PC after RE-Amped2 is installed, and can be removed later in Settings › Apps " +
-                     "like any other program. Windows may ask for administrator rights while they install.", _small, Muted, 6));
+            int count = tools.Count + (hdMovies ? MovieTools.Tools.Length : 0);
+            Add(Line(tools.Count == 0 ? "Download the HD movie tools?"
+                     : count == 1 ? "Install this free tool?" : $"Install these {count} free tools?", _h1, Ink, 8));
+            if (tools.Count > 0)
+            {
+                Add(Line("Building RE-Amped2 needs " + (tools.Count == 1 ? "a tool" : "some tools") +
+                         " this PC doesn't have yet. With your permission, the installer downloads " +
+                         (tools.Count == 1 ? "it" : "them") + " from the publisher with Windows' package manager (winget) " +
+                         "and installs " + (tools.Count == 1 ? "it" : "them") + " like any other program.", _base, Body, 12));
+                foreach (var t in tools)
+                    AddTool(t.Name, t.Publisher, t.Purpose, t.InstallNote, t.LicenseUrl);
+                Add(Line("They stay on your PC after RE-Amped2 is installed, and can be removed later in Settings › Apps " +
+                         "like any other program. Windows may ask for administrator rights while they install.", _small, Muted, 12));
+            }
+            if (hdMovies)
+            {
+                Add(Line("The HD movies need two free programs. With your permission, the installer downloads fixed versions " +
+                         "from the publishers' GitHub releases, checks them against known fingerprints and puts them in " +
+                         "the install folder (tools\\bin), where only the movie converter uses them.", _base, Body, 12));
+                foreach (var t in MovieTools.Tools)
+                    AddTool(t.Name, t.Publisher, t.Purpose, t.Note, t.LicenseUrl);
+                Add(Line("Delete the tools\\bin folder to remove them. The HD copies of the movies are made from your own " +
+                         "disc, on this PC, into mods\\movie_pack.", _small, Muted, 6));
+            }
             Add(Line("The installer also downloads the recompiler's Python packages (Capstone" +
                      (menuPackages ? "; NumPy and Pillow for the RE-Amped2 menus" : "") +
                      ") from PyPI into a temporary folder, which is removed when the install finishes.", _small, Muted, 12));
 
             var agree = new CheckBox
             {
-                Text = tools.Count == 1
-                    ? "I accept this tool's licence terms and want it installed"
-                    : "I accept these tools' licence terms and want them installed",
+                Text = (count == 1
+                    ? "I accept this tool's licence terms and want it "
+                    : "I accept these tools' licence terms and want them ") + (tools.Count > 0 ? "installed" : "downloaded"),
                 AutoSize = true,
                 Margin = new Padding(0, 0, 0, 8),
             };
@@ -109,7 +125,7 @@ namespace Amped2Installer
             var cancel = new Button { Text = "Don't install", AutoSize = true, MinimumSize = new Size(96, 30), DialogResult = DialogResult.Cancel, Margin = new Padding(8, 0, 0, 0) };
             var ok = new Button
             {
-                Text = "Agree and install",
+                Text = tools.Count > 0 ? "Agree and install" : "Agree and download",
                 AutoSize = true,
                 MinimumSize = new Size(96, 30),
                 Padding = new Padding(8, 0, 8, 0),

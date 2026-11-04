@@ -346,6 +346,7 @@ environment variable that is already set wins over the file.
 | | `Mods` | `1` (default), `0` plays the original data | `AMPED2_MODS` |
 | | `ModPacks` | `1` (default), `0` leaves out the `mods.json` packs and `mods\loose` | `AMPED2_MOD_PACKS` |
 | | `TexturePack` | `1` (default; uses `mods\texture_pack\` if present), `0` off | `RECOMP_TEXTURE_PACK` |
+| | `MoviePack` | `1` (default; uses `mods\movie_pack\` if present), `0` off | `AMPED2_MOVIE_PACK` |
 | `[Advanced]` | any `RECOMP_…=value` | passed through as written | |
 
 **Mods.** The runtime reads `mods\build\game\` over `game\`
@@ -391,7 +392,8 @@ added to the archive. At start-up `src/mod_loose.c` merges them into
 `mods\cache\loose\` over whichever archive the game would otherwise read,
 and reuses that until a source file changes; the log says
 `[MODS] loose: ...`. Loose entries win over a repacked archive of the same
-name. Entry paths are as `tools/assets` `unpack` lists them.
+name. Entry paths are as `tools/assets` `unpack` lists them. The same on
+Linux (with `/`); folder names there may differ in case from the disc's.
 
 **Script mods.** The game's scripts are compiled Lua, but it compiles plain
 source just as well, so a decompiled and edited script (`tools/assets`
@@ -437,6 +439,130 @@ left stick down, up, left and right. A mask of 0 holds
 `RECOMP_PAD_PRESS` pulses off for its hold time. For example,
 `14000:0:16000,16000:0x02:250,17000:0x02:250,18500:0x100` opens Tutorials.
 
+### The movie pack
+
+`mods\movie_pack\<Name>.mp4` replaces the picture of `game\Movies\<Name>.xmv`
+(Windows, D3D11 renderer). Only the picture is replaced. The game's own
+XMV decoder still runs underneath, so the timing, the sound, Start to skip
+and the end of the movie behave as they always did.
+
+**Making the copies** (`tools\mods\movie_pack.py`, a recipe: nothing
+derived from the game is committed):
+
+```
+python tools\mods\movie_pack.py                 # every movie, start-up ones first
+python tools\mods\movie_pack.py Intro XSN       # just these
+python tools\mods\movie_pack.py --upscale lanczos   # a plain resize, minutes
+python tools\mods\movie_pack.py --deinterlace on Intro   # auto: only Port_*
+```
+
+1. FFmpeg decodes each XMV (WMV2 640x480 with six Xbox ADPCM tracks) to
+   PNG frames and keeps each frame's time. The frames are not evenly
+   spaced (Intro: 1801 frames in 60.86 s, 33 or 34 ms apart with a few
+   long gaps). The live-action `Port_*` movies are deinterlaced (bwdif)
+   first.
+2. Real-ESRGAN (`realesrgan-ncnn-vulkan`, Vulkan on the GPU) upscales 3x
+   with its fast video model `realesr-animevideov3`. If it fails (no
+   Vulkan), `--upscale auto` (the default) switches to Lanczos.
+3. FFmpeg scales to 1440x1080 and encodes H.264 (OpenH264) with the
+   original frame times.
+4. Steps 2 and 3 run 500 frames at a time (`--batch`). The pieces are
+   joined without re-encoding, each with its exact duration. An upscaled
+   frame is 1.7 MB as PNG, so Port_Career_legend (7100 frames) needed 13 GB
+   of work space in one go; in batches it needs about 2 GB. The copy is
+   written as `<Name>.mp4.part` and renamed at the end.
+
+**Frame times.** The copy must keep each frame's own time, since the
+runtime matches frames by time:
+- In the concat demuxer's default 1/25 s timestamps, frames 33 ms apart
+  share a slot and vfr drops one (291 of the intro's 1801). Hence
+  `-fps_mode passthrough -enc_time_base 1/1000 -video_track_timescale 1000`.
+- That kept every frame, but the times still snapped to 40 ms, because
+  the demuxer's time base comes from the first picture's (1/25 s for a
+  still image). `option framerate 1000` on each picture fixes it, and the
+  times now match the source to the millisecond (Port_OwnMtn_MoCap_2: 721
+  of 721 frames, 0 ms off). Before that, frames were up to 20 ms off, and
+  colliding ones landed 1 ms apart, so about every fifth frame was never
+  shown. The 50 copies made before the fix (2026-11-04) were corrected in
+  place by rewriting each mp4's `stts` table. With the corrected copies,
+  `AMPED2_MOVIE_TRACE` shows the copy at exactly the game's frame time
+  ("title at 4404 ms, showing 4404 ms"); before the fix it was 0–37 ms
+  behind.
+- **Bitrate.** OpenH264 shares the bitrate out by the frame rate it is
+  told, and caps that rate at 60. After the fix it is told 1000 (the
+  pictures' rate), so it budgets for 60 frames a second, twice the movies'
+  29.97, and the test install's first copies came out at half the bits
+  (xsn 3.8 Mbit/s against 7.0). FFmpeg refuses `-r` together with
+  passthrough, so the recipe asks for twice `--bitrate` instead. With that,
+  Port_OwnMtn_MoCap_2 comes out at 11.2 Mbit/s for 12M, still 0 ms off.
+  The 50 copies made before the frame-time fix are not affected: back then
+  the encoder was told 25.
+- Windows' own H.264 encoder (`h264_mf`) would avoid OpenH264's patent
+  question, but it refuses to open at the 1/1000 rate ("could not set
+  output type").
+
+Tools: `tools\bin\ffmpeg\` (BtbN's FFmpeg-Builds, LGPL shared build) and
+`tools\bin\realesrgan\` (xinntao/Real-ESRGAN `realesrgan-ncnn-vulkan-20220424-windows`,
+BSD-3-Clause), or the same programs on PATH. Both are git-ignored. The
+installer downloads pinned versions of both for players who tick HD movies
+(`installer/src/MovieTools.cs`, `installer/README.md`, `NOTICE.md`) and
+runs the recipe from the install folder after the install.
+
+Measured on the RTX 2070 (2026-11-03):
+
+| Upscaler | Time per 640x480 frame | Intro (1801 frames) |
+|---|---|---|
+| `realesr-animevideov3`, 3x | 0.11 s | 6 min including decode and encode, 99 MB |
+| `realesrgan-x4plus`, 4x | 2.1 s | about an hour |
+| Lanczos | - | seconds |
+
+All 50 movies come to 53.5 minutes (about 96,000 frames). The full run on
+2026-11-03/04 took 4 h 48 min, with no failures. Port_Career_legend and
+Port_Career_Number1 took 23 min each; most others took 2–7 min. The copies
+total 4.26 GB. The same GPU (an RTX 2070 Max-Q, in a laptop) was about 3x
+slower the next morning (0.38 s a frame), probably because of power limits,
+so expect the time to vary. The career movies are live footage with
+interlacing combs in the source. The fast model smooths those, and some
+snow texture with them; x4plus keeps the texture but sharpens the combs.
+That is why the `Port_*` movies are deinterlaced.
+
+**At run time** (`src/movie_pack.c`):
+- **Hooks.** It is on when `mods\movie_pack` exists (`MoviePack=0` turns it
+  off). It hooks the kernel's path translation (`g_xbox_path_hook`): when
+  the game opens `Movies\<Name>.xmv` and a copy exists, a thread decodes
+  the copy with Media Foundation (built into Windows) into a ring of four
+  BGRA frames.
+- **Frame times.** The GetNextFrame wrapper (`0x002CDE60`) reports the time
+  of each frame the game shows (`decoder + 0xE4`, in ms) and the end of
+  the movie (status 2).
+- **Drawing.** The toolkit's overlay source (`g_xbox_overlay_source`,
+  `overlay_source.h`) lets the D3D11 renderer draw the copy's frame for
+  that time into the overlay's rectangle, with linear filtering and the
+  colour key. With no frame ready, the game's own picture shows.
+- **Opens.** The game opens each movie three times (twice briefly).
+  Each open restarts the decoder.
+- **Ending.** A skip with Start never reports the end. So a decoder whose
+  full ring nobody has drawn from for 10 s ends itself: Media Foundation
+  and the ring hold about 110 MB, which the quick suite's memory figures
+  showed (boot 411 -> 523 MB before this). With `PlayMovies=0` the game
+  still opens the movies, so the hook does nothing then.
+- `AMPED2_MOVIE_TRACE=1` prints the game's frame time against the copy's
+  every 300 presents.
+
+**Measured** (`diag/movie-pack/mp3`, `mp4`):
+- All 1801 intro frames were decoded.
+- The copy's frame stayed 0–37 ms behind the game's (about one frame),
+  with 2–4 frames queued.
+- The intro still ends at 60 s and the front end loads.
+- Start at 40 s skips cleanly.
+- MGS, which has no copy, shows its own picture.
+
+**Not done yet:**
+- the GL renderer (Linux) and a Linux decoder;
+- an installer option (download the two tools, then convert in the
+  background);
+- converting all movies (about 2 h).
+
 ## Bring-up notes
 
 Record addresses, identified functions and overrides here as they are found.
@@ -446,77 +572,213 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
 
-### The slow intro movie (2026-10-31, cause narrowed, not fixed)
+### Linux bring-up (2026-10-31, PLAN Phase 21)
 
-Since the v0.16 merge, `Movies\Intro.xmv` plays at about 0.4x. It is
-60.9 s long (1801 frames at 29.6 fps; the header and the audio track
-agree). The suite's movie case measures it from the file's open to the
-front-end boarder load:
+Built in WSL2 (Ubuntu 24.04, GCC 13) with the build directory on the Linux
+side and the sources read over `/mnt/c`:
 
-| Build | Intro to front end |
-|---|---|
-| Pre-sync `RE-Amped2.base.exe` | 79 s |
-| First merged `.cand` | 153 s |
-| HEAD | 152–237 s |
-| HEAD with `RECOMP_VBLANK=paced` | **60.8 s** |
+```bash
+cmake -S /mnt/c/Projects/recompilation/amped2 -B ~/build/a2 -G Ninja -DCMAKE_BUILD_TYPE=Release
+ninja -C ~/build/a2 -j3
+```
 
-MGS and XSN play at the right speed. What was measured:
+What a Linux build needs that Windows hides:
+- **The lifted CRT owns libc's names.** The game's LIBCMT, as lifted, has
+  functions called `close`, `read`, `write`, `lseek`, `isatty`, `tzset` and
+  `fsopen` (MSVC's `_close` and so on). On Linux these took over libc's:
+  the toolkit's `xbox_path_init` called `close()` and ran `sub_0025E405`.
+  CMakeLists renames them to `guest_*` in the generated code. A new
+  clash shows up as a toolkit or library call landing in a `sub_` function;
+  `nm` the generated objects against `ldd`'s libraries to find it.
+- **Map the guest before the window.** The guest needs fixed windows above
+  2 GB of its 4 GB range (contiguous memory at `0x80000000`, NV2A, MCPX,
+  flash, the tiled alias). Once SDL's GL driver has mapped memory, those
+  fail with ENOMEM. `main.c` loads the XBE and maps memory (`amped2_load`)
+  before `xbox_HostWindowMain` opens the window.
+- **The game runs on a pthread.** SDL keeps the main thread
+  (`xbox_HostWindowMain`), so `amped2_run` is the guest thread's body.
+- **Trapped registers on x86-64.** APU, AC'97 and USB registers fault and
+  are decoded. On Linux `main.c`'s SIGSEGV handler offers each fault to
+  `xbox_PosixMmioFault`, which copies the registers into the Win32 CONTEXT
+  names and runs the same x86-64 decoder as Windows.
+- **Sound.** `apu_sdl2.c` drives SDL audio, through PulseAudio under
+  WSLg. Opening the device used to hang: SDL's audio thread could not
+  start, since the toolkit's static TLS (458 KB, mostly the upstream
+  executor's DXT cache) was larger than SDL's 256 KB thread stack. The
+  cache is allocated now. `SDL_AUDIODRIVER=dummy` still gives a silent run
+  that drains in real time.
+- **WSLg's PulseAudio stalls.** After 5-25 s it stops pulling: a small SDL
+  test that keeps a push queue topped up saw about 51k samples a second,
+  then 0-1k, with no game running. The APU pacer follows the device, so the
+  `[HEALTH]` line drops from 1500 to 750 frames/s and the sound stops.
+  `apu_sdl2.c` now drops periods past 32 queued device buffers (`device is
+  not pulling`), so the queue no longer grows by 96 KB a second. A WSLg
+  problem, not ours; `wsl --shutdown` restarts its sound server.
+- **Case.** FATX and NTFS ignore case; Linux does not. The game copies its
+  GUI packages to `z:\guipackages\` and opens `z:\GuiPackages\
+  PackageHierarchy.dat`. That failed, the `[AP]` dump followed and the title
+  launched `Boom.xbe` (the "audio init failed" exit). The toolkit's
+  `xbox_translate_path` now folds case on POSIX (`fold_case`, kernel_path.c).
+- **GCC.** The generated code builds with `-fno-strict-aliasing -fwrapv`,
+  the guarantees MSVC gives it implicitly.
+- **GPU.** The toolkit's `nv2a_gl.c` (OpenGL 3.3, shaders from
+  `nv2a_glsl_*`) is the default off Windows (`RECOMP_GPU=gl`). Under WSL
+  Mesa picks llvmpipe unless `GALLIUM_DRIVER=d3d12`, which main.c sets
+  when `/dev/dxg` exists. `RECOMP_GL_SHOT=<n>` writes every n-th frame as
+  `gl_shot_<frame>.ppm` in the working directory.
+- **Movies take minutes at boot.** With them on, the first two minutes are
+  the three boot movies (overlay, few flips): `AMPED2_PLAY_MOVIES=0` for
+  quick checks. That was the "0.05 fps" first measured; with movies off
+  the software rasteriser drew the menus at about 0.45 fps.
+- **GL speed.** `RECOMP_GL_PROFILE=1` adds the draw split into sections
+  to the `[GL]` report (prepare, targets, vertices, indices, uniforms,
+  textures, state, draw call; ms per frame). Under Mesa's d3d12 driver a
+  buffer re-specified or mapped per draw costs 60-120 us, so the back end
+  streams through persistently mapped rings; keep it that way.
+- **Flip pacing.** D3D11's render thread holds flips to 60 Hz itself
+  (`pace_display`); the SDL window's vsync only paces the window thread.
+  The GL render thread lacked that, and once GL got fast the title ran at
+  150-175 fps (it looked uptime-dependent and was not). `nv2a_gl.c` has
+  the same pacer now (`RECOMP_FLIP_NOWAIT` turns it off). `[GPU] frames:`
+  is cumulative: compare the differences between lines.
+- **Where it stands:** title a steady 60 fps, ML1 in game 44-50 with the
+  render thread (pad script `tools/suite/pads/ml1.pad` works on Linux too:
+  `RECOMP_PAD_SCRIPT=@<path>`). See PLAN Phase 21 for what is missing.
+- **Visibility counts** (floodlight glows, lens flares) are GL
+  `GL_SAMPLES_PASSED` queries, ported from the D3D11 back end (see
+  "Lights" below for how the game uses them). `RECOMP_VIS_TRACE=1` prints
+  the same tally on both: on ML1 with `ml1.pad` most reports see nothing
+  on either platform.
 
-- **The movie clock is fine.** XMV's clock is D3D's vblank count
-  (`device + 0x1DD8`, read via GetDisplayFieldStatus `0x0031AE50`), less
-  its start at `decoder + 0xB8`. It advances at about 57 a second on both
-  builds.
-- **The audio plays in real time.** It ends about 63–70 s after the
-  intro starts while the picture plays on, so the audio does not pace the
-  picture.
-- **The data arrives.** The reads (`0x00253F0B`) are synchronous and only
-  follow consumption.
-- **The decoder is neither CPU-bound nor short of packets.**
-  `AMPED2_XMV_STATS=1` prints a line a second from the GetNextFrame
-  wrapper (`0x002CDE60`). Up to 12 s behind its clock, about 55 of 62
-  calls return "no frame". The calls take 1–3 ms each, about 15% of the
-  main thread, and few have a packet request pending.
-- **Where the main thread sleeps.** The title's movie loop (`sub_00150FF0`)
-  calls GetNextFrame, UpdateOverlay (`0x00329420`), then
-  BlockUntilVerticalBlank (`0x0031AE90`, ours). It sleeps 75–86% of the
-  time in the vblank wait. The decoding (`sub_002CFFBE` and below) runs
-  inside GetNextFrame on the main thread. Right after it, GetNextFrame
-  calls DirectSound (`0x002906EE`, `0x002923BF`, `0x002904E3`,
-  `0x0028ED0A`, `0x00290723`).
-- **It is the timer loop.** `RECOMP_VBLANK=paced` or
-  `RECOMP_DISPATCH_GATE=1` (both run upstream's `kernel_timer_loop_ns`
-  instead of our `kernel_timer_loop_default`) play the intro in real time.
-- **Ruled out, one at a time in our loop:**
-  - `RECOMP_DPC_REMOVE=0`, `RECOMP_DPC_CS_KEEP_LOCK=1`;
-  - kernel timers on the performance counter instead of GetTickCount64;
-  - coalescing a vblank whose predecessor is unacknowledged, and honouring
-    `PMC_INTR_EN_0`;
-  - waking the loop when a DPC is queued.
+### Linux release (2026-10-31)
 
-  `RECOMP_DISPATCH_LOCK=0` made it worse (no frames at all).
-- **Unchanged across the merge:**
-  - the vblank tick and its ISR call;
-  - the field pin (port `0x80C0`) once vblanks run;
-  - the TSC scaling and `qemu_clock_get_ns`;
-  - KeTickCount and KeInterruptTime;
-  - the async-handle registration on open.
+The Linux counterpart of `RE-Amped2-Setup.exe` is a source tarball that
+builds on the player's PC from their own disc, with the same rule: no game
+code or data in it.
 
-What paced mode costs, from one suite pass (`diag/suite-2026-10-31_1001`):
-- no `[HEALTH]` line, which only our loop prints;
-- a one-off 22 MB step in ml1's memory at about 130 s;
-- frame rate as before.
+- `tools/linux/package.sh` (run on Linux or WSL) writes
+  `installer/dist/RE-Amped2-<version>-linux.tar.gz` and its `.sha256`. It
+  holds the working trees of amped2 (minus `installer/`, `.claude/`,
+  `screenshots/`) and `../xboxrecomp` as `build.ps1` packs them, xdvdfs
+  0.8.3 for Linux (downloaded, SHA-256 checked), the icon as a PNG,
+  `manifest.txt` with both commits (`+modified` for uncommitted changes) and
+  a top-level `install.sh`. The version is the installer's. Shell scripts
+  are made LF on the way in (a Windows checkout has CRLF; `.gitattributes`
+  now keeps `*.sh` LF in both repos).
+- `./install.sh DISC.iso [DIR]` (`tools/linux/install.sh`; default
+  `~/Games/RE-Amped2`) runs the installer's stages: checks the build tools
+  (offers the apt, pacman or dnf command for what is missing, and runs it
+  only on a yes), unpacks the disc with xdvdfs and checks the title ID,
+  copies the sources to `DIR/_install_temp` with `game` linked to
+  `DIR/game`, makes a venv with capstone, runs `tools/linux/regen.sh`
+  (`regen.ps1`'s steps 2-5 in bash, without Ghidra or `no_optimize.txt`),
+  builds with CMake and Ninja (jobs: cores, RAM/3 GB, 2..8), and installs
+  `RE-Amped2`, `README.txt` (`tools/linux/README.txt`), `licenses/`,
+  `install-info.txt` and an applications-menu entry. The link is removed
+  before the work folder, so the delete never reaches `game/`. Saves in
+  `game/UDATA` survive a reinstall. Log: `DIR/install.log`.
+- The RE-Amped2 look goes in as on Windows: `branding/pack/textures` as
+  `mods/packs/re-amped2`, first in `mods/mods.json` (other packs kept),
+  minus `menu-mod-only.txt`'s keys; `--no-look` leaves it out and an
+  update then removes it. The GL back end reads packs with the D3D11 keys
+  (toolkit `fedcfd2`); the look's BC7 files need GL 4.2.
+- The menu mod is built as on Windows (`tools/mods/menus.py`, unchanged)
+  after the compile, with numpy and pillow in the venv, Java on PATH and
+  unluac in `tools/bin` (`package.sh` downloads the same build as
+  `fetch-tools.ps1`, SHA-256 checked). Java is optional: the tool check
+  offers the package command, and without Java the menus are left out
+  (`--no-menus` does it on purpose). With the menus in, the look keeps
+  the controller pictures. The menus and mod packs need
+  `RECOMP_OVERLAY_DIR`, which the POSIX path code did not read until
+  toolkit `45fabe7`.
+- **Image-based distros** (Bazzite, Silverblue, Kinoite; `/run/ostree-booted`)
+  keep `/usr` read-only, so `dnf install` is not the way to get build
+  tools. When tools are missing there, `install.sh` offers a Distrobox
+  container instead:
+  - The container is `re-amped2`, `registry.fedoraproject.org/fedora-toolbox:<host VERSION_ID>`,
+    with `--nvidia` when `nvidia-smi` exists.
+  - `install.sh` runs itself again inside it (`distrobox enter -- bash ...`).
+    Paths outside the home folder are passed as `/run/host/...`. The
+    install folder must be in the home folder, which the container shares.
+  - Inside (`CONTAINER_ID` set), the dnf line also installs what a bare
+    image lacks and SDL loads at run time: Mesa's drivers, PipeWire,
+    PulseAudio and ALSA client libraries, Wayland, libdecor, xkbcommon and
+    the X11 extensions.
+  - It writes `RE-Amped2.sh`, which starts the game through
+    `distrobox-enter -n re-amped2`; the menu entry points at it.
+  - Written 2026-11-04 for the user's Bazzite test. Not run on an
+    image-based system yet (only `bash -n`).
+- Fedora 44 dropped `java-21-openjdk-headless`, so the Java line asks for
+  `java-latest-openjdk-headless`. The other dnf names were checked against
+  Fedora 43–45 with mdapi. `SDL2-devel` comes from `sdl2-compat-devel`.
+- Loose archive entries work on Linux too: `mod_loose.c` has a small
+  host layer (stat, opendir, rename) beside the Win32 one, and folds case
+  where a loose folder and the disc spell an archive differently.
 
-It also replaces the DPC and dispatch-lock scheme that the audio fixes of
-2026-10-02 and 2026-10-30 were tuned on.
+### The slow movies (fixed 2026-11-03)
 
-**Ruled out (2026-10-31):** in paced mode the sound breaks up in ML1. The
-`[HEALTH]` line, which the paced loop now prints as well (toolkit), shows
-the APU at 1,500 frames/s in the front end. In the level it drops to
-about 145 frames/s, with 9,000–14,000 trapped front-end waits per 10 s:
-the APU's front-end handshake with DirectSound is not serviced in time
-in that loop. The user heard it as distorted, then no sound. The movie
-stays a known issue (start skips it) until the difference between the
-loops for XMV is found.
+Since the v0.16 merge, every movie longer than a few seconds played slowly:
+`Movies\Intro.xmv` (60.9 s; 1801 frames at 29.6 fps) took 150–237 s, and
+the career movies (`Port_Career_Number1.xmv`, about 100 MB) crawled until
+the player had to kill the game. The pre-sync build was slow too, only less
+so (79 s). Now the intro takes 60.8 s.
+
+**How XMV paces the picture.** GetNextFrame (`0x002CDE60`) shows a decoded
+frame once D3D's vblank count, less the start at `decoder + 0xB8`, passes
+the frame's time plus an audio offset at `decoder + 0xC8`. It converts
+milliseconds to vblanks at 59.94 a second (`decoder + 0xBC` = 0x10AEF0).
+The count comes from GetDisplayFieldStatus (`0x0031AE50`), whose one
+caller this is. The offset is set by the movie's DirectSound stream
+callback (`0x002CDC71`, registered in `0x002CDCC2`). On each completed
+audio packet it stores the TSC time since the start (`decoder + 0xB0`,
+ticks per ms at `0x2F5268`) less the packet's timestamp. In short, the
+picture follows the audio, and the audio's lateness holds the picture
+back.
+
+**The packet cycle.** A packet holds about 0.28 s of the intro, both
+streams. The decoder keeps two: `+0x60` is loaded next and `+0x64` is
+being shown. When `+0x64` runs out of frames, it moves to `+0x68` and
+waits until DirectSound has finished its audio (a packet status at
+`[+0x148][i]` still `0x8000000A` means pending; `0x00290723` is
+DirectSoundDoWork). Only then is a new packet read. So the audio
+stream never has more than about two packets queued.
+
+**What went wrong.** D3D's count (`device + 0x1DD8`) moves only in its
+vblank DPC (`0x0031C3B1`), and only when the count's parity matches the
+field from the HAL's AV query, which is `g_xbox_vblank_count & 1`. Two of
+our ticks before one DPC run (a late timer pass) cost D3D a count, so it
+ran at 56–59 a second while ours ran at 60. The picture therefore ran a
+few percent slow, packets were freed late, and the audio stream ran dry.
+Each gap went into `+0xC8` and held the picture back further. From about
+15 s into the intro the offset grew 0.5–0.7 s every second. MGS and XSN
+were too short to reach that point. `RECOMP_VBLANK=paced` (upstream's
+loop) "fixed" it because D3D lost no counts there, but it broke the
+in-level sound (2026-10-31).
+
+**The fix** (`recomp_manual.c`): `0x0031AE50` reports the kernel's own
+60 Hz tick, the one the movie loop's BlockUntilVerticalBlank
+(`0x0031AE90`) already waits on. The field status is unchanged.
+`AMPED2_XMV_CLOCK=d3d` brings back D3D's count. Gameplay is untouched:
+nothing else calls GetDisplayFieldStatus. The cause of D3D's lost counts
+(coalesced ticks in our timer loop) is still there, but nothing else is
+known to depend on that count.
+
+**Diagnostics.** `AMPED2_XMV_STATS=1` prints a line a second:
+- the calls and their statuses;
+- why each "no frame" call had none: the spent packet waiting for its
+  audio, a read requested, or a decoded frame not yet due;
+- how long spent packets waited for their audio;
+- `+0xC8`;
+- the vblanks D3D counted against ours.
+
+Before the fix, nearly every "no frame" call held a frame that was 10 s
+or more behind and still "not due" (`diag/xmv-slow/why2.txt`). After it,
+`+0xC8` stays within ±10 ms (`fix1.txt`).
+
+Ruled out on the way (2026-10-31): the TSC scaling, kernel timers on QPC,
+DPC removal and lock variants, coalescing unacknowledged vblanks, honouring
+`PMC_INTR_EN_0`, waking the loop on queued DPCs, read starvation, and
+decode cost.
 
 ### XACT, DirectSound and the music dropout (2026-10-30)
 

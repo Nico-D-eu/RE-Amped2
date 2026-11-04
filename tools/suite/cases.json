@@ -79,7 +79,7 @@
     },
     {
       "name": "movie",
-      "about": "The boot movies play to the end with nobody at the pad, then the legal screen and the title, drawn at full rate. The front-end boarder is loaded only once the intro has ended. Intro.xmv is 60.9 s (1801 frames at 29.6 fps; its header and its audio agree). The pre-sync build took 79 s from the intro to the front end; since the v0.16 sync it takes 150-180 s (2026-10-30). Shots of a movie depend on its timing, so they get no golden.",
+      "about": "The boot movies play to the end with nobody at the pad, then the legal screen and the title, drawn at full rate. The front-end boarder is loaded only once the intro has ended. Intro.xmv is 60.9 s (1801 frames at 29.6 fps; its header and its audio agree). The pre-sync build took 79 s from the intro to the front end, the v0.16 sync 150-180 s (2026-10-30); fixed 2026-11-03 (XMV's vblank count, recomp_manual.c 0x0031AE50). Shots of a movie depend on its timing, so they get no golden.",
       "quick": false,
       "seconds": 300,
       "save": "fresh",
@@ -93,7 +93,7 @@
           "characters\\\\boarder\\\\lorescharacter\\.gfx"
         ],
         "durations": [
-          { "what": "intro to front end", "from": "Movies\\\\Intro\\.xmv", "to": "characters\\\\boarder\\\\lorescharacter\\.gfx", "max_s": 90, "known": "the intro plays at about 0.4x since the v0.16 merge (RE-Amped2.cand.exe, 2026-10-28: 153 s; pre-sync 79 s)" }
+          { "what": "intro to front end", "from": "Movies\\\\Intro\\.xmv", "to": "characters\\\\boarder\\\\lorescharacter\\.gfx", "max_s": 90 }
         ],
         "fps": { "after": "characters\\\\boarder\\\\lorescharacter\\.gfx", "skip_s": 5, "span_s": 20, "min": 58, "window_s": 10 },
         "shots": [

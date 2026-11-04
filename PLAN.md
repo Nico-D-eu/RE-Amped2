@@ -12,10 +12,17 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-11-04): HD movies in the installer.** The movie pack (HD
+copies of the movies, made on the player's PC) is now an opt-in installer
+option. The installer downloads pinned FFmpeg and Real-ESRGAN releases with
+the player's consent, then converts the movies in the background after the
+install (`installer/README.md`). The recipe now works in batches (about 2
+GB of work space instead of 13 GB) and keeps each frame's exact time.
+
 **Update (2026-10-30, late): the regression suite runs** (Phase 16;
 `tools\suite.ps1 -Quick` in about 4 minutes). On its first day it found
 two things: the intro movie has played at about 0.4x since the v0.16
-merge, and an intermittent stutter in ML1. level2 (it needs a fixture
+merge (fixed 2026-11-03), and an intermittent stutter in ML1. level2 (it needs a fixture
 save) and the soak are left.
 
 **Update (2026-10-30): v0.2.1 released on toolkit v0.16.0; the suite
@@ -816,6 +823,7 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 | 18 | v0.3.0 "out of the box" | Closes the README rows players see | Partly |
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
 | 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
+| 21 | Linux build (then macOS and arm64), **next (user, 2026-10-31)** | Upstream v0.16 already has a POSIX runtime; the GPU back end is what's missing | Yes, under Linux |
 
 - **Standing lane:** bugs from the user's testing come before any phase.
   For each one: reproduce it, fix it, add a suite case, and ship the fix in
@@ -952,10 +960,12 @@ scripts (docs/DEVELOPING.md "Testing"). Differences from the list above:
 Found by the suite:
 - **The intro movie plays at about 0.4x since the v0.16 merge.** It takes
   152–237 s from the intro to the front end, against 79 s before the sync.
-  `Intro.xmv` is 60.9 s. Marked known in the movie case; standing lane.
-  Narrowed on 2026-10-31 (docs/DEVELOPING.md "The slow intro movie"): our
-  default timer loop. Upstream's paced loop (`RECOMP_VBLANK=paced`) plays
-  it in 60.8 s, but replaces the loop the audio fixes were tuned on.
+  `Intro.xmv` is 60.9 s. **Fixed 2026-11-03** (docs/DEVELOPING.md "The
+  slow movies"): XMV paces the picture on D3D's vblank count, which lost
+  1–4 counts a second in our timer loop, and the audio-sync feedback
+  turned that into 0.4x. GetDisplayFieldStatus (`0x0031AE50`) now reports
+  the kernel's 60 Hz tick: the intro takes 60.8 s, and the movie case's
+  "known" mark is gone.
 - **An intermittent stutter:** 1 s bursts of 33–54 ms late frames every
   10–20 s, all through a run, with the render thread idle. Seen in 2 of
   about 12 riding runs (ml1 and reload3); `base.exe` and `.fix2` had none
@@ -1088,6 +1098,7 @@ Next:
 **Exit criteria**
 
 - [ ] Every 🟡 row in the README is ✅, or is listed under known issues
+      (the Linux row belongs to Phase 21)
 - [ ] A fresh install shows sharp text with the font option. With the HD
       option, ML1 uses the upscaled pack at ≥ 58 fps
 - [ ] Menu titles and icons are not stretched at 16:9 (a screenshot of
@@ -1130,6 +1141,143 @@ Next:
       byte-identical
 - [ ] glTF exports of a rider and a level chunk open correctly in Blender
 - [ ] A recipe-built custom character shows up in career creation in game
+
+### Phase 21: Linux build (then macOS and arm64)
+
+**Where things stand (survey 2026-10-31).** Phases 11 and 12 assumed the
+runtime was tied to Windows. Since v0.16, upstream's toolkit builds on
+Linux and macOS, on x86-64 and arm64:
+- a POSIX version of its Win32 layer (`src/platform/`);
+- SDL2 for the window (`src/video`), input (`src/input`) and audio
+  (`src/apu/apu_sdl2.c`);
+- a POSIX fault handler for the device registers, with an arm64 decoder
+  (`mmio_decode_a64.h`);
+- `tools/linux/install_deps.sh` and `Dockerfile.gcc`.
+
+Its OpenGL 3.3 back end (`d3d8_gl.c`) belongs to the high-level D3D8 layer.
+Amped 2 does not use that layer: D3D8LTCG runs recompiled and draws
+through the pushbuffer executor. **The executor's GPU back end
+(`nv2a_d3d11.c`, 4.3k lines, with `nv2a_hlsl.c`) is Windows-only.** On
+POSIX it compiles to empty stubs, which leaves the software rasteriser
+(about 1.6 fps in game). On the Amped 2 side, `main.c` uses a short list
+of Win32 calls:
+- the vectored exception handler;
+- the crash minidump and its dbghelp symbols;
+- the stall snapshot (SuspendThread, GetThreadContext);
+- the stderr pipe;
+- MessageBox and `_putenv`.
+
+`coverage.c` and `mod_loose.c` use a few more. The installer is .NET and
+Windows-only.
+
+**Status (2026-10-31): steps 1 and 2 done, step 3 under way.** Ubuntu
+24.04 under WSL2, GCC 13. The whole game builds and links on Linux (the
+generated chunks compiled first time, in about 3 minutes). It boots in an
+SDL window under WSLg: the XBE loads, the kernel comes up, the USB pad
+enumerates, AC'97 and the APU registers are answered. It reads the
+archives, music and XACT banks, the APU runs (about 1550 frames/s), and it
+gets as far as the boot movies (MGS, XSN, Intro) and the front end's GUI
+packages.
+
+**Step 4 started (same day): the OpenGL back end draws.** The shader
+generator emits GLSL 3.30 beside HLSL (HLSL byte-identical, checked on 801
+random shaders; all GLSL compiles), and the toolkit's `nv2a_gl.c` takes
+the executor's draws on Linux. With `GALLIUM_DRIVER=d3d12` WSLg runs it on
+the RTX 2070. The title screen draws correctly at 1280x720 and about
+58 fps, the main menu with its 3D rider at about 30 fps; the software
+rasteriser managed 0.45 fps on the same screens. Now the default on Linux.
+**In game (ML1 with the suite's pad script): drawn correctly at a steady
+30 fps** after the speed work (persistent streaming rings, asynchronous
+readback; 5 fps before). The GL work is about 21 ms a frame, so the title
+halves to 30; the index section (about 6.7 ms, probably fence waits) is
+the first place to look for the 60. Since then (same evening): a render
+thread like D3D11's (ML1 about 43-50 fps), the video overlay (boot movies
+play), shadow maps, and sound through PulseAudio (two toolkit bugs: a
+458 KB static TLS that stopped SDL's audio thread, and an APU clock that
+overflowed after 2.5 h of uptime). The APU "at half speed" with
+PulseAudio is WSLg's sound server stalling (DEVELOPING, "Linux bring-up").
+**Step 6 started (same evening): a Linux release.**
+`tools/linux/package.sh` packs a source tarball like the Windows
+installer's payload (15 MB, no game data), and its `install.sh` builds the
+game from the player's disc: a clean install from the tarball took 10.5 min
+under WSL and the result boots with sound. The title "unpaced after long
+uptime" was a missing flip pacer in the GL back end, not uptime: fixed, a
+steady 60. Visibility counts (lens flares, floodlight glows) are in, as
+GL occlusion queries, and texture packs (with the D3D11 keys, so one pack
+serves both); the Linux install adds the RE-Amped2 look and menus (mod
+overlays now work on POSIX). Open in the GL
+back end: volume textures, CPU-written pixels under a surface,
+anisotropy, render scale, and faint vertical seams on the title's
+background. Found and fixed on the way to
+booting (details in DEVELOPING, "Linux bring-up"):
+- the lifted CRT's `close`/`read`/`write`/... took over libc's names;
+- the window's GL driver took the address range the guest windows need,
+  so memory is now mapped before the window opens;
+- x86-64 Linux had no decoder for trapped registers (APU, USB, AC'97);
+- a merge leftover stubbed out the SDL audio backend;
+- file names are case-sensitive on Linux: the game caches
+  `z:\guipackages\...` and opens `z:\GuiPackages\...`, which failed, so
+  audio init gave up and the title launched `Boom.xbe`.
+
+Not yet: Clang, the stall snapshot.
+
+1. **Build environment.**
+   - WSL2 with Ubuntu 24.04: WSLg gives a window, the GPU and sound. The
+     user installs it (admin rights).
+   - Then `tools/linux/install_deps.sh`.
+   - Docker Desktop is installed and works for compile-only checks
+     (`Dockerfile.gcc`), but has no display.
+2. **It compiles.** Amped 2's CMake on Linux with GCC and Clang: the
+   generated code (14,737 functions) plus the toolkit.
+   - `main.c` gets POSIX versions or `#ifdef`s:
+     - the fault handler goes through the toolkit's POSIX handler;
+     - a minimal crash report from a signal handler;
+     - stall snapshots off at first;
+     - the stderr pump on a pthread;
+     - SDL message boxes;
+     - `setenv`.
+   - `coverage.c` and `mod_loose.c` are small fixes.
+3. **It boots.** First to the title in a log (`RECOMP_HEADLESS`), then on
+   the software rasteriser in an SDL window under WSLg. Menus should be
+   usable; the game itself will be slow.
+4. **GPU: an OpenGL 3.3 back end for the executor** (`nv2a_gl.c`). Same
+   entry points as `nv2a_d3d11.c`: draw, clear, flip, zpass and reports.
+   - A GLSL emitter beside the HLSL one.
+   - The SDL2 and epoxy setup from upstream's `d3d8_gl.c` and video
+     window.
+   - This is most of the work. Do Phase 12's renderer split at the same
+     time (one NV2A front end, D3D11 and GL back ends), so the Windows
+     build keeps using the same front end. GL rather than Vulkan first:
+     upstream already links it, and it reaches macOS (up to 4.1).
+5. **Sound, pad, settings.**
+   - Our APU feeds `apu_sdl2.c` instead of XAudio2.
+   - The emulated USB pad reads SDL game controllers.
+   - `amped2.ini`, the keymap, F11 and the texture packs work as on
+     Windows.
+6. **For players.** Done in its first form (DEVELOPING, "Linux release"):
+   - `tools/linux/install.sh`: extracts the player's disc with xdvdfs,
+     runs `tools/linux/regen.sh` (`regen.ps1` in bash), then the build.
+   - `tools/linux/package.sh`: the tarball of the sources and xdvdfs. No
+     game data, as always.
+   - Done since: the RE-Amped2 look and menus, mod-pack overlays and
+     loose archive entries on POSIX, and `.github/workflows/linux.yml`.
+   - Still to do: a test on a real Linux PC (only WSL so far).
+7. **The suite on Linux.** `suite.ps1` and `diag.ps1` under PowerShell 7,
+   with `-Samples` via `/proc`.
+
+**macOS and arm64 afterwards.**
+- **macOS:** a 64-bit process cannot map below 4 GB (`__PAGEZERO`), so the
+  guest memory offset has to work at a high base. Check what upstream does.
+- **arm64:** the generated code's SSE helpers need portable versions (check
+  upstream's), and Apple Silicon caps OpenGL at 4.1.
+
+**Exit criteria**
+
+- [ ] Amped 2 builds on Ubuntu 24.04 with GCC and Clang from a clean
+      checkout plus the player's disc
+- [ ] Boots to the main menu on Linux (the suite's boot case, headless)
+- [ ] ML1 at ≥ 58 fps with the GL back end, with sound and a pad
+- [ ] The Windows build still passes the suite after the renderer split
 
 ---
 
