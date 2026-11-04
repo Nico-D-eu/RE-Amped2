@@ -691,6 +691,26 @@ code or data in it.
   the controller pictures. The menus and mod packs need
   `RECOMP_OVERLAY_DIR`, which the POSIX path code did not read until
   toolkit `45fabe7`.
+- **Image-based distros** (Bazzite, Silverblue, Kinoite; `/run/ostree-booted`)
+  keep `/usr` read-only, so `dnf install` is not the way to get build
+  tools. When tools are missing there, `install.sh` offers a Distrobox
+  container instead:
+  - The container is `re-amped2`, `registry.fedoraproject.org/fedora-toolbox:<host VERSION_ID>`,
+    with `--nvidia` when `nvidia-smi` exists.
+  - `install.sh` runs itself again inside it (`distrobox enter -- bash ...`).
+    Paths outside the home folder are passed as `/run/host/...`. The
+    install folder must be in the home folder, which the container shares.
+  - Inside (`CONTAINER_ID` set), the dnf line also installs what a bare
+    image lacks and SDL loads at run time: Mesa's drivers, PipeWire,
+    PulseAudio and ALSA client libraries, Wayland, libdecor, xkbcommon and
+    the X11 extensions.
+  - It writes `RE-Amped2.sh`, which starts the game through
+    `distrobox-enter -n re-amped2`; the menu entry points at it.
+  - Written 2026-11-04 for the user's Bazzite test. Not run on an
+    image-based system yet (only `bash -n`).
+- Fedora 44 dropped `java-21-openjdk-headless`, so the Java line asks for
+  `java-latest-openjdk-headless`. The other dnf names were checked against
+  Fedora 43–45 with mdapi. `SDL2-devel` comes from `sdl2-compat-devel`.
 - Loose archive entries work on Linux too: `mod_loose.c` has a small
   host layer (stat, opendir, rename) beside the Win32 one, and folds case
   where a loose folder and the disc spell an archive differently.

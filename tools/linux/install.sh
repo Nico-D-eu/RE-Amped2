@@ -16,21 +16,31 @@
 # Stages as on Windows: build tools, disc, recompiler, translate, compile,
 # menu mod, finish (with the look). Saves in INSTALL_DIR/game/UDATA survive a reinstall. The work
 # happens in INSTALL_DIR/_install_temp; the full log is INSTALL_DIR/install.log.
+#
+# On an image-based system (Bazzite, Silverblue, Kinoite: /usr is read-only)
+# the build tools go in a Distrobox container instead: install.sh offers to
+# create one ("re-amped2", Fedora of the host's release) and runs itself
+# again inside it. The container shares the home folder, display, GPU and
+# sound, and the game starts through it (RE-Amped2.sh).
 set -euo pipefail
 
 TITLE_ID=4D530041
+BOX=re-amped2
+# Set inside a Distrobox container (its name): the game then starts through it.
+IN_BOX="${CONTAINER_ID:-}"
 
 MENU_ENTRY=1
 LOOK=1
 MENUS=1
 KEEP_TEMP=0
 ARGS=()
+OPTS=()
 for a in "$@"; do
     case "$a" in
-        --no-menu-entry) MENU_ENTRY=0 ;;
-        --no-look) LOOK=0 ;;
-        --no-menus) MENUS=0 ;;
-        --keep-temp) KEEP_TEMP=1 ;;
+        --no-menu-entry) MENU_ENTRY=0; OPTS+=("$a") ;;
+        --no-look) LOOK=0; OPTS+=("$a") ;;
+        --no-menus) MENUS=0; OPTS+=("$a") ;;
+        --keep-temp) KEEP_TEMP=1; OPTS+=("$a") ;;
         -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
         -*) echo "install.sh: unknown option $a" >&2; exit 2 ;;
         *) ARGS+=("$a") ;;
@@ -94,6 +104,36 @@ python3 -c 'import venv, ensurepip' 2>/dev/null || missing+=(python3-venv)
 for m in sdl2 epoxy openssl; do
     pkg-config --exists "$m" 2>/dev/null || missing+=("$m")
 done
+if [ ${#missing[@]} -gt 0 ] && [ -e /run/ostree-booted ] && [ -z "$IN_BOX" ]; then
+    # Image-based host: build in a Distrobox container of the same Fedora
+    # release, which sees the host's / at /run/host.
+    . /etc/os-release 2>/dev/null || true
+    say "Missing: ${missing[*]}"
+    say "${NAME:-This system} is image-based: build tools are not installed on the system itself,"
+    say "but in a container. The installer can create a Distrobox container \"$BOX\" and build there;"
+    say "the game then starts through it."
+    command -v distrobox >/dev/null ||
+        fail "Distrobox is not installed. Install it (or create a Fedora toolbox), enter it and run this again inside it."
+    case "$DEST" in
+        "$HOME"/*) ;;
+        *) fail "with a container, install into a folder in your home directory (it is shared with the container)." ;;
+    esac
+    tag=latest
+    [[ "${VERSION_ID:-}" =~ ^[0-9]+$ ]] && tag="$VERSION_ID"
+    image="registry.fedoraproject.org/fedora-toolbox:$tag"
+    [ -t 0 ] || fail "run this in a terminal to set up the container."
+    read -r -p "Create the container ($image, about 1 GB download) and continue there? [y/N] " yn
+    [[ "$yn" =~ ^[Yy] ]] || fail "the build tools are missing; set up a container with them and run this again inside it."
+    if ! distrobox list 2>/dev/null | awk -F'|' -v n="$BOX" 'NR > 1 { gsub(/ /, "", $2); if ($2 == n) f = 1 } END { exit !f }'; then
+        nvidia=(); command -v nvidia-smi >/dev/null && nvidia=(--nvidia)
+        distrobox create --yes --name "$BOX" --image "$image" "${nvidia[@]}" 2>&1 | tee -a "$LOG" ||
+            fail "Distrobox could not create the container."
+    fi
+    host() { case "$1" in "$HOME"/*) printf '%s' "$1" ;; *) printf '/run/host%s' "$1" ;; esac; }
+    say "Continuing inside the container (its first start sets it up, which takes a few minutes)."
+    exec distrobox enter "$BOX" -- bash "$(host "$(readlink -f "${BASH_SOURCE[0]}")")" \
+        "${OPTS[@]}" "$(host "$DISC")" "$DEST"
+fi
 if [ ${#missing[@]} -gt 0 ]; then
     . /etc/os-release 2>/dev/null || true
     case " ${ID:-} ${ID_LIKE:-} " in
@@ -102,6 +142,11 @@ if [ ${#missing[@]} -gt 0 ]; then
         *" fedora "*|*" rhel "*) cmd="sudo dnf install -y gcc make cmake ninja-build pkgconf python3 SDL2-devel libepoxy-devel mesa-libGL-devel openssl-devel" ;;
         *) cmd="" ;;
     esac
+    # A bare container image lacks what SDL loads at run time on a desktop
+    # host: the sound server's and the window system's client libraries.
+    if [ -n "$IN_BOX" ] && [[ "$cmd" == *dnf* ]]; then
+        cmd="$cmd mesa-dri-drivers pipewire-libs pulseaudio-libs alsa-lib libdecor libxkbcommon libXcursor libXi libXrandr libXScrnSaver libwayland-client libwayland-egl libwayland-cursor"
+    fi
     say "Missing: ${missing[*]}"
     if [ -z "$cmd" ]; then
         fail "install a C compiler, CMake, Ninja, pkg-config, Python 3 with venv, and the SDL2, libepoxy and OpenSSL headers, then run this again."
@@ -125,7 +170,8 @@ if [ "$MENUS" = 1 ] && ! command -v java >/dev/null; then
     case " ${ID:-} ${ID_LIKE:-} " in
         *" debian "*|*" ubuntu "*) jcmd="sudo apt-get install -y default-jre-headless" ;;
         *" arch "*) jcmd="sudo pacman -S --needed jre-openjdk-headless" ;;
-        *" fedora "*|*" rhel "*) jcmd="sudo dnf install -y java-21-openjdk-headless" ;;
+        # java-21 is gone from Fedora 44; any Java runs unluac.
+        *" fedora "*|*" rhel "*) jcmd="sudo dnf install -y java-latest-openjdk-headless" ;;
         *) jcmd="" ;;
     esac
     say "The RE-Amped2 menus need Java, which is not installed."
@@ -260,6 +306,21 @@ if [ "$LOOK" = 1 ]; then say "Added the RE-Amped2 look (mods/packs/re-amped2).";
     echo "Installed $(date -u '+%Y-%m-%d %H:%M UTC') from $DISC"
     [ -f "$PAYLOAD/manifest.txt" ] && cat "$PAYLOAD/manifest.txt"
 } > "$DEST/install-info.txt"
+# Built in a container: the game needs its libraries, so it starts through it.
+RUN="$DEST/RE-Amped2"
+rm -f "$DEST/RE-Amped2.sh"
+if [ -n "$IN_BOX" ]; then
+    RUN="$DEST/RE-Amped2.sh"
+    cat > "$RUN" <<EOF
+#!/bin/sh
+# Starts RE-Amped2 in the Distrobox container "$IN_BOX" it was built in, which
+# has the libraries it needs.
+cd "\$(dirname "\$(readlink -f "\$0")")" || exit 1
+[ -n "\${CONTAINER_ID:-}" ] && exec ./RE-Amped2 "\$@"
+exec distrobox-enter -n "$IN_BOX" -- "\$PWD/RE-Amped2" "\$@"
+EOF
+    chmod 755 "$RUN"
+fi
 if [ "$MENU_ENTRY" = 1 ]; then
     apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
     mkdir -p "$apps"
@@ -268,7 +329,7 @@ if [ "$MENU_ENTRY" = 1 ]; then
 Type=Application
 Name=RE-Amped2
 Comment=Amped 2, recompiled for PC
-Exec="$DEST/RE-Amped2"
+Exec="$RUN"
 Path=$DEST
 Icon=$DEST/RE-Amped2.png
 Terminal=false
@@ -278,5 +339,5 @@ EOF
 fi
 
 say
-say "Done. Start the game with $DEST/RE-Amped2"
+say "Done. Start the game with $RUN"
 say "Your saves are in $DEST/game/UDATA; README.txt there has the controls."
