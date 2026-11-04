@@ -18,8 +18,9 @@ opens the licence texts (see below).
    `.exe`). The image is checked with `xdvdfs`: it must list, and its
    `default.xbe` must carry title ID `0x4D530041`. USA and Europe both pass.
 2. **Location.** Install folder (default `C:\Games\RE-Amped2`, or the last
-   one used), and three checkboxes: desktop shortcut, the RE-Amped2 menus
-   (the menu mod) and the RE-Amped2 look (the branding pack).
+   one used), and four checkboxes: desktop shortcut, the RE-Amped2 menus
+   (the menu mod), the RE-Amped2 look (the branding pack) and, unticked by
+   default, HD movies (below). HD movies add 6.5 GB to the space needed.
    The page lists the build tools: found, missing but installable (winget),
    or missing with a download link. Folders under Program Files or Windows are
    refused, since the game writes its saves and `amped2.ini` beside itself.
@@ -28,7 +29,9 @@ opens the licence texts (see below).
    its publisher, size, purpose and a link to its licence terms, plus the
    Python packages fetched into the temporary folder. Only after the player
    ticks "I accept ..." and clicks *Agree and install* does the install
-   start. The approved tool names go into `InstallOptions.ApprovedTools`, and
+   start. With HD movies ticked, the same dialog (or one of its own, *Agree
+   and download*, when no build tool is missing) lists FFmpeg and
+   Real-ESRGAN. The approved tool names go into `InstallOptions.ApprovedTools`, and
    `Toolchain.InstallMissing` refuses any tool not in that set (for example
    CMake, if the build tools turn up without it): the install stops and asks
    the player to go back. winget's `--accept-package-agreements` is passed
@@ -52,11 +55,23 @@ All work happens in `<install>\_install_temp`, removed at the end.
 | Translate | `tools\regen.ps1 -Python <venv python>` (steps 2–5; no Ghidra, so no FidDb names, which the build does not need). |
 | Compile | `cmake -G "<that VS>" -A x64 -DCMAKE_GENERATOR_INSTANCE=... -DAMPED2_MP_JOBS=<cores, RAM/3 GB, 2..8>`, then `cmake --build --config Release --parallel`. |
 | Menu mod | `tools\mods\menus.py` with Java on PATH; `mods\build\game` is copied to `<install>\mods\build\game`. A failure here only skips the mod. |
+| HD movie tools | Only with HD movies ticked and both tools approved (`MovieTools.cs`). Downloads FFmpeg (BtbN's LGPL shared build, month-end autobuild 2026-10-31) and Real-ESRGAN ncnn-vulkan v0.2.5.0 from GitHub, checks each zip's SHA-256, and unpacks only what the recipe uses into `<install>\tools\bin\ffmpeg` (`bin\` without ffplay, and `LICENSE.txt`) and `tools\bin\realesrgan` (the program, `vcomp140.dll` and the realesr-animevideov3 models). A `.sha256` stamp skips the download on an update. Then it copies `tools\mods\movie_pack.py` to `<install>\tools\mods\` and writes `Convert HD movies.cmd`, which runs it with the Python the install used (`py -3` if that one is gone). A failure here only skips the HD movies. |
 | Look | After Finish: `branding\pack\textures` (from `tools/branding/build.py`) goes to `<install>\mods\packs\re-amped2\textures`, with `re-amped2` first in `mods\mods.json` (other packs are kept). Without the menu mod, the loading screen's controller pictures stay, since their labels do (`menu-mod-only.txt`). If unticked, an update removes the pack. |
 | Finish | `RE-Amped2.exe` (+ `RE-Amped2.pdb` for the crash handler), `RE-Amped2.ico`, `README.txt` (with the unofficial-project and Game Content Usage Rules notices), `install-info.txt` (sources' commits), `licenses\` (the licence texts, as below), desktop shortcut. An install from before the rename to RE-Amped2 loses its `Amped2.exe`, `Amped2.ico`, `amped2_recomp.pdb` and `Amped 2` desktop shortcut. |
 
 Cleanup removes the junction on its own first and checks it is gone before
 deleting the work folder, so the delete can never reach `game\`.
+
+After a successful install with HD movies, the installer starts
+`Convert HD movies.cmd` minimised, below normal priority (its children
+inherit that), and the Done page says so. The recipe converts the start-up
+movies first. Each copy is written as `.mp4.part` and renamed when it is
+complete, so the game, which looks for a copy each time a movie starts,
+uses finished ones straight away. On the RTX 2070 Max-Q all 50 took 4 h 48
+min. Closing the window stops it; running the `.cmd` again skips the
+finished movies. Without Vulkan, Real-ESRGAN fails and the recipe switches
+to a plain Lanczos resize. An update leaves existing copies and tools alone,
+ticked or not.
 
 The full log is `<install>\install.log`. The install folder is remembered in
 `HKCU\Software\REAmped2\Amped 2` (`InstallDir`) for the next run.
@@ -119,8 +134,17 @@ are taken from that art.
   LGPL-2.1-or-later files from xemu), the toolkit, as source. Its `LICENSE`,
   `NOTICE` and `LICENSES/` travel with it.
 - Downloaded on the player's PC, under their own terms and only with the
-  player's consent: Visual Studio Build Tools, Python, CMake, OpenJDK; and
-  into the temporary folder, the pip packages (capstone, numpy, pillow).
+  player's consent: Visual Studio Build Tools, Python, CMake, OpenJDK; with
+  HD movies, FFmpeg and Real-ESRGAN (into the install folder, see
+  `../NOTICE.md`); and into the temporary folder, the pip packages
+  (capstone, numpy, pillow).
+
+The HD movie tools are downloaded rather than shipped. Packing them would
+make the installer about 8 times bigger (16 MB now; the two zips are 122
+MB) for an option most players leave off. It would also make RE-Amped2
+the distributor of an LGPL FFmpeg build, which brings source-offer duties.
+Downloading pinned, hash-checked releases gives the player the same files
+without either cost.
 
 `Payload.LicenseFiles` lists the licence texts: RE-Amped2's `LICENSE` and
 `NOTICE.md`, xboxrecomp's `LICENSE`, `NOTICE` and `LGPL-2.1.txt`, and the

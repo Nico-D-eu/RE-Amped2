@@ -12,6 +12,13 @@ already-written asset toolkit (`tools/assets/`) and the texture-pack
 format consistent. Mod features on a runtime that can't draw a frame
 can't be tested, and they grow the surface area we have to debug.
 
+**Update (2026-11-04): HD movies in the installer.** The movie pack (HD
+copies of the movies, made on the player's PC) is now an opt-in installer
+option. The installer downloads pinned FFmpeg and Real-ESRGAN releases with
+the player's consent, then converts the movies in the background after the
+install (`installer/README.md`). The recipe now works in batches (about 2
+GB of work space instead of 13 GB) and keeps each frame's exact time.
+
 **Update (2026-10-30, late): the regression suite runs** (Phase 16;
 `tools\suite.ps1 -Quick` in about 4 minutes). On its first day it found
 two things: the intro movie has played at about 0.4x since the v0.16

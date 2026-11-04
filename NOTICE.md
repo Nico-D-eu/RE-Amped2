@@ -63,3 +63,19 @@ package manager (winget), under the publishers' own terms:
 | Python 3.13 (Python Software Foundation) | https://docs.python.org/3/license.html |
 | CMake (Kitware) | https://cmake.org/licensing/ |
 | Microsoft Build of OpenJDK 21 (only for the menu mod) | https://openjdk.org/legal/gplv2+ce.html |
+
+### HD movie tools the installer can download
+
+When the player ticks "Convert the movies to HD" and agrees in the
+installer's consent dialog, the installer downloads these two programs from
+their publishers' GitHub releases, at fixed versions with fixed SHA-256
+hashes (`installer/src/MovieTools.cs`), into the install folder's
+`tools\bin`. RE-Amped2 does not ship or redistribute them. The installer
+only fetches them for the player, who gets them under the publishers' own
+terms. `tools/mods/movie_pack.py` then uses them on the player's PC to make
+HD copies of the player's own movies in `mods\movie_pack`.
+
+| Tool | Version | Licence |
+|---|---|---|
+| [FFmpeg](https://ffmpeg.org/), Windows build by [BtbN](https://github.com/BtbN/FFmpeg-Builds) | n9.0.2 LGPL shared build, autobuild-2026-10-31 | LGPL-2.1-or-later (https://ffmpeg.org/legal.html). Its `LICENSE.txt` is kept beside it. The build includes OpenH264 (BSD-2-Clause), which encodes the copies. Cisco's H.264 patent licence covers only Cisco's own OpenH264 binaries, not a build like this one. |
+| [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) ncnn-vulkan | v0.2.5.0 (20220424) | BSD-3-Clause (https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE), with [ncnn](https://github.com/Tencent/ncnn) (BSD-3-Clause) and Microsoft's OpenMP runtime `vcomp140.dll` |

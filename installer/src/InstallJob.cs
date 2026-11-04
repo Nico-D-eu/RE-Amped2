@@ -18,6 +18,7 @@ namespace Amped2Installer
         public bool DesktopShortcut;
         public bool MenuMod;
         public bool Look;            // the RE-Amped2 texture pack (branding\pack)
+        public bool HdMovies;        // fetch the movie tools and convert the movies afterwards (MovieTools)
         /// <summary>Build tools the player agreed to have installed (ConsentDialog); nothing else is.</summary>
         public HashSet<string> ApprovedTools = new HashSet<string>();
     }
@@ -30,6 +31,8 @@ namespace Amped2Installer
         public string InstallDir, ExePath, LogPath;
         public bool ShortcutCreated, MenuModInstalled, LookInstalled;
         public string MenuModNote;                       // why the menu improvements were skipped
+        public bool HdMoviesReady, HdMoviesStarted;      // tools in place; conversion running
+        public string HdMoviesNote;                      // why the HD movies were skipped
         public List<string> Warnings = new List<string>();
     }
 
@@ -60,11 +63,12 @@ namespace Amped2Installer
             "Translating the game's code for Windows",
             "Compiling the game",
             "Adding the RE-Amped2 menus",
+            "Getting the HD movie tools",
             "Finishing up",
         };
 
         // Where each stage starts on the overall bar; compiling is the long one.
-        static readonly double[] StageStart = { 0, 3, 12, 17, 40, 95, 98, 100 };
+        static readonly double[] StageStart = { 0, 3, 12, 17, 40, 94, 96, 98, 100 };
 
         public volatile int Stage = -1;
         public volatile string Detail = "";
@@ -127,10 +131,12 @@ namespace Amped2Installer
                 StageRecompile();
                 StageBuild();
                 StageMenuMod(r);
+                StageMovieTools(r);
                 StageFinish(r);
                 InstallLook(r);
                 r.Success = true;
                 Log("Installation finished.");
+                StartMovies(r);
             }
             catch (OperationCanceledException)
             {
@@ -441,9 +447,57 @@ namespace Amped2Installer
             SetFraction(1);
         }
 
+        /// <summary>
+        /// The HD movies' tools (MovieTools) and the launcher that converts
+        /// the movies after the install. A failure only skips the HD movies.
+        /// Existing copies in mods\movie_pack are the player's and stay, ticked
+        /// or not.
+        /// </summary>
+        void StageMovieTools(InstallResult r)
+        {
+            if (!_o.HdMovies)
+                return;
+            Begin(6, "Checking for the HD movie tools");
+            if (!MovieTools.Tools.All(t => _o.ApprovedTools.Contains(t.Name)))
+            {
+                r.HdMoviesNote = "The HD movie tools weren't approved, so the game keeps its original movies.";
+                return;
+            }
+            try
+            {
+                MovieTools.Fetch(Dest, Path.Combine(Work, "downloads"), s => Detail = s, Log, SetFraction, Ct);
+                MovieTools.WriteLauncher(Dest, Path.Combine(Amped2, @"tools\mods\movie_pack.py"), _tools.PythonExe);
+                r.HdMoviesReady = true;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception e)
+            {
+                Log("HD movie tools failed: " + e);
+                r.HdMoviesNote = "The HD movie tools couldn't be downloaded (the install log has the details), " +
+                                 "so the game keeps its original movies.";
+            }
+        }
+
+        void StartMovies(InstallResult r)
+        {
+            if (!r.HdMoviesReady)
+                return;
+            try
+            {
+                MovieTools.Start(Dest);
+                r.HdMoviesStarted = true;
+                Log("Started " + MovieTools.Launcher(Dest));
+            }
+            catch (Exception e)
+            {
+                Log("Couldn't start the HD movies: " + e);
+                r.HdMoviesNote = "The HD movie conversion couldn't be started. Run \"Convert HD movies.cmd\" in the install folder to start it.";
+            }
+        }
+
         void StageFinish(InstallResult r)
         {
-            Begin(6, "Copying the game into place");
+            Begin(7, "Copying the game into place");
             var exe = Path.Combine(Dest, ExeName);
             try
             {
@@ -689,7 +743,7 @@ namespace Amped2Installer
             Log($"RE-Amped2 installer {typeof(InstallJob).Assembly.GetName().Version}, {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             Log($"Windows {Environment.OSVersion.Version}, {Environment.ProcessorCount} cores, {TotalRamGb():0.#} GB RAM");
             Log($"Disc image: {_o.Disc.IsoPath} ({_o.Disc.Title}, {_o.Disc.RegionName})");
-            Log($"Install to: {Dest}  shortcut={_o.DesktopShortcut} menus={_o.MenuMod} look={_o.Look}");
+            Log($"Install to: {Dest}  shortcut={_o.DesktopShortcut} menus={_o.MenuMod} look={_o.Look} hd-movies={_o.HdMovies}");
         }
 
         void Log(string line)

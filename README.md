@@ -199,13 +199,20 @@ files. `mods\mods.json` lists the packs to use, and each pack is a folder in
 one of them, `re-amped2`. To make your own, see the modding sections of the
 [developer guide](docs/DEVELOPING.md#settings-amped2ini).
 
-**HD movies (Windows, experimental).** `tools\mods\movie_pack.py` makes
-1440x1080 copies of the game's movies from your own copy, upscaled with
-Real-ESRGAN, into `mods\movie_pack\`. The game then shows them in place of
-the original 640x480 pictures; sound, timing and skipping are unchanged.
-It needs FFmpeg and Real-ESRGAN (see the
-[developer guide](docs/DEVELOPING.md#the-movie-pack)) and takes 5–6 hours
-on an RTX 2070 for all movies.
+**HD movies (Windows, experimental).** Tick *Convert the movies to HD* in
+the installer. It downloads two free tools, FFmpeg and Real-ESRGAN (with
+your consent; 120 MB). After the install it makes 1440x1080 copies of the
+game's movies from your own disc, upscaled on your graphics card, into
+`mods\movie_pack\`. The game shows each copy in place of the original
+640x480 picture as soon as it is done; sound, timing and skipping are
+unchanged.
+
+All 50 movies take a few hours (4 h 48 min on an RTX 2070 laptop GPU) and
+about 5 GB. The conversion runs in a minimised window. If you close it,
+`Convert HD movies.cmd` in the install folder carries on where it stopped.
+`MoviePack=0` in `amped2.ini` turns the copies off. The recipe is
+`tools\mods\movie_pack.py` (see the
+[developer guide](docs/DEVELOPING.md#the-movie-pack)).
 
 ---
 
