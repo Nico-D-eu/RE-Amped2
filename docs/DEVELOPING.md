@@ -450,27 +450,63 @@ and the end of the movie behave as they always did.
 derived from the game is committed):
 
 ```
-python tools\mods\movie_pack.py                 # every movie, AI upscale
+python tools\mods\movie_pack.py                 # every movie, start-up ones first
 python tools\mods\movie_pack.py Intro XSN       # just these
 python tools\mods\movie_pack.py --upscale lanczos   # a plain resize, minutes
-python tools\mods\movie_pack.py --deinterlace Port_Career_Number1
+python tools\mods\movie_pack.py --deinterlace on Intro   # auto: only Port_*
 ```
 
 1. FFmpeg decodes each XMV (WMV2 640x480 with six Xbox ADPCM tracks) to
    PNG frames and keeps each frame's time. The frames are not evenly
    spaced (Intro: 1801 frames in 60.86 s, 33 or 34 ms apart with a few
-   long gaps).
+   long gaps). The live-action `Port_*` movies are deinterlaced (bwdif)
+   first.
 2. Real-ESRGAN (`realesrgan-ncnn-vulkan`, Vulkan on the GPU) upscales 3x
-   with its fast video model `realesr-animevideov3`.
+   with its fast video model `realesr-animevideov3`. If it fails (no
+   Vulkan), `--upscale auto` (the default) switches to Lanczos.
 3. FFmpeg scales to 1440x1080 and encodes H.264 (OpenH264) with the
-   original frame times and millisecond timestamps (with FFmpeg's default
-   1/25 s timebase, 291 of the intro's frames were dropped).
+   original frame times.
+4. Steps 2 and 3 run 500 frames at a time (`--batch`). The pieces are
+   joined without re-encoding, each with its exact duration. An upscaled
+   frame is 1.7 MB as PNG, so Port_Career_legend (7100 frames) needed 13 GB
+   of work space in one go; in batches it needs about 2 GB. The copy is
+   written as `<Name>.mp4.part` and renamed at the end.
 
-Tools: `tools\bin\ffmpeg\` (BtbN's FFmpeg-Builds, `ffmpeg-n9.0-latest-win64-lgpl-shared`,
-LGPL, so it can be shipped with the installer later) and
+**Frame times.** The copy must keep each frame's own time, since the
+runtime matches frames by time:
+- In the concat demuxer's default 1/25 s timestamps, frames 33 ms apart
+  share a slot and vfr drops one (291 of the intro's 1801). Hence
+  `-fps_mode passthrough -enc_time_base 1/1000 -video_track_timescale 1000`.
+- That kept every frame, but the times still snapped to 40 ms, because
+  the demuxer's time base comes from the first picture's (1/25 s for a
+  still image). `option framerate 1000` on each picture fixes it, and the
+  times now match the source to the millisecond (Port_OwnMtn_MoCap_2: 721
+  of 721 frames, 0 ms off). Before that, frames were up to 20 ms off, and
+  colliding ones landed 1 ms apart, so about every fifth frame was never
+  shown. The 50 copies made before the fix (2026-11-04) were corrected in
+  place by rewriting each mp4's `stts` table. With the corrected copies,
+  `AMPED2_MOVIE_TRACE` shows the copy at exactly the game's frame time
+  ("title at 4404 ms, showing 4404 ms"); before the fix it was 0–37 ms
+  behind.
+- **Bitrate.** OpenH264 shares the bitrate out by the frame rate it is
+  told, and caps that rate at 60. After the fix it is told 1000 (the
+  pictures' rate), so it budgets for 60 frames a second, twice the movies'
+  29.97, and the test install's first copies came out at half the bits
+  (xsn 3.8 Mbit/s against 7.0). FFmpeg refuses `-r` together with
+  passthrough, so the recipe asks for twice `--bitrate` instead. With that,
+  Port_OwnMtn_MoCap_2 comes out at 11.2 Mbit/s for 12M, still 0 ms off.
+  The 50 copies made before the frame-time fix are not affected: back then
+  the encoder was told 25.
+- Windows' own H.264 encoder (`h264_mf`) would avoid OpenH264's patent
+  question, but it refuses to open at the 1/1000 rate ("could not set
+  output type").
+
+Tools: `tools\bin\ffmpeg\` (BtbN's FFmpeg-Builds, LGPL shared build) and
 `tools\bin\realesrgan\` (xinntao/Real-ESRGAN `realesrgan-ncnn-vulkan-20220424-windows`,
-BSD-3-Clause). Both are git-ignored. Neither has been added to `NOTICE.md`
-yet, because nothing ships them.
+BSD-3-Clause), or the same programs on PATH. Both are git-ignored. The
+installer downloads pinned versions of both for players who tick HD movies
+(`installer/src/MovieTools.cs`, `installer/README.md`, `NOTICE.md`) and
+runs the recipe from the install folder after the install.
 
 Measured on the RTX 2070 (2026-11-03):
 
@@ -480,12 +516,15 @@ Measured on the RTX 2070 (2026-11-03):
 | `realesrgan-x4plus`, 4x | 2.1 s | about an hour |
 | Lanczos | - | seconds |
 
-All 50 movies come to 53.5 minutes (about 96,000 frames). At the intro's
-pace (6 minutes per minute of video, counting decode and encode) that is
-5–6 hours with the fast model. The career movies are live footage with interlacing combs in the
-source. The fast model smooths those, and some snow texture with them;
-x4plus keeps the texture but sharpens the combs. Use `--deinterlace`
-(bwdif) for those movies.
+All 50 movies come to 53.5 minutes (about 96,000 frames). The full run on
+2026-11-03/04 took 4 h 48 min, with no failures. Port_Career_legend and
+Port_Career_Number1 took 23 min each; most others took 2–7 min. The copies
+total 4.26 GB. The same GPU (an RTX 2070 Max-Q, in a laptop) was about 3x
+slower the next morning (0.38 s a frame), probably because of power limits,
+so expect the time to vary. The career movies are live footage with
+interlacing combs in the source. The fast model smooths those, and some
+snow texture with them; x4plus keeps the texture but sharpens the combs.
+That is why the `Port_*` movies are deinterlaced.
 
 **At run time** (`src/movie_pack.c`):
 - **Hooks.** It is on when `mods\movie_pack` exists (`MoviePack=0` turns it
