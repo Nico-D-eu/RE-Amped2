@@ -5,6 +5,8 @@
 [![Latest release](https://img.shields.io/github/v/release/Nico-D-eu/RE-Amped2?include_prereleases&label=download)](../../releases)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 ![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+[![Linux: preview](https://img.shields.io/badge/Linux-preview-FCC624?logo=linux&logoColor=black)](#on-linux-preview)
+[![Discord](https://img.shields.io/discord/1567622487565541478?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/e2SfPrMK)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-optional-FFDD00?logo=buymeacoffee&logoColor=black)](#support-the-project)
 
 ![RE-Amped2 on Windows at 1080p: the title screen, the main menu, the Mods screen, the career menu and the course select](screenshots/screenshots.gif)
@@ -40,7 +42,10 @@ The details, and what the installer asks before it installs anything, are in
 [Getting started](#getting-started). Something not working? See
 [Known issues](#known-issues), then [tell us](#reporting-problems).
 
-RE-Amped2 is also listed in RecompLauncher and Decomp Buddy:
+**Questions, or want to share how it runs for you?** Join the
+[RE-Amped2 Discord](https://discord.gg/e2SfPrMK).
+
+RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 
 <p>
   <a href="https://recomplauncher.com/game/re-amped2"><picture>
@@ -56,6 +61,7 @@ RE-Amped2 is also listed in RecompLauncher and Decomp Buddy:
 
 [![Install With Decomp Buddy](https://decompbuddy.com/install-button.svg)](https://decompbuddy.com/games/amped-2-re-amped2-xbox?install)
 [![Listed on Decomp Buddy](https://decompbuddy.com/badge.svg)](https://decompbuddy.com/games/amped-2-re-amped2-xbox)
+[![Listed on PlayPorted](https://playported.com/badge.svg)](https://playported.com/ports/1098-amped-2/)
 
 ---
 
@@ -114,11 +120,11 @@ The roadmap, including the console plans, is in [PLAN.md](PLAN.md).
 
 1. Download **`RE-Amped2-Setup.exe`** from the
    [Releases page](../../releases) (the newest release is at the top).
-2. Run it. The installer isn't code-signed yet, so Windows may show a
+2. Run it. The installer isn't code-signed, so Windows may show a
    SmartScreen warning ("Windows protected your PC"). If you want to check
-   the file first, compare its SHA-256 with the one on the release page.
-   Then choose **More info → Run anyway**. Signed installers are coming;
-   see the [Code signing policy](#code-signing-policy).
+   the file first, compare its SHA-256 with the one on the release page
+   (see [Where the installer comes from](#where-the-installer-comes-from)).
+   Then choose **More info → Run anyway**.
 3. **Disc:** pick your disc image, or drag it onto the window.
 4. **Location:** choose a folder you own (for example `C:\Games\RE-Amped2`)
    and the options: a desktop shortcut, the RE-Amped2 menus, and the
@@ -236,8 +242,8 @@ game's movies from your own disc, upscaled on your graphics card, into
 640x480 picture as soon as it is done; sound, timing and skipping are
 unchanged.
 
-All 50 movies take a few hours (4 h 48 min on an RTX 2070 laptop GPU) and
-about 5 GB. The conversion runs in a minimised window. If you close it,
+All 50 movies take a few hours (about 5 hours on an RTX 2070 laptop GPU)
+and about 6.5 GB. The conversion runs in a minimised window. If you close it,
 `Convert HD movies.cmd` in the install folder carries on where it stopped.
 `MoviePack=0` in `amped2.ini` turns the copies off. The recipe is
 `tools\mods\movie_pack.py` (see the
@@ -280,8 +286,22 @@ Open an [issue](../../issues) and include:
   the parts of the game's code that are still guesses and that your play
   reached, which tells us what to fix first;
 - for install problems, **`install.log`**, and the step that failed;
-- your disc (USA or Europe), Windows version, graphics card, and whether you
-  play with a controller or the keyboard.
+- your disc (USA or Europe), Windows version (or Linux distro), graphics
+  card, and whether you play with a controller or the keyboard.
+
+Not sure it's a bug, or just want to ask something first? The
+[Discord](https://discord.gg/e2SfPrMK) is the quickest place. Bugs still
+belong in an issue, so they don't get lost.
+
+---
+
+## Community
+
+The [RE-Amped2 Discord](https://discord.gg/e2SfPrMK) is the place to ask
+questions, share clips and screenshots, tell us how it runs on your PC
+(Linux reports especially welcome), and follow what's coming next.
+
+[![Join the RE-Amped2 Discord](https://img.shields.io/discord/1567622487565541478?label=Join%20the%20Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge)](https://discord.gg/e2SfPrMK)
 
 ---
 
@@ -308,7 +328,7 @@ PC. Steam Deck and macOS come after it.
 Parts C and D.
 
 **Windows says "Windows protected your PC".** The installer isn't
-code-signed yet. Choose **More info → Run anyway**, after checking the
+code-signed. Choose **More info → Run anyway**, after checking the
 SHA-256 on the release page if you like.
 
 **I only have the physical disc.** You need a disc image made from it. Any
@@ -316,37 +336,31 @@ tool that rips original Xbox discs to `.iso` or `.xiso` works.
 
 ---
 
-## Code signing policy
+## Where the installer comes from
 
-Free code signing provided by [SignPath.io](https://signpath.io),
-certificate by [SignPath Foundation](https://signpath.org).
-
-- **What is signed:** `RE-Amped2-Setup.exe`, the installer on the
-  [Releases page](../../releases). Releases up to 0.2.1 came out before
-  signing was set up and are not signed. The game itself, `RE-Amped2.exe`,
-  is compiled on your PC during the install, so it is never downloaded and
-  never signed.
+- **What you download:** `RE-Amped2-Setup.exe` (Windows) and
+  `RE-Amped2-<version>-linux.tar.gz` (Linux), from the
+  [Releases page](../../releases) only. Neither is code-signed. The game
+  itself, `RE-Amped2.exe`, is compiled on your PC during the install, so it
+  is never downloaded.
 - **How it is built:** by the
   [Installer workflow](.github/workflows/installer.yml) on GitHub Actions,
   from this repository at the release tag and the toolkit fork
   [Nico-D-eu/xboxrecomp](https://github.com/Nico-D-eu/xboxrecomp) at the
   commit in [installer/toolkit.ref](installer/toolkit.ref). The two
   third-party tools in it, xdvdfs and unluac, are downloaded at fixed
-  versions and checked by SHA-256. Every signing request is approved by
-  hand.
-- **Team:**
-  - Committers and reviewers: [Nico-D-eu](https://github.com/Nico-D-eu)
-  - Approvers: [Nico-D-eu](https://github.com/Nico-D-eu)
+  versions and checked by SHA-256. Anyone can read the workflow and its
+  runs.
+- **Who maintains it:** [Nico-D-eu](https://github.com/Nico-D-eu). Changes
+  from anyone else come in as pull requests and are reviewed before they
+  are merged.
+- **Checking a download:** compare its SHA-256 with the one on the release
+  page. On Windows: `certutil -hashfile RE-Amped2-Setup.exe SHA256` in a
+  command prompt. On Linux: `sha256sum -c` with the `.sha256` file. If it
+  doesn't match, don't run it; [open an issue](../../issues) with its
+  SHA-256 and where you got it.
 
-  Changes from anyone else come in as pull requests and are reviewed before
-  they are merged.
-- **Checking a download:** right-click `RE-Amped2-Setup.exe`, then
-  Properties › Digital Signatures. The signer should be SignPath
-  Foundation. You can also compare its SHA-256 with the one on the release
-  page. If a signed file looks wrong, don't run it;
-  [open an issue](../../issues) with its SHA-256 and where you got it.
-
-### Privacy
+## Privacy
 
 This program will not transfer any information to other networked systems
 unless specifically requested by the user or the person installing or
@@ -357,7 +371,13 @@ operating it.
   - the build tools you agree to, through Windows' package manager
     (winget), from their publishers;
   - the recompiler's Python packages (Capstone, plus NumPy and Pillow for
-    the RE-Amped2 menus) from the Python Package Index.
+    the RE-Amped2 menus) from the Python Package Index;
+  - only if you tick *Convert the movies to HD*: FFmpeg and Real-ESRGAN, at
+    fixed versions checked by SHA-256, from GitHub releases (BtbN's FFmpeg
+    builds, and Real-ESRGAN's own).
+
+  On Linux, `install.sh` uses your distro's package manager for the build
+  tools you agree to, and pip for the recompiler's Python packages.
 
   These downloads fall under the
   [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement),
@@ -397,7 +417,9 @@ the same help. Bug reports and play-testing help the project just as much.
 - **[xdvdfs](https://github.com/antangelo/xdvdfs)** extracts the disc image.
   **[unluac](https://sourceforge.net/projects/unluac/)** decompiles the menu
   scripts for the RE-Amped2 menus. **[Capstone](https://www.capstone-engine.org/)**
-  disassembles the game's code.
+  disassembles the game's code. **[FFmpeg](https://ffmpeg.org/)** and
+  **[Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)** make the
+  optional HD movies.
 
 ## Legal
 
