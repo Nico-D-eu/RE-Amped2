@@ -11,12 +11,17 @@ Early access
   this folder; it is rewritten on every start, so copy it before starting
   the game again.
 
+  So far the Linux build has only been tested under WSL2 (Ubuntu 24.04 on
+  Windows), not on a real Linux PC, and not with a controller. Reports
+  from any distribution help, including "it works".
+
   Mod packs, texture packs and loose files work as on Windows. The game
   draws with OpenGL 3.3 or newer; packs made of BC7 textures (the
   RE-Amped2 look is) need OpenGL 4.2.
 
 Controls
-  An Xbox-style controller works out of the box.
+  An Xbox-style controller should work out of the box (through SDL; not
+  yet tested on Linux).
   Keyboard: arrow keys = d-pad, Z X A S = A B X Y, Enter = Start,
   Backspace = Back, Q/E = white/black, 1/3 = triggers,
   number pad = left stick, I J K L = right stick.
