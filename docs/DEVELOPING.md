@@ -219,6 +219,7 @@ The cases are in `tools\suite\cases.json`. Each one is an isolated
 | `reload3` | ML1, then three times Pause → Leave Mountain and back onto the mountain | 250 s |
 | `movie` | No input: the boot movies to the end, then the title. Intro.xmv is 60.9 s | 240 s |
 | `texpack` | ML1 with `mods\texture_pack`: textures replaced, few misses (skipped without a pack) | 120 s |
+| `fonts` | The main menu with `mods\packs\fonts` (`tools/mods/font_pack.py`): at least 3 font atlases replaced (skipped without the pack) | 50 s |
 | `mods` | Loose entries merged at start-up (skipped without `mods\loose`) | 45 s |
 | `soak` | 60 min in ML1 (the old Start+A pulse walk; only with `-Soak`) | 62 min |
 
@@ -312,10 +313,20 @@ folder, `amped2.ini`, `AMPED2_*` variables, CMake and tool names.
   plus `Media/font.xpr` and `XprMedia/Font.xpr`) are in the texture pack. `tex-upscale` upscales
   their alpha, which holds the glyphs, with the AI model and tightens the edges.
   Text is sharp at any `RenderScale`.
+- **Sharp fonts for players (2026-11-05):** `tools/mods/font_pack.py` makes
+  them on the player's PC, without AI and without game pixels in any
+  download. It reads every font atlas from the player's own game folder (the
+  eight GUI fonts in `GuiPackages/*.ruirr` `Fonts/*.xpr`, DXT3, plus the two
+  XDK fonts), scales them 4x (Lanczos, then a smoothstep about the glyph
+  outline in the alpha, which holds the glyphs) and writes uncompressed
+  32-bit DDS with mips under the original keys, about 80 MB in 7 s. Both
+  installers run it as part of the RE-Amped2 look into `mods/packs/fonts`,
+  listed after `re-amped2` in `mods.json`; it needs only the NumPy and
+  Pillow the menu mod already downloads.
 - **Text proportions:** in the 16:9 mode the game stretches its 4:3 2D layer
   1.33x wide. `TextAspect=1` (default) draws text at its own proportions (see
-  Bring-up notes, "Text aspect in 16:9"). Menu title images and icons stay
-  stretched.
+  Bring-up notes, "Text aspect in 16:9"), menu titles included (they are
+  text). Backgrounds, frames and bars stay stretched to fill the screen.
 - **Not covered by textures:** with the big local pack, the boot splash is
   presented once, before the background loader has it. It shows with
   `RECOMP_TEXTURE_PACK_SYNC=1` (automatic without `mods\texture_pack`).
@@ -681,7 +692,9 @@ code or data in it.
   `mods/packs/re-amped2`, first in `mods/mods.json` (other packs kept),
   minus `menu-mod-only.txt`'s keys; `--no-look` leaves it out and an
   update then removes it. The GL back end reads packs with the D3D11 keys
-  (toolkit `fedcfd2`); the look's BC7 files need GL 4.2.
+  (toolkit `fedcfd2`); the look's BC7 files need GL 4.2. Its sharp fonts
+  (`tools/mods/font_pack.py`, uncompressed DDS) go to `mods/packs/fonts`,
+  listed after it.
 - The menu mod is built as on Windows (`tools/mods/menus.py`, unchanged)
   after the compile, with numpy and pillow in the venv, Java on PATH and
   unluac in `tools/bin` (`package.sh` downloads the same build as
@@ -839,14 +852,27 @@ RGuiTextNode::Render `0x000D2070` → Font2dStandardShader::Begin `0x00248FF0`
 (thiscall, ecx shader, `[esp+4]` text node, `[esp+8]` world with the node's
 scale, ret 8), which passes the world to the GUI device (`[0x0038CDFC]`,
 SetWorld `0x00247D90` keeps a copy at +0x10, used when the glyph batch is
-drawn). `recomp_manual.c` wraps Begin: if the world's x axis is shorter than
-its y axis by less than halfway to the screen stretch (logged: 0.75 for menu
-text at 16:9, 1.0 at 4:3 and under AspectCorrect anchors), x is scaled by
+drawn). `recomp_manual.c` wraps Begin: if the world's y/x axis ratio is
+below 0.98, x is scaled by
 `(H*640)/(W*480)` about the node's alignment point (+0x34 box left, +0x38
 right, +0x54 scale, +0x58 bits 0-2: 0 left, 1 centre, 2 right). Layout, line
 breaks and highlight bars are unchanged. G = `[0x0038CDF4]`: +0x1380/+0x1384
-screen size. `AMPED2_TEXT_ASPECT_LOG=1` logs 400 distinct node matrices
-(`text169`/`text43` runs). Verified in `text1`: main menu, career, pause, HUD.
+screen size. `AMPED2_TEXT_ASPECT_LOG=1` logs 400 distinct node matrices,
+`=<n>` the first n (`text169`/`text43` runs). Verified in `text1`: main menu,
+career, pause, HUD.
+
+The ratios logged at 16:9 (2026-11-05, `menu169`, `hud169b`): plain stretched
+text 0.75; the menu titles 0.96, because they are drawn in Gunship already
+condensed to about 0.78 (MAIN MENU, OPTIONS, CAREER, RIDE! are text in that
+font, not pictures); menu rows between 0.75 and 0.83 during their fly-in;
+text under AspectCorrect anchors 1.0 or more (1.0, 1.29, 1.4, 1.5). The cut
+was halfway (0.875) until then, which left the titles stretched and narrowed
+the rows only at the end of their fly-in, so they jumped. 0.98 fixes both;
+an A/B of both cuts into ML1 (`hudcut0875`, `hudcut098`) showed the session
+menu, the Challenges box and the HUD unchanged. The button icons (A, B, X)
+are glyphs in ArialBlack_14 and were already round (13x13 px in a 640x360
+shot). What stays stretched are backgrounds, frames and highlight bars,
+which are meant to fill the screen.
 Fonts: `Base.rui Fonts/*.abc` (metrics, parser `0x000C38C0`) with
 `Base.ruirr Fonts/*.xpr` atlases.
 

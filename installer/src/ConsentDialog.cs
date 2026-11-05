@@ -100,7 +100,7 @@ namespace Amped2Installer
                          "disc, on this PC, into mods\\movie_pack.", _small, Muted, 6));
             }
             Add(Line("The installer also downloads the recompiler's Python packages (Capstone" +
-                     (menuPackages ? "; NumPy and Pillow for the RE-Amped2 menus" : "") +
+                     (menuPackages ? "; NumPy and Pillow for the RE-Amped2 menus and sharp fonts" : "") +
                      ") from PyPI into a temporary folder, which is removed when the install finishes.", _small, Muted, 12));
 
             var agree = new CheckBox

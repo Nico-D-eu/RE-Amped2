@@ -83,10 +83,11 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | **Graphics** | DirectX 11 renderer, steady 60 fps | ✅ |
 | | Higher resolutions: up to 8× (4K and beyond) | ✅ |
 | | Anisotropic filtering, optional FXAA | ✅ |
-| | Widescreen 16:9, with text at its own proportions | ✅ (menu pictures are still stretched 🟡) |
+| | Widescreen 16:9, with text and menu titles at their own proportions | ✅ |
 | | Rider shadows | ✅ |
 | | Texture packs (replacement textures) | ✅ |
-| | HD texture pack and sharper fonts out of the box | ⬜ planned |
+| | Sharper text out of the box (the fonts, upscaled on your PC by the installer) | ✅ |
+| | HD texture pack out of the box | ⬜ planned |
 | **Sound and video** | Sound effects, the soundtrack, rumble | ✅ |
 | | Intro and in-game movies | ✅ (at their original resolution) |
 | | Sharper movies | 🟡 optional HD copies, made on your PC by the installer (Windows) |
@@ -231,7 +232,8 @@ writes it the first time it starts, with each line commented out. Remove the
 Mods live in the install folder's `mods` folder and never touch your game
 files. `mods\mods.json` lists the packs to use, and each pack is a folder in
 `mods\packs\`. The RE-Amped2 look (logo, splash and loading screen) is
-one of them, `re-amped2`. To make your own, see the modding sections of the
+one of them, `re-amped2`; its sharper text is another, `fonts`, made by the
+installer from your own game's fonts. To make your own, see the modding sections of the
 [developer guide](docs/DEVELOPING.md#settings-amped2ini).
 
 **HD movies (Windows, experimental).** Tick *Convert the movies to HD* in
@@ -266,8 +268,6 @@ In the current release (0.3.0):
   next track starts. Sound effects keep working. Your `amped2.log` from such
   a session helps.
 - **An occasional 1–2 second hitch** in a level, about once an hour.
-- **Menu pictures are stretched** in 16:9. Text is drawn at its own
-  proportions.
 - **Not checked yet:** the Legend challenges. If you get that far, we'd
   like to hear how it went, good or bad.
 

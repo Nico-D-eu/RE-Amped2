@@ -1242,7 +1242,8 @@ void sub_001EDF30(void)
  * Text node: +0x34 box left, +0x38 box right, +0x54 scale, +0x58 bits 0-2
  * alignment (0 left, 1 centre, 2 right). GUI (G = [0x0038CDF4]): +0x1380
  * and +0x1384 the screen size. ini [Display] TextAspect=0 turns it off;
- * AMPED2_TEXT_ASPECT_LOG=1 logs the first strings' matrices. */
+ * AMPED2_TEXT_ASPECT_LOG=1 logs the first 400 strings' matrices, =<n> the
+ * first n (in game, the menus before it use up 400). */
 extern void sub_00248FF0_gen(void);
 
 void sub_00248FF0(void)
@@ -1258,7 +1259,7 @@ void sub_00248FF0(void)
         const char *e = getenv("AMPED2_TEXT_ASPECT");
         on = !(e && *e == '0');
         e = getenv("AMPED2_TEXT_ASPECT_LOG");
-        log_left = (e && *e && *e != '0') ? 400 : 0;
+        log_left = (e && *e && *e != '0') ? (atoi(e) > 1 ? atoi(e) : 400) : 0;
     }
     if ((!on && !log_left) || !gui || !node)
         return;
@@ -1288,7 +1289,15 @@ void sub_00248FF0(void)
     }
     if (!on || k > 0.99f)
         return;                             /* off, or a 4:3 screen */
-    if (l0 <= 0.f || l1 / l0 > 0.5f * (1.f + k))
+    /* Stretched text is wider than tall: 0.75 for plain text, 0.96 for the
+     * main menu's title (Gunship, drawn condensed to 0.78), and anything
+     * between during a fly-in. Text under an AspectCorrect anchor was 1.0
+     * or more on every menu screen logged (1.0, 1.29, 1.4, 1.5), so 0.98
+     * splits them. The old cut at halfway (0.875) missed the titles (MAIN
+     * MENU, CAREER, RIDE!) and narrowed the menu rows only at the end of
+     * their fly-in, so they jumped. An A/B of both cuts into ML1 showed the
+     * session menu, Challenges box and HUD unchanged. */
+    if (l0 <= 0.f || l1 / l0 > 0.98f)
         return;                             /* already uniform */
     switch (align) {                        /* the anchor, in the node's unscaled units */
     case 0:  xa = s != 0.f ? L / s : 0.f; break;
