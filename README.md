@@ -83,6 +83,7 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | **Graphics** | DirectX 11 renderer, steady 60 fps | ✅ |
 | | Higher resolutions: up to 8× (4K and beyond) | ✅ |
 | | Anisotropic filtering, optional FXAA | ✅ |
+| | AMD FSR 1 upscaling and sharpening (Windows) | ✅ |
 | | Widescreen 16:9, with text and menu titles at their own proportions | ✅ |
 | | Rider shadows | ✅ |
 | | Texture packs (replacement textures) | ✅ |
@@ -217,6 +218,8 @@ writes it the first time it starts, with each line commented out. Remove the
 | | `VideoModes` | which of `480p`, `720p`, `1080i`, `widescreen` the game may use, or `none` |
 | | `Anisotropic` | `1` (off) to `16` (default) |
 | | `FXAA` | `1` on, `0` off (default) |
+| | `Upscale` | `bilinear` (default) or `FSR`: how the picture is scaled up to a larger window (Windows) |
+| | `Sharpen` | `0` (off) to `1`; `0.8` with `Upscale=FSR` unless set (Windows) |
 | | `TextAspect` | `1` (default) draws text at its own proportions in 16:9 |
 | `[Input]` | `KeyboardPreset` | `default` or `wasd` |
 | | `KeyMap` | your own key bindings, e.g. `A=SPACE\|Z,START=RETURN` |

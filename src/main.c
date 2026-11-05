@@ -1030,6 +1030,13 @@ static const char k_ini_default[] =
     "; FXAA anti-aliasing on the finished picture: 1 on, 0 off (default).\r\n"
     "; Most useful at RenderScale=1; higher scales already smooth edges.\r\n"
     ";FXAA=1\r\n"
+    "; How the picture is scaled up to a window larger than RenderScale makes\r\n"
+    "; it: bilinear (default) or FSR (AMD FidelityFX Super Resolution 1, a\r\n"
+    "; sharper edge-aware upscale). Windows only for now.\r\n"
+    ";Upscale=FSR\r\n"
+    "; Sharpening of the finished picture, 0 (off) to 1 (strongest). 0.8 with\r\n"
+    "; Upscale=FSR unless set, 0 otherwise. Windows only for now.\r\n"
+    ";Sharpen=0.5\r\n"
     "; In the 16:9 mode the game stretches its 4:3 menus; 1 (default) draws\r\n"
     "; their text at its own proportions, 0 leaves it stretched.\r\n"
     ";TextAspect=1\r\n"
@@ -1257,6 +1264,8 @@ static void load_settings(void)
         { "Display", "VideoModes",     "RECOMP_VIDEO_MODES" },
         { "Display", "Anisotropic",    "RECOMP_GPU_ANISO" },
         { "Display", "FXAA",           "RECOMP_GPU_FXAA" },
+        { "Display", "Upscale",        "RECOMP_GPU_UPSCALE" },
+        { "Display", "Sharpen",        "RECOMP_GPU_SHARPEN" },
         { "Display", "TextAspect",     "AMPED2_TEXT_ASPECT" },
         { "Input",   "KeyboardPreset", "RECOMP_KEYMAP_PRESET" },
         { "Input",   "KeyMap",         "RECOMP_KEYMAP" },

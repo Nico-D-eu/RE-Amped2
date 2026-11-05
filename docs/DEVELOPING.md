@@ -347,6 +347,8 @@ environment variable that is already set wins over the file.
 | | `VideoModes` | comma list of `480p`, `720p`, `1080i`, `widescreen`, or `none` | `RECOMP_VIDEO_MODES` |
 | | `Anisotropic` | `1` (off) to `16` (default) | `RECOMP_GPU_ANISO` |
 | | `FXAA` | `1` on, `0` off (default); most useful at `RenderScale=1` | `RECOMP_GPU_FXAA` |
+| | `Upscale` | `bilinear` (default), `FSR` (FSR 1 EASU when the window is larger than the render; D3D11 only) | `RECOMP_GPU_UPSCALE` |
+| | `Sharpen` | `0`–`1` (FSR 1 RCAS at window size; `0.8` with `FSR` unless set; D3D11 only) | `RECOMP_GPU_SHARPEN` |
 | | `TextAspect` | `1` (default) draws menu/HUD text at its own proportions in 16:9, `0` leaves it stretched | `AMPED2_TEXT_ASPECT` |
 | `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
 | | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
