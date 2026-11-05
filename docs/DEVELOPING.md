@@ -347,6 +347,8 @@ environment variable that is already set wins over the file.
 | | `VideoModes` | comma list of `480p`, `720p`, `1080i`, `widescreen`, or `none` | `RECOMP_VIDEO_MODES` |
 | | `Anisotropic` | `1` (off) to `16` (default) | `RECOMP_GPU_ANISO` |
 | | `FXAA` | `1` on, `0` off (default); most useful at `RenderScale=1` | `RECOMP_GPU_FXAA` |
+| | `Upscale` | `bilinear` (default), `FSR` (FSR 1 EASU when the window is larger than the render; D3D11 only) | `RECOMP_GPU_UPSCALE` |
+| | `Sharpen` | `0`–`1` (FSR 1 RCAS at window size; `0.8` with `FSR` unless set; D3D11 only) | `RECOMP_GPU_SHARPEN` |
 | | `TextAspect` | `1` (default) draws menu/HUD text at its own proportions in 16:9, `0` leaves it stretched | `AMPED2_TEXT_ASPECT` |
 | `[Input]` | `KeyboardPreset` | `default`, `wasd` | `RECOMP_KEYMAP_PRESET` |
 | | `KeyMap` | `A=SPACE\|Z,START=RETURN\|ESCAPE,…` | `RECOMP_KEYMAP` |
@@ -368,10 +370,14 @@ removes "Multiplayer" from the main menu, adds QUIT GAME at the end, and
 puts WINDOW and RESOLUTION into Options -> Game Options (they read and
 write `amped2.ini`; Window applies at once, Resolution after a restart).
 OPTIONS is renamed OPTIONS AND MODS; its list loses XBOX LIVE OPTIONS and
-CREDITS and gains MODS, the Xbox Live options screen rewritten with two
-rows, MOD PACKS and TEXTURE PACK (OFF / ON, written to `[Game] ModPacks`
-and `TexturePack`, used from the next start; wrappers of `0x001ED950` and
-`0x001EDF30`). It also blanks the level loading screen's controller labels,
+CREDITS and gains MODS AND GRAPHICS, the Xbox Live options screen
+rewritten with four rows: MOD PACKS and TEXTURE PACK (OFF / ON, written to
+`[Game] ModPacks` and `TexturePack`, used from the next start), UPSCALING
+(STANDARD / FSR) and SHARPENING (OFF / LOW / MEDIUM / HIGH = 0 / 0.4 / 0.8 /
+1), written to `[Display] Upscale` and `Sharpen` and applied at once
+through the toolkit's `xbox_GpuSetPost` (wrappers of `0x001ED950` and
+`0x001EDF30`). The last two rows' value lists are new controls 4 and 5,
+bound in `.sceneData` to the free item slots 3 and 4. It also blanks the level loading screen's controller labels,
 whose pictures the texture pack replaces with the RE-Amped2 art. The pause
 menu's Options loses XBOX LIVE OPTIONS, and the button legends ("A=Select
 B=Back", "X=Xbox Live"; the button icons are glyphs in those strings) lose

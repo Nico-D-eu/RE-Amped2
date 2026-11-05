@@ -1170,19 +1170,77 @@ void sub_001EE7E0(void)
  * replaced here: it wrote the Live settings, which no one uses now, and the
  * exit (sub_001ED9B0) saves those to the profile unchanged.
  *
- * Rows, each OFF / ON (combo 0 / 1):
+ * Rows 0 and 1, each OFF / ON (combo 0 / 1):
  *   0  MOD PACKS     [Game] ModPacks     (mods.json packs, mods\loose)
  *   1  TEXTURE PACK  [Game] TexturePack  (mods\texture_pack)
  * Both are read once at start-up (main.c mod_packs), so they apply after a
  * restart. The environment variable is updated too, so the screen shows
  * the new value when it is opened again.
+ *
+ * Rows 2 and 3 (the menu mod binds them to the free item slots 3 and 4):
+ *   2  UPSCALING   STANDARD / FSR          [Display] Upscale  bilinear / FSR
+ *   3  SHARPENING  OFF / LOW / MEDIUM / HIGH  [Display] Sharpen  0 / 0.4 / 0.8 / 1
+ * They apply at once (the toolkit's xbox_GpuSetPost) and are saved. Both
+ * are written whenever either changes, so the next start shows the same
+ * picture: Sharpen left out of the ini means 0.8 with FSR and 0 without.
  */
-#define AMPED2_MODS_ROWS 2
+#define AMPED2_MODS_ROWS    2
+#define AMPED2_OPT_UPSCALE  2
+#define AMPED2_OPT_SHARPEN  3
 
 static const struct { const char *key, *var; } k_mods_rows[AMPED2_MODS_ROWS] = {
     { "ModPacks",    "AMPED2_MOD_PACKS" },
     { "TexturePack", "AMPED2_TEXTURE_PACK" },
 };
+
+static const float k_sharpen_levels[4] = { 0.0f, 0.4f, 0.8f, 1.0f };
+static const char *const k_sharpen_names[4] = { "0", "0.4", "0.8", "1" };
+
+extern void xbox_GpuSetPost(int upscale, float sharpen);   /* toolkit nv2a_d3d11.c */
+
+static int amped2_upscale_on(void)
+{
+    /* "fsr" or "fsr1", any case (the toolkit's test), without _stricmp,
+     * which POSIX lacks. */
+    const char *e = getenv("RECOMP_GPU_UPSCALE");
+    return e && (e[0] | 0x20) == 'f' && (e[1] | 0x20) == 's' && (e[2] | 0x20) == 'r'
+             && (!e[3] || (e[3] == '1' && !e[4]));
+}
+
+/* The sharpening in effect, as the nearest of the four levels. */
+static uint32_t amped2_sharpen_level(void)
+{
+    const char *e = getenv("RECOMP_GPU_SHARPEN");
+    float v = (e && *e) ? (float)atof(e) : amped2_upscale_on() ? 0.8f : 0.0f;
+    uint32_t i, best = 0;
+    for (i = 1; i < 4; i++) {
+        float d = v - k_sharpen_levels[i], db = v - k_sharpen_levels[best];
+        if (d * d < db * db)
+            best = i;
+    }
+    return best;
+}
+
+static void amped2_setenv(const char *var, const char *value)
+{
+#if defined(_WIN32)
+    char buf[96];
+    snprintf(buf, sizeof buf, "%s=%s", var, value);
+    _putenv(buf);
+#else
+    setenv(var, value, 1);
+#endif
+}
+
+static void amped2_set_picture(int upscale, uint32_t level)
+{
+    const char *up = upscale ? "FSR" : "bilinear";
+    amped2_setenv("RECOMP_GPU_UPSCALE", up);
+    amped2_setenv("RECOMP_GPU_SHARPEN", k_sharpen_names[level]);
+    amped2_ini_set("Display", "Upscale", up);
+    amped2_ini_set("Display", "Sharpen", k_sharpen_names[level]);
+    xbox_GpuSetPost(upscale, k_sharpen_levels[level]);
+}
 
 extern void sub_001ED950_gen(void);
 
@@ -1192,12 +1250,18 @@ void sub_001ED950(void)
     int row;
 
     sub_001ED950_gen();                     /* the Live rows; pops our return */
-    for (row = 0; row < AMPED2_MODS_ROWS; row++) {
-        const char *v = getenv(k_mods_rows[row].var);
+    for (row = 0; row <= AMPED2_OPT_SHARPEN; row++) {
         g_esp -= 4; MEM32(g_esp) = MEM32(menu + 0x3C);
         g_esp -= 4; MEM32(g_esp) = 0;       /* return address */
         g_ecx = (uint32_t)row;
-        g_eax = (v && *v == '0') ? 0 : 1;
+        if (row == AMPED2_OPT_UPSCALE) {
+            g_eax = (uint32_t)amped2_upscale_on();
+        } else if (row == AMPED2_OPT_SHARPEN) {
+            g_eax = amped2_sharpen_level();
+        } else {
+            const char *v = getenv(k_mods_rows[row].var);
+            g_eax = (v && *v == '0') ? 0 : 1;
+        }
         sub_002116F0();                     /* ret 4 */
     }
     g_ebx = saved_ebx;
@@ -1208,7 +1272,6 @@ void sub_001EDF30(void)
     uint32_t arg = MEM32(g_esp + 4);
     uint32_t count = MEM32(arg + 0x88), values = MEM32(arg + 0x84);
     uint32_t row, combo;
-    char buf[64];
 
     if (count >= 2) {
         row = MEM32(values + 4);
@@ -1216,12 +1279,11 @@ void sub_001EDF30(void)
         if (row < AMPED2_MODS_ROWS) {
             const char *on = combo ? "1" : "0";
             amped2_ini_set("Game", k_mods_rows[row].key, on);
-#if defined(_WIN32)
-            snprintf(buf, sizeof buf, "%s=%s", k_mods_rows[row].var, on);
-            _putenv(buf);
-#else
-            setenv(k_mods_rows[row].var, on, 1);
-#endif
+            amped2_setenv(k_mods_rows[row].var, on);
+        } else if (row == AMPED2_OPT_UPSCALE) {
+            amped2_set_picture(combo != 0, amped2_sharpen_level());
+        } else if (row == AMPED2_OPT_SHARPEN && combo < 4) {
+            amped2_set_picture(amped2_upscale_on(), combo);
         }
     }
     SET_LO8(g_eax, 0);
