@@ -644,6 +644,16 @@ What a Linux build needs that Windows hides:
 - **Where it stands:** title a steady 60 fps, ML1 in game 44-50 with the
   render thread (pad script `tools/suite/pads/ml1.pad` works on Linux too:
   `RECOMP_PAD_SCRIPT=@<path>`). See PLAN Phase 21 for what is missing.
+- **Render scale (2026-11-05, toolkit `1555bb4`, branch `gl-render-scale`).**
+  `nv2a_gl.c` ignored `RECOMP_GPU_SCALE` until then: Linux always drew
+  1280x720, and RenderScale and the in-game RESOLUTION did nothing. It now
+  scales as D3D11 does (surfaces n times larger, viewports, scissors,
+  clears, the read-back frame and the overlay rectangle to match; sample
+  counts divided by n*n). The frame still reaches the window through the
+  CPU, so the read-back grows with n squared. WSL2 on the RTX 2070, ML1:
+  scale 1 at 40-47 fps (flip 3 ms), scale 2 at about 37 fps (flip 6 ms).
+  The default stays 1. Presenting straight from GL (a blit into the
+  window's own context) would remove the read-back; not done yet.
 - **Visibility counts** (floodlight glows, lens flares) are GL
   `GL_SAMPLES_PASSED` queries, ported from the D3D11 back end (see
   "Lights" below for how the game uses them). `RECOMP_VIS_TRACE=1` prints
