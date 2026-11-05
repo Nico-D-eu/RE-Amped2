@@ -32,13 +32,16 @@ Edits:
   5. OPTIONS becomes OPTIONS AND MODS (the MainMenu_Options string, which
      is also the Options screen's title). Its list (Shell.rui
      Scenes/Options.scene) loses XBOX LIVE OPTIONS and CREDITS and gains
-     MODS at the end.
-  6. MODS opens the Xbox Live options screen, rewritten as the Mods screen
+     MODS AND GRAPHICS at the end.
+  6. MODS AND GRAPHICS opens the Xbox Live options screen, rewritten
      (Base.rui Scenes/Options_Online.scene, which already has Game
      Options' combo-row layout): rows MOD PACKS and TEXTURE PACK, each
-     OFF / ON. MODS keeps the old item's action, $Options_Online, so
-     Options.actions stays as it is. src/recomp_manual.c shows and saves
-     the values ([Game] ModPacks and TexturePack in amped2.ini; wrappers of
+     OFF / ON, then UPSCALING (STANDARD / FSR) and SHARPENING (OFF to
+     HIGH), whose value lists are new controls bound to the free item
+     slots 3 and 4 in .sceneData. The item keeps the old action,
+     $Options_Online, so Options.actions stays as it is.
+     src/recomp_manual.c shows and saves the values ([Game] ModPacks and
+     TexturePack, [Display] Upscale and Sharpen in amped2.ini; wrappers of
      0x001ED950 and 0x001EDF30).
   7. The loading screen before a level shows the RE-Amped2 splash art from
      the texture pack, so its controller labels (the Loading_Controller_*,
@@ -113,11 +116,36 @@ STRINGS = {
         "fre": "Personnaliser les paramètres et les mods.",
         "ger": "Spieleinstellungen und Mods anpassen."}),
     "Options_Mods": ("Options_Cheats", {
-        "eng": "MODS", "fre": "MODS", "ger": "MODS"}),
+        "eng": "MODS AND GRAPHICS", "fre": "MODS ET GRAPHISMES",
+        "ger": "MODS UND GRAFIK"}),
     "Options_Mods_Help": ("Options_Cheats_Help", {
-        "eng": "Turn the mod packs and the texture pack on or off.",
-        "fre": "Activer ou désactiver les packs de mods et de textures.",
-        "ger": "Mod-Pakete und Texturpaket ein- oder ausschalten."}),
+        "eng": "Mod packs, the texture pack, upscaling and sharpening.",
+        "fre": "Packs de mods et de textures, mise à l'échelle et netteté.",
+        "ger": "Mod-Pakete, Texturpaket, Hochskalierung und Schärfe."}),
+    "ModsOptions_Upscale": ("LiveOptions_LiveVoice", {
+        "eng": "UPSCALING", "fre": "MISE À L'ÉCHELLE", "ger": "HOCHSKALIERUNG"}),
+    "ModsOptions_Upscale_Help": ("LiveOptions_LiveVoice_Help", {
+        "eng": "FSR: sharper scaling to a large window (AMD FSR 1).",
+        "fre": "FSR : agrandissement plus net en grande fenêtre (AMD FSR 1).",
+        "ger": "FSR: schärfere Skalierung in große Fenster (AMD FSR 1)."}),
+    "ModsOptions_Upscale_Standard": ("LiveOptions_LiveVoice_None", {
+        "eng": "Standard", "fre": "Standard", "ger": "Standard"}),
+    "ModsOptions_Upscale_FSR": ("LiveOptions_LiveVoice_None", {
+        "eng": "FSR", "fre": "FSR", "ger": "FSR"}),
+    "ModsOptions_Sharpen": ("LiveOptions_LiveVoice", {
+        "eng": "SHARPENING", "fre": "NETTETÉ", "ger": "SCHÄRFE"}),
+    "ModsOptions_Sharpen_Help": ("LiveOptions_LiveVoice_Help", {
+        "eng": "Sharpens the finished picture (AMD FSR 1 RCAS).",
+        "fre": "Accentue la netteté de l'image (AMD FSR 1 RCAS).",
+        "ger": "Schärft das fertige Bild (AMD FSR 1 RCAS)."}),
+    "ModsOptions_Sharpen_Off": ("LiveOptions_LiveVoice_None", {
+        "eng": "Off", "fre": "Non", "ger": "Aus"}),
+    "ModsOptions_Sharpen_Low": ("LiveOptions_LiveVoice_None", {
+        "eng": "Low", "fre": "Faible", "ger": "Niedrig"}),
+    "ModsOptions_Sharpen_Medium": ("LiveOptions_LiveVoice_None", {
+        "eng": "Medium", "fre": "Moyenne", "ger": "Mittel"}),
+    "ModsOptions_Sharpen_High": ("LiveOptions_LiveVoice_None", {
+        "eng": "High", "fre": "Forte", "ger": "Hoch"}),
     "ModsOptions_Packs": ("LiveOptions_LiveVoice", {
         "eng": "MOD PACKS", "fre": "PACKS DE MODS", "ger": "MOD-PAKETE"}),
     "ModsOptions_Packs_Help": ("LiveOptions_LiveVoice_Help", {
@@ -180,6 +208,14 @@ OPTIONS_ADD = {
 MODS_SCENE = "GuiPackages/Base.rui/Scenes/Options_Online.scene"
 OFF_ON = ["GameOptions_Vibration_Off", "GameOptions_Vibration_On"]
 MODS_ROWS = [("ModsOptions_Packs", OFF_ON), ("ModsOptions_Textures", OFF_ON)]
+# Rows 2 and 3 of the Mods and Graphics screen: new value lists (controls 4
+# and 5, after the list box, control 3) bound to the free item slots 3 and 4.
+MODS_ROWS_ADDED = [
+    ("ModsOptions_Upscale", ["ModsOptions_Upscale_Standard", "ModsOptions_Upscale_FSR"]),
+    ("ModsOptions_Sharpen", ["ModsOptions_Sharpen_Off", "ModsOptions_Sharpen_Low",
+                             "ModsOptions_Sharpen_Medium", "ModsOptions_Sharpen_High"]),
+]
+MODS_SLOTS = ["Item3", "Item4"]
 
 # The rows added to Game Options, in order (rows 4 and 5 -- recomp_manual.c
 # handles them), each with its value list. They take the two free item slots
@@ -306,27 +342,42 @@ def game_options_scene():
 
 def game_options_scene_data():
     """Options_Game.sceneData: bind the free item slots' grids to the new
-    value lists. ControlData is binary in a Lua string: per node a u16 name
-    length, the name, the u16 control it shows (0xFFFF = none), a u16 node
-    id, a u16 child count. Item1-4 show controls 4, 2, 1, 5; Item5, Item6
-    and ItemLast none."""
-    entry = "GuiPackages/Base.rui/Scenes/Options_Game.sceneData"
+    value lists. Item1-4 show controls 4, 2, 1, 5; Item5, Item6 and ItemLast
+    none."""
+    bind_slots("GuiPackages/Base.rui/Scenes/Options_Game.sceneData",
+               GAME_OPTIONS_SLOTS, 6,
+               "Game Options: item slots 5 and 6 bound to the new rows")
+
+
+def mods_scene_data():
+    """Options_Online.sceneData: Item1 and Item2 show controls 1 and 2, the
+    old Live rows; Item3-6 none. Bind Item3 and Item4 to the added rows'
+    value lists, controls 4 and 5."""
+    bind_slots(MODS_SCENE + "Data", MODS_SLOTS, 4,
+               "Mods and Graphics: item slots 3 and 4 bound to the new rows")
+
+
+def bind_slots(entry, slots, first_control, what):
+    """Bind each slot's free grid to a control, first_control upwards.
+    ControlData is binary in a Lua string: per node a u16 name length, the
+    name, the u16 control it shows (0xFFFF = none), a u16 node id, a u16
+    child count."""
     src = source_of(entry)
     cd = src.index("ControlData = ")
     cd_end = src.index("\n", cd)
     data = src[cd:cd_end]
     markers = ["Item1\\", "Item2\\", "Item3\\", "Item4\\", "Item5\\",
                "Item6\\", "ItemLast\\", "TMP_Options_EntireListBox\\"]
-    for i, slot in enumerate(GAME_OPTIONS_SLOTS):
+    for i, slot in enumerate(slots):
         start = data.index(slot + "\\255\\255")
         end = min(p for p in (data.find(m, start + 1) for m in markers) if p > start)
         part = data[start:end]
         if part.count("grid\\255\\255") != 1:
             sys.exit(f"{entry}: {slot} has no free grid")
-        part = part.replace("grid\\255\\255", f"grid\\{6 + i:03d}\\000")
+        part = part.replace("grid\\255\\255", f"grid\\{first_control + i:03d}\\000")
         data = data[:start] + part + data[end:]
     src = src[:cd] + data + src[cd_end:]
-    write_override(entry, src, "Game Options: item slots 5 and 6 bound to the new rows")
+    write_override(entry, src, what)
 
 
 def edit_lists(src, edit):
@@ -449,10 +500,11 @@ def legends(tables):
 
 
 def mods_scene():
-    """The Xbox Live options scene as the Mods screen: its two rows and
-    their value lists replaced, and the Mods title."""
+    """The Xbox Live options scene as the Mods and Graphics screen: its two
+    rows and their value lists replaced, two rows added (MODS_ROWS_ADDED,
+    their value lists appended to Controls), and the title."""
     src = source_of(MODS_SCENE)
-    names = [r for r, _ in MODS_ROWS]
+    names = [r for r, _ in MODS_ROWS + MODS_ROWS_ADDED]
     value_lists = iter([v for _, v in MODS_ROWS])
     done = []
 
@@ -474,6 +526,18 @@ def mods_scene():
     src = edit_lists(src, edit)
     if sorted(done) != ["appear", "help", "rows", "voice"]:
         sys.exit(f"{MODS_SCENE}: lists edited: {done}")
+    # The list box has one more Left/Right/State than rows; keep it so.
+    added = len(MODS_ROWS_ADDED)
+    for name, item in (("Left", "$ListComboLeft"), ("Right", "$ListComboRight"),
+                       ("States", "Grid")):
+        src, _ = lua_list_append(src, name, [item] * added)
+    end = src.index("\n  },", src.index("Controls = {"))
+    lists = "".join(
+        ",\r\n    {\r\n      Items = {\r\n        TextIDs = {\r\n"
+        + ",\r\n".join(f'          "{v}"' for v in values)
+        + "\r\n        }\r\n      }\r\n    }"
+        for _, values in MODS_ROWS_ADDED)
+    src = src[:end].rstrip("\r") + lists + src[end:]
     if src.count('TitleID = "Options_Online"') != 1:
         sys.exit(f"{MODS_SCENE}: no Options_Online title")
     src = src.replace('TitleID = "Options_Online"', 'TitleID = "Options_Mods"')
@@ -504,5 +568,6 @@ if __name__ == "__main__":
     options_scene()
     options_ingame_scene()
     mods_scene()
+    mods_scene_data()
     strings()
     run("repack")

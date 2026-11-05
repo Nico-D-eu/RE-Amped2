@@ -203,8 +203,9 @@ screen. **F3** shows the frame rate and the active mods.
 ### Settings
 
 With the RE-Amped2 menus, **Options and Mods › Game Options** has *Window*
-and *Resolution*, and **Options and Mods › Mods** turns mod packs and texture
-packs on or off.
+and *Resolution*, and **Options and Mods › Mods and Graphics** turns mod packs
+and texture packs on or off and sets *Upscaling* (Standard or FSR) and
+*Sharpening* (Off to High), which change the picture at once.
 
 Every setting is in **`amped2.ini`**, next to `RE-Amped2.exe`. The game
 writes it the first time it starts, with each line commented out. Remove the
