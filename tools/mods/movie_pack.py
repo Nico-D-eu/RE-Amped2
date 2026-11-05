@@ -28,7 +28,9 @@ Steps per movie:
      --upscale auto (the default): ai, and lanczos from then on if
      Real-ESRGAN fails (no Vulkan graphics card, for example).
   3. FFmpeg scales to --height (4:3, so 1440x1080 by default) and encodes
-     H.264 with OpenH264, which Windows' own Media Foundation plays.
+     H.264 with OpenH264, which Windows' own Media Foundation plays; with
+     libx264 where the FFmpeg has no OpenH264 (most Linux builds). On Linux
+     the game decodes the copies with the system's FFmpeg.
 
 Steps 2 and 3 run --batch frames at a time, and the pieces are joined at
 the end. Upscaled frames are about 1.7 MB each, so the longest movie
@@ -43,7 +45,9 @@ default) deinterlaces those.
 
 Tools: tools/bin/ffmpeg/bin/ffmpeg.exe (an LGPL build, BtbN's
 FFmpeg-Builds) and tools/bin/realesrgan/ (xinntao/Real-ESRGAN's
-ncnn-vulkan release), or the same programs on PATH. Work files go to
+ncnn-vulkan release), or the same programs on PATH. On Linux, the
+system's ffmpeg package; Real-ESRGAN only if the player adds it, else
+--upscale auto falls back to the plain resize. Work files go to
 mods/cache/movie_pack/ and are removed after each movie.
 """
 import argparse
@@ -95,6 +99,24 @@ def doubled(rate):
     return f'{float(rate[:len(rate) - len(unit)]) * 2:g}{unit}'
 
 
+_encoder = None
+
+
+def h264_encoder(ffmpeg):
+    """libopenh264 when this FFmpeg has it (the Windows LGPL build, Fedora's
+    ffmpeg-free), else libx264 (Ubuntu's, Arch's and most Linux builds)."""
+    global _encoder
+    if _encoder is None:
+        out = subprocess.run([ffmpeg, '-hide_banner', '-encoders'], capture_output=True,
+                             text=True).stdout
+        _encoder = ('libopenh264' if ' libopenh264 ' in out
+                    else 'libx264' if ' libx264 ' in out else None)
+        if not _encoder:
+            sys.exit('this FFmpeg has no H.264 encoder (libopenh264 or libx264)')
+        print(f'H.264 encoder: {_encoder}')
+    return _encoder
+
+
 def encode(ffmpeg, args, pics, durations, script, out):
     """H.264 from a list of pictures, each shown for its own duration."""
     # The concat demuxer carries each frame's own duration into the copy.
@@ -111,13 +133,22 @@ def encode(ffmpeg, args, pics, durations, script, out):
                     # drops one (1510 of Intro's 1801 frames survived).
                     '-fps_mode', 'passthrough', '-enc_time_base', '1/1000',
                     '-video_track_timescale', '1000',
-                    # OpenH264 shares the bitrate out by the frame rate it is
-                    # told, capped at 60: the 1000 fps of the pictures' time
-                    # base becomes 60, twice the movies' 29.97, so it is
-                    # asked for twice the bitrate. FFmpeg refuses -r with
-                    # passthrough, which would have said so directly.
-                    '-c:v', 'libopenh264', '-b:v', doubled(args.bitrate),
+                    *codec_args(ffmpeg, args),
                     '-an', '-f', 'mp4', out], check=True)
+
+
+def codec_args(ffmpeg, args):
+    if h264_encoder(ffmpeg) == 'libopenh264':
+        # OpenH264 shares the bitrate out by the frame rate it is told,
+        # capped at 60: the 1000 fps of the pictures' time base becomes 60,
+        # twice the movies' 29.97, so it is asked for twice the bitrate.
+        # FFmpeg refuses -r with passthrough, which would have said so.
+        return ['-c:v', 'libopenh264', '-b:v', doubled(args.bitrate)]
+    # x264 rates by the frames' real times, so no doubling. Main profile:
+    # any H.264 decoder plays it.
+    return ['-c:v', 'libx264', '-preset', 'medium', '-profile:v', 'main',
+            '-b:v', args.bitrate, '-maxrate', doubled(args.bitrate),
+            '-bufsize', doubled(args.bitrate)]
 
 
 def convert(name, args, ffmpeg, ffprobe, esrgan):

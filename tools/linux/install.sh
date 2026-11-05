@@ -11,6 +11,10 @@
 #                     screen, sharp fonts); an update removes it
 #   --no-menus        leave out the RE-Amped2 menus (the menu mod, which
 #                     needs Java); an update removes them
+#   --hd-movies       set up HD copies of the movies: FFmpeg (the system's
+#                     package) and INSTALL_DIR/convert-hd-movies.sh, which
+#                     makes them (about an hour and 6.5 GB; run it after
+#                     the install). The game decodes them with FFmpeg too.
 #   --keep-temp       keep INSTALL_DIR/_install_temp (sources and build)
 #
 # Stages as on Windows: build tools, disc, recompiler, translate, compile,
@@ -32,6 +36,7 @@ IN_BOX="${CONTAINER_ID:-}"
 MENU_ENTRY=1
 LOOK=1
 MENUS=1
+HD_MOVIES=0
 KEEP_TEMP=0
 ARGS=()
 OPTS=()
@@ -40,6 +45,7 @@ for a in "$@"; do
         --no-menu-entry) MENU_ENTRY=0; OPTS+=("$a") ;;
         --no-look) LOOK=0; OPTS+=("$a") ;;
         --no-menus) MENUS=0; OPTS+=("$a") ;;
+        --hd-movies) HD_MOVIES=1; OPTS+=("$a") ;;
         --keep-temp) KEEP_TEMP=1; OPTS+=("$a") ;;
         -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
         -*) echo "install.sh: unknown option $a" >&2; exit 2 ;;
@@ -104,6 +110,10 @@ python3 -c 'import venv, ensurepip' 2>/dev/null || missing+=(python3-venv)
 for m in sdl2 epoxy openssl; do
     pkg-config --exists "$m" 2>/dev/null || missing+=("$m")
 done
+# HD movies: FFmpeg converts them and decodes them while the game runs.
+if [ "$HD_MOVIES" = 1 ]; then
+    command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null || missing+=(ffmpeg)
+fi
 if [ ${#missing[@]} -gt 0 ] && [ -e /run/ostree-booted ] && [ -z "$IN_BOX" ]; then
     # Image-based host: build in a Distrobox container of the same Fedora
     # release, which sees the host's / at /run/host.
@@ -142,6 +152,13 @@ if [ ${#missing[@]} -gt 0 ]; then
         *" fedora "*|*" rhel "*) cmd="sudo dnf install -y gcc make cmake ninja-build pkgconf python3 SDL2-devel libepoxy-devel mesa-libGL-devel openssl-devel" ;;
         *) cmd="" ;;
     esac
+    # Fedora's FFmpeg is ffmpeg-free; its H.264 comes from Cisco's openh264.
+    if [ -n "$cmd" ] && [ "$HD_MOVIES" = 1 ]; then
+        case "$cmd" in
+            *dnf*) cmd="$cmd ffmpeg-free openh264" ;;
+            *) cmd="$cmd ffmpeg" ;;
+        esac
+    fi
     # A bare container image lacks what SDL loads at run time on a desktop
     # host: the sound server's and the window system's client libraries.
     if [ -n "$IN_BOX" ] && [[ "$cmd" == *dnf* ]]; then
@@ -352,6 +369,33 @@ EOF
     say "Added RE-Amped2 to the applications menu."
 fi
 
+# HD movies: the recipe (tools/mods/movie_pack.py, standard library only)
+# and a script that runs it, through the container if the game runs in one.
+rm -f "$DEST/convert-hd-movies.sh"
+if [ "$HD_MOVIES" = 1 ]; then
+    mkdir -p "$DEST/tools/mods"
+    install -m 644 "$WORK/src/amped2/tools/mods/movie_pack.py" "$DEST/tools/mods/movie_pack.py"
+    cat > "$DEST/convert-hd-movies.sh" <<EOF
+#!/bin/sh
+# RE-Amped2: converts the game's movies to HD copies in mods/movie_pack.
+# Finished movies are skipped, so running this again carries on where it
+# stopped. Each movie is used in the game as soon as it is done.
+cd "\$(dirname "\$(readlink -f "\$0")")" || exit 1
+EOF
+    if [ -n "$IN_BOX" ]; then
+        cat >> "$DEST/convert-hd-movies.sh" <<EOF
+[ -n "\${CONTAINER_ID:-}" ] || exec distrobox-enter -n "$IN_BOX" -- "\$PWD/convert-hd-movies.sh" "\$@"
+EOF
+    fi
+    cat >> "$DEST/convert-hd-movies.sh" <<'EOF'
+exec nice python3 -I tools/mods/movie_pack.py "$@"
+EOF
+    chmod 755 "$DEST/convert-hd-movies.sh"
+fi
+
 say
 say "Done. Start the game with $RUN"
+if [ "$HD_MOVIES" = 1 ]; then
+    say "For the HD movies, run $DEST/convert-hd-movies.sh (about an hour; the game can run meanwhile)."
+fi
 say "Your saves are in $DEST/game/UDATA; README.txt there has the controls."

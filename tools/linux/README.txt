@@ -35,6 +35,8 @@ Settings
   (they need Java while installing; --no-menus leaves them out).
   amped2.ini in this folder holds every setting; it is created the first
   time the game starts. Remove the ; in front of a line to use it.
+  RESOLUTION (RenderScale in amped2.ini) draws the game at 2x or more:
+  sharper, and a little slower.
   The RE-Amped2 look (logo, splash, loading screen) is the mod pack in
   mods/packs/re-amped2, listed in mods/mods.json. Install with --no-look
   to leave it out.
@@ -59,3 +61,11 @@ About
   Microsoft: https://www.xbox.com/en-US/developers/rules
   The licences of RE-Amped2 (MIT) and the software it is built with are in
   the licenses folder.
+
+HD movies
+  Installed with --hd-movies: convert-hd-movies.sh in this folder makes
+  HD copies of the movies from your own game into mods/movie_pack, with
+  FFmpeg (about an hour; run it again to carry on). The game shows each
+  copy as soon as it is done, decoded by FFmpeg while it plays.
+  MoviePack=0 in amped2.ini turns them off. With realesrgan-ncnn-vulkan
+  on PATH (and a Vulkan graphics card), the copies are AI-upscaled.
