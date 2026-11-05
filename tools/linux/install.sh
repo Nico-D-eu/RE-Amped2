@@ -8,7 +8,7 @@
 #
 #   --no-menu-entry   don't add RE-Amped2 to the applications menu
 #   --no-look         leave out the RE-Amped2 look (logo, splash, loading
-#                     screen); an update removes it
+#                     screen, sharp fonts); an update removes it
 #   --no-menus        leave out the RE-Amped2 menus (the menu mod, which
 #                     needs Java); an update removes them
 #   --keep-temp       keep INSTALL_DIR/_install_temp (sources and build)
@@ -279,8 +279,20 @@ lic amped2/licenses/unluac-LICENSE.txt unluac-LICENSE.txt
 # pack mods/packs/re-amped2, first in mods/mods.json; other packs are kept.
 # The loading screen's controller pictures go only with their labels, which
 # the menu mod blanks (menu-mod-only.txt).
-rm -rf "$DEST/mods/packs/re-amped2"
+# Its sharp fonts are made from the player's own font atlases
+# (tools/mods/font_pack.py) into mods/packs/fonts, listed after it.
+rm -rf "$DEST/mods/packs/re-amped2" "$DEST/mods/packs/fonts"
+FONTS_OK=0
 if [ "$LOOK" = 1 ]; then
+    if logged "$WORK/venv/bin/pip" install --disable-pip-version-check numpy pillow &&
+            logged "$WORK/venv/bin/python" "$WORK/src/amped2/tools/mods/font_pack.py" \
+                --game "$DEST/game" --out "$DEST/mods/packs/fonts" &&
+            [ -d "$DEST/mods/packs/fonts/textures" ]; then
+        FONTS_OK=1
+    else
+        rm -rf "$DEST/mods/packs/fonts"
+        say "The sharp fonts could not be made; the game uses its original fonts (details in $LOG)."
+    fi
     mkdir -p "$DEST/mods/packs/re-amped2"
     cp -r "$PAYLOAD/amped2/branding/pack/textures" "$DEST/mods/packs/re-amped2/"
     only="$PAYLOAD/amped2/branding/pack/menu-mod-only.txt"
@@ -292,11 +304,13 @@ if [ "$LOOK" = 1 ]; then
     fi
 fi
 mkdir -p "$DEST/mods"
-python3 - "$DEST/mods/mods.json" "$LOOK" <<'EOF' || say "Could not update mods/mods.json; the look may not show."
+python3 - "$DEST/mods/mods.json" "$LOOK" "$FONTS_OK" <<'EOF' || say "Could not update mods/mods.json; the look may not show."
 import os, re, sys
-path, look = sys.argv[1], sys.argv[2] == '1'
+path, look, fonts = sys.argv[1], sys.argv[2] == '1', sys.argv[3] == '1'
 old = open(path).read() if os.path.exists(path) else ''
-packs = [p for p in re.findall(r'"([^"]+)"', old) if p not in ('packs', 're-amped2')]
+packs = [p for p in re.findall(r'"([^"]+)"', old) if p not in ('packs', 're-amped2', 'fonts')]
+if look and fonts:
+    packs.insert(0, 'fonts')
 if look:
     packs.insert(0, 're-amped2')
 open(path, 'w').write('{ "packs": [' + ', '.join('"%s"' % p for p in packs) + '] }\n')

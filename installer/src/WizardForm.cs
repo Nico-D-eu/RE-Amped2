@@ -329,7 +329,7 @@ namespace Amped2Installer
             Add(page, _menuBox);
             _lookBox = new CheckBox
             {
-                Text = "Use the RE-Amped2 look (new logo, start-up splash and loading screen)",
+                Text = "Use the RE-Amped2 look (new logo, start-up splash, loading screen and sharper text)",
                 Checked = true,
                 AutoSize = true,
                 Margin = new Padding(0, 0, 0, 2),
@@ -670,7 +670,7 @@ namespace Amped2Installer
             var missing = _tools.Describe(_menuBox.Checked).Where(t => !t.Found && t.CanInstall).ToList();
             if (missing.Count == 0 && !_hdBox.Checked)
                 return true;
-            if (!ConsentDialog.Ask(this, missing, _menuBox.Checked, _hdBox.Checked))
+            if (!ConsentDialog.Ask(this, missing, _menuBox.Checked || _lookBox.Checked, _hdBox.Checked))
                 return false;
             foreach (var t in missing)
                 approved.Add(t.Name);

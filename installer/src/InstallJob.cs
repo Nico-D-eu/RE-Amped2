@@ -301,7 +301,9 @@ namespace Amped2Installer
                     "Check your internet connection, then run the installer again.");
             SetFraction(0.8);
 
-            if (_o.MenuMod && _tools.JavaExe != null)
+            // The menu mod and the look's sharp fonts (tools\mods\font_pack.py)
+            // both need them.
+            if ((_o.MenuMod && _tools.JavaExe != null) || _o.Look)
             {
                 Detail = "Downloading the menu tools' Python packages";
                 _menuPackages = Pip("numpy pillow") == 0;
@@ -553,20 +555,25 @@ namespace Amped2Installer
         /// RE-Amped2 art only, keyed by the originals' hashes) as the mod pack
         /// mods\packs\re-amped2, listed in mods\mods.json. The loading screen's
         /// controller pictures are blanked only together with their labels, which
-        /// the menu mod blanks (menu-mod-only.txt). Unticked, an update removes it.
+        /// the menu mod blanks (menu-mod-only.txt). Its sharp fonts are made from
+        /// the player's own font atlases (tools\mods\font_pack.py) into
+        /// mods\packs\fonts, listed after it. Unticked, an update removes both.
         /// </summary>
         void InstallLook(InstallResult r)
         {
-            const string name = "re-amped2";
+            const string name = "re-amped2", fonts = "fonts";
             var packDir = Path.Combine(Dest, @"mods\packs", name);
+            var fontDir = Path.Combine(Dest, @"mods\packs", fonts);
             var json = Path.Combine(Dest, @"mods\mods.json");
             var packs = new List<string>();
             if (File.Exists(json))
                 foreach (Match m in Regex.Matches(File.ReadAllText(json), "\"([^\"]+)\""))
-                    if (m.Groups[1].Value != "packs" && m.Groups[1].Value != name)
+                    if (m.Groups[1].Value != "packs" && m.Groups[1].Value != name && m.Groups[1].Value != fonts)
                         packs.Add(m.Groups[1].Value);
             if (Directory.Exists(packDir))
                 Directory.Delete(packDir, true);
+            if (Directory.Exists(fontDir))
+                Directory.Delete(fontDir, true);
             try
             {
                 if (_o.Look)
@@ -577,6 +584,11 @@ namespace Amped2Installer
                     if (!r.MenuModInstalled && File.Exists(only))
                         foreach (var key in File.ReadAllLines(only).Where(k => k.Trim().Length > 0))
                             TryDelete(Path.Combine(packDir, "textures", key.Trim() + ".dds"));
+                    if (BuildFonts(fontDir))
+                        packs.Insert(0, fonts);
+                    else
+                        r.Warnings.Add("The sharp fonts couldn't be made (the install log has the details); " +
+                                       "the game uses its original fonts.");
                     packs.Insert(0, name);
                     r.LookInstalled = true;
                 }
@@ -588,6 +600,29 @@ namespace Amped2Installer
                 Log("RE-Amped2 look failed: " + e);
                 r.Warnings.Add("The RE-Amped2 look couldn't be added; the game shows its original logo and splash.");
             }
+        }
+
+        /// <summary>
+        /// The game's font atlases scaled up 4x without AI, from the player's own
+        /// game folder (a few seconds, about 80 MB). Needs the venv's NumPy and Pillow.
+        /// </summary>
+        bool BuildFonts(string fontDir)
+        {
+            if (!_menuPackages || !File.Exists(VenvPython))
+            {
+                Log("Sharp fonts skipped: NumPy and Pillow weren't downloaded.");
+                return false;
+            }
+            Detail = "Making the sharp fonts";
+            int code = ProcessRunner.Run(VenvPython,
+                ProcessRunner.Quote(Path.Combine(Amped2, @"tools\mods\font_pack.py")) +
+                " --game " + ProcessRunner.Quote(GameDir) + " --out " + ProcessRunner.Quote(fontDir),
+                Amped2, Log, Ct, PythonEnv());
+            if (code == 0 && Directory.Exists(Path.Combine(fontDir, "textures")))
+                return true;
+            if (Directory.Exists(fontDir))
+                Directory.Delete(fontDir, true);
+            return false;
         }
 
         // ── Files ────────────────────────────────────────────────────

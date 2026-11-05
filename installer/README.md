@@ -19,7 +19,7 @@ opens the licence texts (see below).
    `default.xbe` must carry title ID `0x4D530041`. USA and Europe both pass.
 2. **Location.** Install folder (default `C:\Games\RE-Amped2`, or the last
    one used), and four checkboxes: desktop shortcut, the RE-Amped2 menus
-   (the menu mod), the RE-Amped2 look (the branding pack) and, unticked by
+   (the menu mod), the RE-Amped2 look (the branding pack and sharp fonts) and, unticked by
    default, HD movies (below). HD movies add 6.5 GB to the space needed.
    The page lists the build tools: found, missing but installable (winget),
    or missing with a download link. Folders under Program Files or Windows are
@@ -56,7 +56,7 @@ All work happens in `<install>\_install_temp`, removed at the end.
 | Compile | `cmake -G "<that VS>" -A x64 -DCMAKE_GENERATOR_INSTANCE=... -DAMPED2_MP_JOBS=<cores, RAM/3 GB, 2..8>`, then `cmake --build --config Release --parallel`. |
 | Menu mod | `tools\mods\menus.py` with Java on PATH; `mods\build\game` is copied to `<install>\mods\build\game`. A failure here only skips the mod. |
 | HD movie tools | Only with HD movies ticked and both tools approved (`MovieTools.cs`). Downloads FFmpeg (BtbN's LGPL shared build, month-end autobuild 2026-10-31) and Real-ESRGAN ncnn-vulkan v0.2.5.0 from GitHub, checks each zip's SHA-256, and unpacks only what the recipe uses into `<install>\tools\bin\ffmpeg` (`bin\` without ffplay, and `LICENSE.txt`) and `tools\bin\realesrgan` (the program, `vcomp140.dll` and the realesr-animevideov3 models). A `.sha256` stamp skips the download on an update. Then it copies `tools\mods\movie_pack.py` to `<install>\tools\mods\` and writes `Convert HD movies.cmd`, which runs it with the Python the install used (`py -3` if that one is gone). A failure here only skips the HD movies. |
-| Look | After Finish: `branding\pack\textures` (from `tools/branding/build.py`) goes to `<install>\mods\packs\re-amped2\textures`, with `re-amped2` first in `mods\mods.json` (other packs are kept). Without the menu mod, the loading screen's controller pictures stay, since their labels do (`menu-mod-only.txt`). If unticked, an update removes the pack. |
+| Look | After Finish: `branding\pack\textures` (from `tools/branding/build.py`) goes to `<install>\mods\packs\re-amped2\textures`, with `re-amped2` first in `mods\mods.json` (other packs are kept). Without the menu mod, the loading screen's controller pictures stay, since their labels do (`menu-mod-only.txt`). Then `tools\mods\font_pack.py` (venv Python with NumPy and Pillow, a few seconds) scales the player's font atlases 4x into `<install>\mods\packs\fonts`, listed after `re-amped2`; if it fails, only the fonts are left out. If unticked, an update removes both packs. |
 | Finish | `RE-Amped2.exe` (+ `RE-Amped2.pdb` for the crash handler), `RE-Amped2.ico`, `README.txt` (with the unofficial-project and Game Content Usage Rules notices), `install-info.txt` (sources' commits), `licenses\` (the licence texts, as below), desktop shortcut. An install from before the rename to RE-Amped2 loses its `Amped2.exe`, `Amped2.ico`, `amped2_recomp.pdb` and `Amped 2` desktop shortcut. |
 
 Cleanup removes the junction on its own first and checks it is gone before

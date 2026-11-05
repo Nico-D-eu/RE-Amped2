@@ -122,6 +122,29 @@
       }
     },
     {
+      "name": "fonts",
+      "about": "The sharp fonts (tools/mods/font_pack.py into mods\\packs\\fonts) replace the font atlases at the main menu: Impact, ArialBlack and Gunship, 3 by the time the menu shows.",
+      "quick": false,
+      "requires": ["mods\\packs\\fonts\\textures"],
+      "seconds": 50,
+      "save": "fresh",
+      "env": {
+        "AMPED2_PLAY_MOVIES": "0",
+        "RECOMP_PAD_SCRIPT": "4000:start,7000:start,10000:start,14000:a",
+        "RECOMP_TEXTURE_PACK": "mods\\packs\\fonts\\textures"
+      },
+      "shot_ms": 10000,
+      "checks": {
+        "markers": ["guipackages\\\\shell\\.rui"],
+        "numbers": [
+          { "what": "font atlases replaced", "pattern": "texture pack: (\\d+) replaced", "min": 3 }
+        ],
+        "shots": [
+          { "index": 2, "what": "main menu with the sharp fonts", "min_brightness": 20, "golden": false }
+        ]
+      }
+    },
+    {
       "name": "mods",
       "about": "Loose entries in mods\\loose are merged at start-up, and the front end comes up with them.",
       "quick": false,

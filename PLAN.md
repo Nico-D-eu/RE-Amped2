@@ -1080,7 +1080,14 @@ Next:
    - a non-AI upscale (Lanczos with an alpha-preserving sharpen) packs
      them into `mods\packs\fonts`.
 
-   No game pixels ship.
+   No game pixels ship. **Done (2026-11-05), without the headless run:**
+   the menu and HUD fonts are plain DXT3 atlases on the disc
+   (`GuiPackages/*.ruirr` `Fonts/*.xpr`), and the runtime matched them by
+   their file keys (the run lists them as replaced; none among the misses).
+   `tools/mods/font_pack.py` reads the player's game folder, scales 4x
+   (Lanczos, smoothstep on the glyph alpha) and writes uncompressed DDS, so
+   no texture compressor is needed: 10 atlases, ~80 MB, 7 s. Both
+   installers run it with the RE-Amped2 look; suite case `fonts`.
 3. **Optional HD textures, built at install time.** An installer option,
    "Build HD textures (about an hour, needs a GPU)", runs `tex-export`, the
    upscale and `tex-pack` on the player's machine. The option asks for
@@ -1088,6 +1095,10 @@ Next:
    `ConsentDialog`. A cancelled build can be resumed.
 4. **Menu pictures at 16:9.** Per-scene `AspectCorrect` anchors, or a
    wrapper like the text one at `0x00248FF0`, for menu titles and icons.
+   **Done (2026-11-05):** the titles are text in the Gunship font, drawn
+   condensed, so the text wrapper skipped them (ratio 0.96 against its
+   0.875 cut). The cut is now 0.98 (DEVELOPING, "Text aspect in 16:9").
+   The button icons are font glyphs and were already round.
 5. **Backlog checks:**
    - `Logo_Amped2` and the course banner in game;
    - the seam between the title screen's background tiles.
@@ -1101,8 +1112,8 @@ Next:
       (the Linux row belongs to Phase 21)
 - [ ] A fresh install shows sharp text with the font option. With the HD
       option, ML1 uses the upscaled pack at ≥ 58 fps
-- [ ] Menu titles and icons are not stretched at 16:9 (a screenshot of
-      each main menu)
+- [x] Menu titles and icons are not stretched at 16:9 (a screenshot of
+      each main menu: main, Options, Career, Ride, 2026-11-05)
 - [ ] The suite passes on the release build; `v0.3.0` is tagged locally
 
 ### Phase 19: Split-screen multiplayer (optional; Phase 10, item 4)
