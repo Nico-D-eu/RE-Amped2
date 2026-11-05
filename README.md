@@ -89,7 +89,7 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | | HD texture pack and sharper fonts out of the box | ⬜ planned |
 | **Sound and video** | Sound effects, the soundtrack, rumble | ✅ |
 | | Intro and in-game movies | ✅ (at their original resolution) |
-| | Sharper movies | 🟡 optional HD copies, made on your PC by the installer (Windows) |
+| | Sharper movies | 🟡 optional HD copies, made on your PC by the installer (Windows; Linux with `--hd-movies`) |
 | **Controls** | Xbox-style controllers | ✅ |
 | | Keyboard: two layouts, fully remappable | ✅ |
 | **Comfort** | Window or borderless full screen (F11), window size and resolution in the menus, Quit Game in the main menu | ✅ |
@@ -260,8 +260,9 @@ In the current release (0.3.0):
   real Linux PC yet, and a controller has not been tried on Linux. Reports
   from Ubuntu, Fedora, Arch, Bazzite and others are very welcome, working
   or not.
-- **HD movies are Windows-only** for now. On Linux the movies play at their
-  original resolution.
+- **HD movies on Linux** (`./install.sh --hd-movies`) are made with a plain
+  resize, not the AI upscaler, unless you add Real-ESRGAN yourself, and have
+  only been tried under WSL2.
 - **Now and then the in-level music repeats the same few seconds** until the
   next track starts. Sound effects keep working. Your `amped2.log` from such
   a session helps.
