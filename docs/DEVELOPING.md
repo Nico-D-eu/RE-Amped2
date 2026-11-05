@@ -694,7 +694,10 @@ code or data in it.
   update then removes it. The GL back end reads packs with the D3D11 keys
   (toolkit `fedcfd2`); the look's BC7 files need GL 4.2. Its sharp fonts
   (`tools/mods/font_pack.py`, uncompressed DDS) go to `mods/packs/fonts`,
-  listed after it.
+  listed after it. Checked under WSL (2026-11-05, `~/a2inst`, runs
+  `~/a2run/lxfonts` and `lxnofonts`): the install step's commands make the
+  same 10 keys as on Windows, and GL loads and draws them (the
+  `[GL] texture pack:` lines list the four menu fonts).
 - The menu mod is built as on Windows (`tools/mods/menus.py`, unchanged)
   after the compile, with numpy and pillow in the venv, Java on PATH and
   unluac in `tools/bin` (`package.sh` downloads the same build as
