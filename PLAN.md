@@ -687,8 +687,8 @@ first: upstream may already be partway there (`src/platform/win32_compat.*`,
    is restricted. Keep the fault path as a fallback while it settles.
 3. **Renderer split.** Divide `nv2a_d3d11.c` into a front end (NV2A state
    to abstract draws and state) and a back end. D3D11 is the first back
-   end. Later ones: D3D12 (if the Xbox caps D3D11), Vulkan (Linux, Steam
-   Deck), and the PS5's native interface.
+   end. Later ones: D3D12 (if the Xbox caps D3D11), Vulkan (Phase 22:
+   Linux, macOS through MoltenVK, Android), and the PS5's native interface.
 4. **Shaders.** The HLSL generator gets a back-end hook, and the shader
    cache can be filled ahead of time for platforms that have no run-time
    compiler (the PS5).
@@ -824,6 +824,7 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 | 19 | Split-screen multiplayer (optional) | The last hidden game mode | Yes, with 2+ pads |
 | 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
 | 21 | Linux build (then macOS and arm64), **next (user, 2026-10-31)** | Upstream v0.16 already has a POSIX runtime; the GPU back end is what's missing | Yes, under Linux |
+| 22 | Vulkan back end (proposed 2026-11-05) | Replaces GL off Windows and the D3D12 step of the upscaler plan; not a Windows speed fix | Yes, Windows first, then native Linux |
 
 - **Standing lane:** bugs from the user's testing come before any phase.
   For each one: reproduce it, fix it, add a suite case, and ship the fix in
@@ -1279,6 +1280,86 @@ Not yet: Clang, the stall snapshot.
 - [ ] ML1 at ≥ 58 fps with the GL back end, with sound and a pad
 - [ ] The Windows build still passes the suite after the renderer split
 
+### Phase 22: Vulkan back end (after Phase 21)
+
+**Status: proposed (user, 2026-11-05), not started.** A third back end for
+the pushbuffer executor, beside `nv2a_d3d11.c` and `nv2a_gl.c`. On
+2026-10-31 the answer was "not now": the GL back end did not exist yet,
+and WSL's Vulkan ("dozen", Vulkan over D3D12) is no test bed. Both still
+hold; this phase is written so the decision is made on its merits once
+Phase 21 is done.
+
+**What it is not: a Windows speed fix.** D3D11 holds a locked 60 fps in
+ML1 at 1x. The limits there are the recompiled guest code, the pushbuffer
+decode and vblank pacing, not the D3D11 driver; at high `RenderScale` the
+GPU itself is the limit, which Vulkan does not change.
+
+**What it is for.** The aim is two back ends in the end, D3D11 on Windows
+and Vulkan everywhere else, instead of four (D3D11, GL, D3D12, Vulkan):
+- **Native Linux.** No CPU read-back at present: GL reads every frame into
+  a pixel-pack buffer and the SDL window shows it a frame late. Lower driver
+  overhead than GL, and command recording on the render thread.
+- **Upscalers off Windows.** FSR 1 (EASU + RCAS) is D3D11-only today,
+  because GL presents through the CPU. FSR 2/3, DLSS and XeSS all have
+  Vulkan back ends, and FSR 3 and DLSS frame generation run on Vulkan, so
+  the upscaler plan's last step (a D3D12 present for frame generation)
+  becomes this phase and also reaches Linux.
+- **macOS** through MoltenVK (Vulkan over Metal). Apple caps OpenGL at 4.1
+  and has deprecated it. MoltenVK implements Vulkan's portability subset,
+  so check each feature used against it.
+- **Android** (Phase 11 needs Vulkan or GLES there).
+- **Maybe zero-copy guest memory:** `VK_EXT_external_memory_host` can import
+  the Xbox's unified RAM as a GPU buffer, so vertex and texture uploads skip
+  a copy. Desktop AMD and NVIDIA only; measure before relying on it.
+
+**Not gained:** Steam Deck (the Windows build under Proton already runs
+D3D11 through DXVK, which is Vulkan), and the PS5 and Switch homebrew
+targets (no usable Vulkan).
+
+**Do first, in GL:** present from a context shared with the window instead
+of the read-back. If that gives native Linux its 60 fps and the upscalers
+are not wanted there, put the rest of this phase off.
+
+1. **Skeleton.** `nv2a_vk.c` behind the same entry points as the other two
+   (draw, clear, flip, zpass, reports), `RECOMP_GPU=vulkan`, off by
+   default. Develop it on Windows with the native NVIDIA driver (RTX 2070),
+   so D3D11 is the reference for side-by-side screenshots. Loader through
+   `volk` or the SDK loader; window surface through SDL2 off Windows.
+2. **Shaders.** The GLSL emitter (`nv2a_glsl_*` in `nv2a_hlsl.c`) feeds
+   glslang or shaderc for SPIR-V, at run time with a disk cache, as the
+   D3D11 shader cache does. Check each library's licence and credit it in
+   `NOTICE.md` and `licenses/`.
+3. **Pipelines.** The NV2A changes blend, depth, stencil, cull and combiner
+   state between draws, and Vulkan bakes state into pipeline objects. Keep
+   the count down with dynamic state (`VK_EXT_extended_dynamic_state` 1-3),
+   compile asynchronously, and keep a `VkPipelineCache` on disk. Exit
+   condition for this step: no hitches in ML1 once the cache is warm.
+4. **Parity with the GL back end:** surfaces keyed by guest address, shadow
+   maps as depth textures, occlusion queries for the visibility counts, the
+   PVIDEO overlay (movies), texture packs (same keys), render scale and
+   anisotropy.
+5. **Present:** swap chain with vblank pacing as D3D11's, FSR 1 at present,
+   then the upscaler plan's next steps (jitter, motion vectors, a HUD split
+   for FSR 2+ and DLSS) and frame generation.
+6. **Linux default.** Once at parity on real Linux hardware (not WSL),
+   Vulkan becomes the Linux default and GL the fallback for machines
+   without Vulkan 1.1.
+7. **macOS** through MoltenVK, after Phase 21's macOS step.
+
+**Cost.** Large: about the size of `nv2a_d3d11.c` (4.7k lines) plus the
+pipeline handling, over several sessions, so it runs under the usual
+weekly-usage stops. Until GL is retired every renderer fix lands in three
+back ends.
+
+**Exit criteria**
+
+- [ ] On Windows, `RECOMP_GPU=vulkan` matches D3D11's screenshots in the
+      suite's cases, ML1 at 60 fps, no pipeline hitches with a warm cache
+- [ ] On native Linux (real hardware), ML1 at ≥ 58 fps at `RenderScale` 2
+      with FSR 1, sound and a pad
+- [ ] The suite passes with each back end
+- [ ] The Windows default (D3D11) is unchanged
+
 ---
 
 ## Risks
@@ -1293,6 +1374,7 @@ Not yet: Clang, the stall snapshot.
 | Legal and distribution | Can't share the result | Never ship game data; the user brings their own disc. MIT licence, `NOTICE.md`, the Game Content Usage Rules notice for the art, and nothing paywalled |
 | Microsoft changes the Dev Mode policy | The Xbox port (Phase 13) stops working | Keep the Xbox layer thin over Phase 12; the Windows build is unaffected |
 | PS5 homebrew: firmware churn, toolchain changes, Sony's attention | Phase 14 breaks or draws a takedown | Exploratory only, separate target, open toolchain only, no exploit code, no Sony code |
+| Vulkan: too many pipelines, compile hitches, driver differences | Phase 22 stutters or looks different per vendor | Dynamic state, async compile with a disk pipeline cache, D3D11 screenshots as the reference, validation layers in debug builds |
 
 ## Working agreements
 
