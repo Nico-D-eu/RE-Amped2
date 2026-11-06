@@ -619,6 +619,20 @@ is the view direction, `[cam+0x70]`); there is no far plane, so with
 `always` a marker in view is drawn at any distance. ML1 with `always`: all 8
 snowmen become visible, first at depths of 240-920 m (at 4x, 6 of them at
 about 170 m); gap markers 44, as at 4x; about 58 fps.
+
+That was not enough in play: a snowman passed, but its parts did not draw.
+Its render (`0x0023C450`) calls the model's draw (`[[obj+0x30]]+0x18`,
+`0x0015E1C0`), and each group node of the model's tree (vtable `0x0035D5C0`,
+draw `0x0015EB80`; children at `[node+4]`, siblings at `+0x14`) sends its own
+sphere (`[node+0x24]`, radius about 2) through the same camera test (called
+from `0x0015EBB8`) before its children. The wrapper of `0x0023C450` now sets
+the marker flag too. With `always` it also brackets the render with two
+`NO_OPERATION` methods (`0x00040100`, parameter `0x52460001` / `0x52460000`)
+written to D3D's push buffer (device `[0x0032CEF8]`, write pointer `[dev]`,
+limit `[dev+4]`, make room with `0x0031E940`). The toolkit's executor reads
+them as fog off and back on, so a snowman is not hidden by the level's white
+fog. ML1, `always`, `RECOMP_FOG_OFF_LOG=1`: 12 draws between each pair (none
+before the node fix), 58 fps, the rest of the scene fogged as before.
 ML1 with the `ml1` pad walk and `AMPED2_MARKER_PROBE=1`: at 1x, 1 of 8
 snowmen and 22 gap markers become visible during the ride; at 4x, 6 snowmen
 and 44 gap markers. The other challenge objects stay at 14, and the frame rate

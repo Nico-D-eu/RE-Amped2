@@ -1331,6 +1331,18 @@ void sub_001EDF30(void)
  * "always" drops the size limit for them altogether: a marker in the view
  * is drawn at any distance (the frustum's five planes have no far one).
  *
+ * The snowman's model tests its parts once more while it draws: its render
+ * (0x0023C450, thiscall, ret 4) calls the model's draw ([[obj+0x30]]+0x18,
+ * 0x0015E1C0), and each group node in its tree (vtable 0x0035D5C0, draw
+ * 0x0015EB80) puts its own sphere ([node+0x24], radius about 2) through the
+ * same camera test (from 0x0015EBB8) before drawing its children. That test
+ * is therefore also widened while a snowman draws; without it the snowman
+ * passed but its parts were still cut at the original distance.
+ * The level's fog would still hide a white snowman in white haze, so with
+ * "always" a snowman is also drawn without fog: its render is bracketed by
+ * two NO_OPERATION methods in D3D's push buffer that the toolkit's executor
+ * reads as "fog off" and "fog back" (0x52460001 / 0x52460000).
+ *
  * [Game] MarkerDistance=1 (default), 2, 4 or always: AMPED2_MARKER_DISTANCE,
  * row 4 of the Mods and Graphics screen, applies at once.
  * AMPED2_MARKER_PROBE=1 logs the first test of each sphere caller (return
@@ -1486,6 +1498,49 @@ void sub_001A2460(void)                     /* ChallengeScriptedObject */
 {
     uint32_t type = MEM32(g_ecx + 0xAC);
     amped2_marker_vis(sub_001A2460_gen, type >= 0x15 && type <= 0x29);
+}
+
+/* One method into D3D's push buffer, as the XDK's own writers do: the
+ * device is [0x0032CEF8], [dev] the write pointer and [dev+4] the point
+ * where 0x0031E940 (stdcall, its two arguments from [0x0032DDC4]) has to
+ * make room first. */
+static void amped2_pb_nop(uint32_t param)
+{
+    uint32_t dev = MEM32(0x0032CEF8), put, saved_eax = g_eax;
+
+    if (!dev)
+        return;
+    put = MEM32(dev);
+    if (put >= MEM32(dev + 4)) {
+        uint32_t n = MEM32(0x0032DDC4);
+        g_esp -= 4; MEM32(g_esp) = n;
+        g_esp -= 4; MEM32(g_esp) = n >> 1;
+        g_esp -= 4; MEM32(g_esp) = 0;       /* return address */
+        sub_0031E940();                     /* ret 8 */
+        put = g_eax;
+    }
+    MEM32(put) = 0x00040100u;               /* NO_OPERATION, one parameter */
+    MEM32(put + 4) = param;
+    MEM32(dev) = put + 8;
+    g_eax = saved_eax;
+}
+
+extern void sub_0023C450_gen(void);
+
+void sub_0023C450(void)                     /* YetiScriptedObject render */
+{
+    uint32_t obj = g_ecx;
+    int snowman = MEM8(obj + 0x9D)
+               && amped2_name_starts(MEM32(obj + 8), "ExplorationItem");
+    int fogless = snowman && amped2_marker_scale() == 0.0f;
+
+    if (fogless)
+        amped2_pb_nop(0x52460001u);
+    g_marker_test = snowman;                /* its nodes' tests (0x0015EB80) */
+    sub_0023C450_gen();
+    g_marker_test = 0;
+    if (fogless)
+        amped2_pb_nop(0x52460000u);         /* keeps the result in g_eax */
 }
 
 /* ── Text aspect in the 16:9 mode ─────────────────────────────
