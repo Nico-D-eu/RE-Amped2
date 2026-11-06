@@ -87,6 +87,7 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | | Widescreen 16:9, with text and menu titles at their own proportions | ✅ |
 | | Rider shadows | ✅ |
 | | Texture packs (replacement textures) | ✅ |
+| | Snowmen and gaps visible from further away (optional) | ✅ |
 | | Sharper text out of the box (the fonts, upscaled on your PC by the installer) | ✅ |
 | | HD texture pack out of the box | ⬜ planned |
 | **Sound and video** | Sound effects, the soundtrack, rumble | ✅ |
@@ -205,7 +206,9 @@ screen. **F3** shows the frame rate and the active mods.
 With the RE-Amped2 menus, **Options and Mods › Game Options** has *Window*
 and *Resolution*, and **Options and Mods › Mods and Graphics** turns mod packs
 and texture packs on or off and sets *Upscaling* (Standard or FSR) and
-*Sharpening* (Off to High), which change the picture at once.
+*Sharpening* (Off to High), which change the picture at once, and
+*Snowmen and Gaps* (Normal, Far, Very far or Always), how far away the
+snowmen and gap sparkles show.
 
 Every setting is in **`amped2.ini`**, next to `RE-Amped2.exe`. The game
 writes it the first time it starts, with each line commented out. Remove the
@@ -259,7 +262,7 @@ and about 6.5 GB. The conversion runs in a minimised window. If you close it,
 
 ## Known issues
 
-In the current release (0.3.0):
+In the current release (0.3.1):
 
 - **Linux is a preview.** It has only been tested under WSL2 (Ubuntu 24.04
   on Windows): install, menus and riding a level. It has not been run on a

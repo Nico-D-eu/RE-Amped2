@@ -589,6 +589,55 @@ Record addresses, identified functions and overrides here as they are found.
 - `0x002838DC` / `0x0025B8FC` — CRT `setjmp` / `longjmp`
 - Guest stack at `0x00780000` (8 MB) sits well above the image end `0x003F9520`; no layout conflict.
 
+### Marker distance: snowmen and gaps (2026-11-06)
+
+Scripted objects are not culled by distance but by size on screen.
+`YetiScriptedObject` (vtable `0x003627C0`) tests visibility in slot +0x3C,
+`0x001B1BC0`: it moves its bounding sphere (`[obj+0x34]`, sphere class
+vtable `0x0035C918`) to the object and calls the sphere's camera test
+(+8, `0x001412B0`). That test drops the object when radius / depth (depth
+along the view direction) is below `[0x00380F20]` = 0.02, or `[0x0036E894]` =
+0.05 while `[0x003ACF44]` is set, and then checks the frustum planes. The
+result lands in `[obj+0x9D]`, which the render (`0x0023C450`) requires. A
+snowman's sphere has radius 1.3, so it is cut at about 65 m.
+
+- Snowmen: `ExplorationItem1`-`8` (`[obj+8]` = name), eight per mountain.
+- Gap markers: `ChallengeScriptedObject` (vtable `0x00361798`, visibility
+  `0x001A2460`, sphere at `[[obj+0xA4]+0x4C]`, radius 5). The type is
+  `[obj+0xAC]` (names mapped by `0x001A1810`): 0x15 GapSparkleField, 0x16-0x1F
+  GapSparkle1-10 (on the `Gaps\Gap<n>.lua` points), 0x20-0x29 ProSparkle1-10.
+  0x14 objects (21 in ML1) are another challenge type and stay as they are.
+- Dead ends: `CObjSnowman` (vtable `0x00361A34`) is not used for ML1's
+  snowmen, and `CLODNode` (vtable `0x0035D2D8`, traversal `0x0015EC90`) is
+  never traversed in game.
+
+`recomp_manual.c` wraps all three. While a marker's test runs, both limits
+are divided by `[Game] MarkerDistance` (1, 2 or 4; Mods and Graphics row 4),
+or set to 0 for `always`. The camera's five planes (`[cam+0x110]` to
+`+0x150`, normal and distance) are four sides and the near plane (`+0x150`
+is the view direction, `[cam+0x70]`); there is no far plane, so with
+`always` a marker in view is drawn at any distance. ML1 with `always`: all 8
+snowmen become visible, first at depths of 240-920 m (at 4x, 6 of them at
+about 170 m); gap markers 44, as at 4x; about 58 fps.
+
+That was not enough in play: a snowman passed, but its parts did not draw.
+Its render (`0x0023C450`) calls the model's draw (`[[obj+0x30]]+0x18`,
+`0x0015E1C0`), and each group node of the model's tree (vtable `0x0035D5C0`,
+draw `0x0015EB80`; children at `[node+4]`, siblings at `+0x14`) sends its own
+sphere (`[node+0x24]`, radius about 2) through the same camera test (called
+from `0x0015EBB8`) before its children. The wrapper of `0x0023C450` now sets
+the marker flag too. With `always` it also brackets the render with two
+`NO_OPERATION` methods (`0x00040100`, parameter `0x52460001` / `0x52460000`)
+written to D3D's push buffer (device `[0x0032CEF8]`, write pointer `[dev]`,
+limit `[dev+4]`, make room with `0x0031E940`). The toolkit's executor reads
+them as fog off and back on, so a snowman is not hidden by the level's white
+fog. ML1, `always`, `RECOMP_FOG_OFF_LOG=1`: 12 draws between each pair (none
+before the node fix), 58 fps, the rest of the scene fogged as before.
+ML1 with the `ml1` pad walk and `AMPED2_MARKER_PROBE=1`: at 1x, 1 of 8
+snowmen and 22 gap markers become visible during the ride; at 4x, 6 snowmen
+and 44 gap markers. The other challenge objects stay at 14, and the frame rate
+is unchanged (about 58 fps).
+
 ### Linux bring-up (2026-10-31, PLAN Phase 21)
 
 Built in WSL2 (Ubuntu 24.04, GCC 13) with the build directory on the Linux

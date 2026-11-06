@@ -36,13 +36,14 @@ Edits:
   6. MODS AND GRAPHICS opens the Xbox Live options screen, rewritten
      (Base.rui Scenes/Options_Online.scene, which already has Game
      Options' combo-row layout): rows MOD PACKS and TEXTURE PACK, each
-     OFF / ON, then UPSCALING (STANDARD / FSR) and SHARPENING (OFF to
-     HIGH), whose value lists are new controls bound to the free item
-     slots 3 and 4 in .sceneData. The item keeps the old action,
+     OFF / ON, then UPSCALING (STANDARD / FSR), SHARPENING (OFF to
+     HIGH) and SNOWMEN AND GAPS (NORMAL / FAR / VERY FAR, their draw
+     distance), whose value lists are new controls bound to the free item
+     slots 3 to 5 in .sceneData. The item keeps the old action,
      $Options_Online, so Options.actions stays as it is.
-     src/recomp_manual.c shows and saves the values ([Game] ModPacks and
-     TexturePack, [Display] Upscale and Sharpen in amped2.ini; wrappers of
-     0x001ED950 and 0x001EDF30).
+     src/recomp_manual.c shows and saves the values ([Game] ModPacks,
+     TexturePack and MarkerDistance, [Display] Upscale and Sharpen in
+     amped2.ini; wrappers of 0x001ED950 and 0x001EDF30).
   7. The loading screen before a level shows the RE-Amped2 splash art from
      the texture pack, so its controller labels (the Loading_Controller_*,
      LoadingMenu_* and Loading_Control*_TextNormal strings) are blanked.
@@ -119,9 +120,9 @@ STRINGS = {
         "eng": "MODS AND GRAPHICS", "fre": "MODS ET GRAPHISMES",
         "ger": "MODS UND GRAFIK"}),
     "Options_Mods_Help": ("Options_Cheats_Help", {
-        "eng": "Mod packs, the texture pack, upscaling and sharpening.",
-        "fre": "Packs de mods et de textures, mise à l'échelle et netteté.",
-        "ger": "Mod-Pakete, Texturpaket, Hochskalierung und Schärfe."}),
+        "eng": "Mod packs, the texture pack, upscaling and more.",
+        "fre": "Packs de mods et de textures, mise à l'échelle et plus.",
+        "ger": "Mod-Pakete, Texturpaket, Hochskalierung und mehr."}),
     "ModsOptions_Upscale": ("LiveOptions_LiveVoice", {
         "eng": "UPSCALING", "fre": "MISE À L'ÉCHELLE", "ger": "HOCHSKALIERUNG"}),
     "ModsOptions_Upscale_Help": ("LiveOptions_LiveVoice_Help", {
@@ -146,6 +147,21 @@ STRINGS = {
         "eng": "Medium", "fre": "Moyenne", "ger": "Mittel"}),
     "ModsOptions_Sharpen_High": ("LiveOptions_LiveVoice_None", {
         "eng": "High", "fre": "Forte", "ger": "Hoch"}),
+    "ModsOptions_Markers": ("LiveOptions_LiveVoice", {
+        "eng": "SNOWMEN AND GAPS", "fre": "HOMMES NEIGE, GAPS",
+        "ger": "SCHNEEMÄNNER, GAPS"}),
+    "ModsOptions_Markers_Help": ("LiveOptions_LiveVoice_Help", {
+        "eng": "How far away snowmen and gap sparkles show.",
+        "fre": "Distance d'affichage des hommes neige et des gaps.",
+        "ger": "Sichtweite von Schneemännern und Gap-Funkeln."}),
+    "ModsOptions_Markers_Normal": ("LiveOptions_LiveVoice_None", {
+        "eng": "Normal", "fre": "Normale", "ger": "Normal"}),
+    "ModsOptions_Markers_Far": ("LiveOptions_LiveVoice_None", {
+        "eng": "Far", "fre": "Loin", "ger": "Weit"}),
+    "ModsOptions_Markers_VeryFar": ("LiveOptions_LiveVoice_None", {
+        "eng": "Very far", "fre": "Très loin", "ger": "Sehr weit"}),
+    "ModsOptions_Markers_Always": ("LiveOptions_LiveVoice_None", {
+        "eng": "Always", "fre": "Toujours", "ger": "Immer"}),
     "ModsOptions_Packs": ("LiveOptions_LiveVoice", {
         "eng": "MOD PACKS", "fre": "PACKS DE MODS", "ger": "MOD-PAKETE"}),
     "ModsOptions_Packs_Help": ("LiveOptions_LiveVoice_Help", {
@@ -208,14 +224,16 @@ OPTIONS_ADD = {
 MODS_SCENE = "GuiPackages/Base.rui/Scenes/Options_Online.scene"
 OFF_ON = ["GameOptions_Vibration_Off", "GameOptions_Vibration_On"]
 MODS_ROWS = [("ModsOptions_Packs", OFF_ON), ("ModsOptions_Textures", OFF_ON)]
-# Rows 2 and 3 of the Mods and Graphics screen: new value lists (controls 4
-# and 5, after the list box, control 3) bound to the free item slots 3 and 4.
+# Rows 2 to 4 of the Mods and Graphics screen: new value lists (controls 4
+# to 6, after the list box, control 3) bound to the free item slots 3 to 5.
 MODS_ROWS_ADDED = [
     ("ModsOptions_Upscale", ["ModsOptions_Upscale_Standard", "ModsOptions_Upscale_FSR"]),
     ("ModsOptions_Sharpen", ["ModsOptions_Sharpen_Off", "ModsOptions_Sharpen_Low",
                              "ModsOptions_Sharpen_Medium", "ModsOptions_Sharpen_High"]),
+    ("ModsOptions_Markers", ["ModsOptions_Markers_Normal", "ModsOptions_Markers_Far",
+                             "ModsOptions_Markers_VeryFar", "ModsOptions_Markers_Always"]),
 ]
-MODS_SLOTS = ["Item3", "Item4"]
+MODS_SLOTS = ["Item3", "Item4", "Item5"]
 
 # The rows added to Game Options, in order (rows 4 and 5 -- recomp_manual.c
 # handles them), each with its value list. They take the two free item slots
@@ -351,10 +369,10 @@ def game_options_scene_data():
 
 def mods_scene_data():
     """Options_Online.sceneData: Item1 and Item2 show controls 1 and 2, the
-    old Live rows; Item3-6 none. Bind Item3 and Item4 to the added rows'
-    value lists, controls 4 and 5."""
+    old Live rows; Item3-6 none. Bind Item3 to Item5 to the added rows'
+    value lists, controls 4 to 6."""
     bind_slots(MODS_SCENE + "Data", MODS_SLOTS, 4,
-               "Mods and Graphics: item slots 3 and 4 bound to the new rows")
+               "Mods and Graphics: item slots 3 to 5 bound to the new rows")
 
 
 def bind_slots(entry, slots, first_control, what):
@@ -501,7 +519,7 @@ def legends(tables):
 
 def mods_scene():
     """The Xbox Live options scene as the Mods and Graphics screen: its two
-    rows and their value lists replaced, two rows added (MODS_ROWS_ADDED,
+    rows and their value lists replaced, rows added (MODS_ROWS_ADDED,
     their value lists appended to Controls), and the title."""
     src = source_of(MODS_SCENE)
     names = [r for r, _ in MODS_ROWS + MODS_ROWS_ADDED]
