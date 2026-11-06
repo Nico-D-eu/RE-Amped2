@@ -160,6 +160,8 @@ STRINGS = {
         "eng": "Far", "fre": "Loin", "ger": "Weit"}),
     "ModsOptions_Markers_VeryFar": ("LiveOptions_LiveVoice_None", {
         "eng": "Very far", "fre": "Très loin", "ger": "Sehr weit"}),
+    "ModsOptions_Markers_Always": ("LiveOptions_LiveVoice_None", {
+        "eng": "Always", "fre": "Toujours", "ger": "Immer"}),
     "ModsOptions_Packs": ("LiveOptions_LiveVoice", {
         "eng": "MOD PACKS", "fre": "PACKS DE MODS", "ger": "MOD-PAKETE"}),
     "ModsOptions_Packs_Help": ("LiveOptions_LiveVoice_Help", {
@@ -229,7 +231,7 @@ MODS_ROWS_ADDED = [
     ("ModsOptions_Sharpen", ["ModsOptions_Sharpen_Off", "ModsOptions_Sharpen_Low",
                              "ModsOptions_Sharpen_Medium", "ModsOptions_Sharpen_High"]),
     ("ModsOptions_Markers", ["ModsOptions_Markers_Normal", "ModsOptions_Markers_Far",
-                             "ModsOptions_Markers_VeryFar"]),
+                             "ModsOptions_Markers_VeryFar", "ModsOptions_Markers_Always"]),
 ]
 MODS_SLOTS = ["Item3", "Item4", "Item5"]
 

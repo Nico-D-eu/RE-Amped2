@@ -612,7 +612,13 @@ snowman's sphere has radius 1.3, so it is cut at about 65 m.
   never traversed in game.
 
 `recomp_manual.c` wraps all three. While a marker's test runs, both limits
-are divided by `[Game] MarkerDistance` (1, 2 or 4; Mods and Graphics row 4).
+are divided by `[Game] MarkerDistance` (1, 2 or 4; Mods and Graphics row 4),
+or set to 0 for `always`. The camera's five planes (`[cam+0x110]` to
+`+0x150`, normal and distance) are four sides and the near plane (`+0x150`
+is the view direction, `[cam+0x70]`); there is no far plane, so with
+`always` a marker in view is drawn at any distance. ML1 with `always`: all 8
+snowmen become visible, first at depths of 240-920 m (at 4x, 6 of them at
+about 170 m); gap markers 44, as at 4x; about 58 fps.
 ML1 with the `ml1` pad walk and `AMPED2_MARKER_PROBE=1`: at 1x, 1 of 8
 snowmen and 22 gap markers become visible during the ride; at 4x, 6 snowmen
 and 44 gap markers. The other challenge objects stay at 14, and the frame rate

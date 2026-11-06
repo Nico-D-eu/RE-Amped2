@@ -1194,7 +1194,9 @@ void sub_001EE7E0(void)
 #define AMPED2_OPT_SHARPEN  3
 #define AMPED2_OPT_MARKERS  4
 
-static const char *const k_marker_names[3] = { "1", "2", "4" };
+static const char *const k_marker_names[4] = { "1", "2", "4", "always" };
+
+static uint32_t amped2_marker_index(void);   /* below, with the markers */
 
 static const struct { const char *key, *var; } k_mods_rows[AMPED2_MODS_ROWS] = {
     { "ModPacks",    "AMPED2_MOD_PACKS" },
@@ -1267,9 +1269,7 @@ void sub_001ED950(void)
         } else if (row == AMPED2_OPT_SHARPEN) {
             g_eax = amped2_sharpen_level();
         } else if (row == AMPED2_OPT_MARKERS) {
-            const char *v = getenv("AMPED2_MARKER_DISTANCE");
-            float f = (v && *v) ? (float)atof(v) : 1.0f;
-            g_eax = f >= 3.0f ? 2 : f >= 1.5f ? 1 : 0;
+            g_eax = amped2_marker_index();
         } else {
             const char *v = getenv(k_mods_rows[row].var);
             g_eax = (v && *v == '0') ? 0 : 1;
@@ -1296,7 +1296,7 @@ void sub_001EDF30(void)
             amped2_set_picture(combo != 0, amped2_sharpen_level());
         } else if (row == AMPED2_OPT_SHARPEN && combo < 4) {
             amped2_set_picture(amped2_upscale_on(), combo);
-        } else if (row == AMPED2_OPT_MARKERS && combo < 3) {
+        } else if (row == AMPED2_OPT_MARKERS && combo < 4) {
             amped2_setenv("AMPED2_MARKER_DISTANCE", k_marker_names[combo]);
             amped2_ini_set("Game", "MarkerDistance", k_marker_names[combo]);
         }
@@ -1328,22 +1328,43 @@ void sub_001EDF30(void)
  * points), 0x20-0x29 ProSparkle1-10. While one of these is tested, both
  * size limits are divided by the setting, so it is drawn that many times
  * further away; the frustum test and every other object are unchanged.
+ * "always" drops the size limit for them altogether: a marker in the view
+ * is drawn at any distance (the frustum's five planes have no far one).
  *
- * [Game] MarkerDistance=1 (default), 2 or 4: AMPED2_MARKER_DISTANCE, row 4
- * of the Mods and Graphics screen, applies at once. AMPED2_MARKER_PROBE=1
- * logs the first test of each sphere caller (return address, centre,
- * radius) and every visibility change of the scripted objects.
+ * [Game] MarkerDistance=1 (default), 2, 4 or always: AMPED2_MARKER_DISTANCE,
+ * row 4 of the Mods and Graphics screen, applies at once.
+ * AMPED2_MARKER_PROBE=1 logs the first test of each sphere caller (return
+ * address, centre, radius), the camera's planes once, and every visibility
+ * change of the scripted objects with the depth of a marker.
  */
 #define AMPED2_SIZE_LIMIT       0x00380F20u
 #define AMPED2_SIZE_LIMIT_ALT   0x0036E894u
 
 static int g_marker_test;                   /* a marker's test is running */
 
+static float g_marker_depth;                /* of the last marker tested */
+
+static int amped2_marker_always(const char *e)
+{
+    return e && (e[0] | 0x20) == 'a';
+}
+
+/* The factor the size limits are divided by; 0 = no limit ("always"). */
 static float amped2_marker_scale(void)
 {
     const char *e = getenv("AMPED2_MARKER_DISTANCE");
-    float v = (e && *e) ? (float)atof(e) : 1.0f;
+    float v;
+    if (amped2_marker_always(e))
+        return 0.0f;
+    v = (e && *e) ? (float)atof(e) : 1.0f;
     return v < 1.0f ? 1.0f : v > 8.0f ? 8.0f : v;
+}
+
+/* The setting as the menu row's value: Normal, Far, Very far, Always. */
+static uint32_t amped2_marker_index(void)
+{
+    float f = amped2_marker_scale();
+    return f == 0.0f ? 3 : f >= 3.0f ? 2 : f >= 1.5f ? 1 : 0;
 }
 
 static int amped2_marker_probe(void)
@@ -1374,6 +1395,7 @@ extern void sub_001412B0_gen(void);
 void sub_001412B0(void)
 {
     float scale, a = 0, b = 0;
+    uint32_t cam = MEM32(g_esp + 8);
 
     if (amped2_marker_probe()) {
         static uint32_t seen[64];
@@ -1388,17 +1410,35 @@ void sub_001412B0(void)
                         MEMF(sph), MEMF(sph + 4), MEMF(sph + 8), MEMF(sph + 0xC));
         }
     }
-    if (!g_marker_test || (scale = amped2_marker_scale()) <= 1.0f) {
+    if (!g_marker_test || (scale = amped2_marker_scale()) == 1.0f) {
         sub_001412B0_gen();
         return;
     }
     a = MEMF(AMPED2_SIZE_LIMIT);
     b = MEMF(AMPED2_SIZE_LIMIT_ALT);
-    MEMF(AMPED2_SIZE_LIMIT) = a / scale;
-    MEMF(AMPED2_SIZE_LIMIT_ALT) = b / scale;
+    MEMF(AMPED2_SIZE_LIMIT) = scale > 0.0f ? a / scale : 0.0f;
+    MEMF(AMPED2_SIZE_LIMIT_ALT) = scale > 0.0f ? b / scale : 0.0f;
     sub_001412B0_gen();
     MEMF(AMPED2_SIZE_LIMIT) = a;
     MEMF(AMPED2_SIZE_LIMIT_ALT) = b;
+    if (amped2_marker_probe()) {
+        /* The test leaves the sphere's world centre at 0x003E92F8; the
+         * camera's position is at +0x80, its view direction at +0x70. */
+        static int planes;
+        int i;
+        g_marker_depth = (MEMF(0x003E92F8) - MEMF(cam + 0x80)) * MEMF(cam + 0x70)
+                       + (MEMF(0x003E92FC) - MEMF(cam + 0x84)) * MEMF(cam + 0x74)
+                       + (MEMF(0x003E9300) - MEMF(cam + 0x88)) * MEMF(cam + 0x78);
+        if (!planes++) {
+            amped2_diag("[MARK] view dir %.3f %.3f %.3f\n", MEMF(cam + 0x70),
+                        MEMF(cam + 0x74), MEMF(cam + 0x78));
+            for (i = 0; i < 5; i++) {
+                uint32_t pl = cam + 0x110 + 0x10 * (uint32_t)i;
+                amped2_diag("[MARK] plane +%X: %.3f %.3f %.3f d %.1f\n", 0x110 + 0x10 * i,
+                            MEMF(pl), MEMF(pl + 4), MEMF(pl + 8), MEMF(pl + 0xC));
+            }
+        }
+    }
 }
 
 /* A visibility test (thiscall, ret) run with the marker flag set when the
@@ -1424,9 +1464,10 @@ static void amped2_marker_vis(void (*gen)(void), int marker)
         if (k < nseen && last[k] != LO8(g_eax)) {
             uint32_t n = MEM32(obj + 8);
             last[k] = LO8(g_eax);
-            amped2_diag("[MARK] %08X %s%s -> %u\n", obj,
+            amped2_diag("[MARK] %08X %s%s -> %u (depth %.0f)\n", obj,
                         (n >= 0x10000u && n < 0x08000000u) ? (const char *)XBOX_PTR(n) : "?",
-                        marker ? " (marker)" : "", LO8(g_eax));
+                        marker ? " (marker)" : "", LO8(g_eax),
+                        marker ? g_marker_depth : 0.0f);
         }
     }
 }
