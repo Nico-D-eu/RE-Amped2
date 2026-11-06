@@ -1183,10 +1183,18 @@ void sub_001EE7E0(void)
  * They apply at once (the toolkit's xbox_GpuSetPost) and are saved. Both
  * are written whenever either changes, so the next start shows the same
  * picture: Sharpen left out of the ini means 0.8 with FSR and 0 without.
+ *
+ * Row 4 (item slot 5):
+ *   4  SNOWMEN AND GAPS  NORMAL / FAR / VERY FAR  [Game] MarkerDistance 1 / 2 / 4
+ * How far away snowmen and gap sparkles are drawn (see "Marker distance"
+ * below); applies at once and is saved.
  */
 #define AMPED2_MODS_ROWS    2
 #define AMPED2_OPT_UPSCALE  2
 #define AMPED2_OPT_SHARPEN  3
+#define AMPED2_OPT_MARKERS  4
+
+static const char *const k_marker_names[3] = { "1", "2", "4" };
 
 static const struct { const char *key, *var; } k_mods_rows[AMPED2_MODS_ROWS] = {
     { "ModPacks",    "AMPED2_MOD_PACKS" },
@@ -1250,7 +1258,7 @@ void sub_001ED950(void)
     int row;
 
     sub_001ED950_gen();                     /* the Live rows; pops our return */
-    for (row = 0; row <= AMPED2_OPT_SHARPEN; row++) {
+    for (row = 0; row <= AMPED2_OPT_MARKERS; row++) {
         g_esp -= 4; MEM32(g_esp) = MEM32(menu + 0x3C);
         g_esp -= 4; MEM32(g_esp) = 0;       /* return address */
         g_ecx = (uint32_t)row;
@@ -1258,6 +1266,10 @@ void sub_001ED950(void)
             g_eax = (uint32_t)amped2_upscale_on();
         } else if (row == AMPED2_OPT_SHARPEN) {
             g_eax = amped2_sharpen_level();
+        } else if (row == AMPED2_OPT_MARKERS) {
+            const char *v = getenv("AMPED2_MARKER_DISTANCE");
+            float f = (v && *v) ? (float)atof(v) : 1.0f;
+            g_eax = f >= 3.0f ? 2 : f >= 1.5f ? 1 : 0;
         } else {
             const char *v = getenv(k_mods_rows[row].var);
             g_eax = (v && *v == '0') ? 0 : 1;
@@ -1284,10 +1296,155 @@ void sub_001EDF30(void)
             amped2_set_picture(combo != 0, amped2_sharpen_level());
         } else if (row == AMPED2_OPT_SHARPEN && combo < 4) {
             amped2_set_picture(amped2_upscale_on(), combo);
+        } else if (row == AMPED2_OPT_MARKERS && combo < 3) {
+            amped2_setenv("AMPED2_MARKER_DISTANCE", k_marker_names[combo]);
+            amped2_ini_set("Game", "MarkerDistance", k_marker_names[combo]);
         }
     }
     SET_LO8(g_eax, 0);
     g_esp += 8;                             /* ret 4 */
+}
+
+/* ── Marker distance: snowmen and gaps seen from further away ─────────
+ *
+ * The game drops a scripted object from the picture once it would look too
+ * small on screen. YetiScriptedObject's visibility test (vtable 0x003627C0
+ * +0x3C, 0x001B1BC0, thiscall, ret) moves the object's bounding sphere
+ * ([obj+0x34], class vtable 0x0035C918: centre and radius at [[vol+4]]) to
+ * the object and asks it whether the camera sees it (sphere vtable +8,
+ * 0x001412B0, thiscall, [esp+4] = matrix, [esp+8] = camera, ret 8). That
+ * test takes the sphere's depth along the camera's view direction, and when
+ * radius / depth is below [0x00380F20] (0.02; [0x0036E894], 0.05, while
+ * [0x003ACF44] is set) the object is not drawn; then it checks the frustum
+ * planes. A snowman (radius 1.3) is therefore cut at about 65 m. The result
+ * goes to [obj+0x9D], which the object's render (0x0023C450) requires.
+ *
+ * Snowmen are the "ExplorationItem<n>" objects ([obj+8] = name; eight a
+ * mountain). The gap markers are challenge objects (ChallengeScriptedObject,
+ * vtable 0x00361798; its test is the last slot, 0x001A2460, the same shape
+ * with the sphere at [[obj+0xA4]+0x4C]). Their type is [obj+0xAC], the
+ * number 0x001A1810 gives their name: 0x15 GapSparkleField (a gap's end),
+ * 0x16-0x1F GapSparkle1-10 along the gap's path (the Gaps\Gap<n>.lua
+ * points), 0x20-0x29 ProSparkle1-10. While one of these is tested, both
+ * size limits are divided by the setting, so it is drawn that many times
+ * further away; the frustum test and every other object are unchanged.
+ *
+ * [Game] MarkerDistance=1 (default), 2 or 4: AMPED2_MARKER_DISTANCE, row 4
+ * of the Mods and Graphics screen, applies at once. AMPED2_MARKER_PROBE=1
+ * logs the first test of each sphere caller (return address, centre,
+ * radius) and every visibility change of the scripted objects.
+ */
+#define AMPED2_SIZE_LIMIT       0x00380F20u
+#define AMPED2_SIZE_LIMIT_ALT   0x0036E894u
+
+static int g_marker_test;                   /* a marker's test is running */
+
+static float amped2_marker_scale(void)
+{
+    const char *e = getenv("AMPED2_MARKER_DISTANCE");
+    float v = (e && *e) ? (float)atof(e) : 1.0f;
+    return v < 1.0f ? 1.0f : v > 8.0f ? 8.0f : v;
+}
+
+static int amped2_marker_probe(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("AMPED2_MARKER_PROBE");
+        on = e && *e && *e != '0';
+    }
+    return on;
+}
+
+static int amped2_name_starts(uint32_t name_va, const char *prefix)
+{
+    const char *n;
+    size_t i;
+    if (name_va < 0x10000u || name_va >= 0x08000000u)
+        return 0;
+    n = (const char *)XBOX_PTR(name_va);
+    for (i = 0; prefix[i]; i++)
+        if (n[i] != prefix[i])
+            return 0;
+    return 1;
+}
+
+extern void sub_001412B0_gen(void);
+
+void sub_001412B0(void)
+{
+    float scale, a = 0, b = 0;
+
+    if (amped2_marker_probe()) {
+        static uint32_t seen[64];
+        static int nseen;
+        uint32_t ret = MEM32(g_esp), sph = MEM32(g_ecx + 4);
+        int k;
+        for (k = 0; k < nseen && seen[k] != ret; k++)
+            ;
+        if (k == nseen && nseen < 64) {
+            seen[nseen++] = ret;
+            amped2_diag("[MARK] sphere test from %08X: %.1f %.1f %.1f r %.2f\n", ret,
+                        MEMF(sph), MEMF(sph + 4), MEMF(sph + 8), MEMF(sph + 0xC));
+        }
+    }
+    if (!g_marker_test || (scale = amped2_marker_scale()) <= 1.0f) {
+        sub_001412B0_gen();
+        return;
+    }
+    a = MEMF(AMPED2_SIZE_LIMIT);
+    b = MEMF(AMPED2_SIZE_LIMIT_ALT);
+    MEMF(AMPED2_SIZE_LIMIT) = a / scale;
+    MEMF(AMPED2_SIZE_LIMIT_ALT) = b / scale;
+    sub_001412B0_gen();
+    MEMF(AMPED2_SIZE_LIMIT) = a;
+    MEMF(AMPED2_SIZE_LIMIT_ALT) = b;
+}
+
+/* A visibility test (thiscall, ret) run with the marker flag set when the
+ * object is a marker; the probe logs each change of its result. */
+static void amped2_marker_vis(void (*gen)(void), int marker)
+{
+    uint32_t obj = g_ecx;
+
+    g_marker_test = marker;
+    gen();
+    g_marker_test = 0;
+    if (amped2_marker_probe()) {
+        static uint32_t seen[512];
+        static uint8_t last[512];
+        static int nseen;
+        int k;
+        for (k = 0; k < nseen && seen[k] != obj; k++)
+            ;
+        if (k == nseen && nseen < 512) {
+            seen[nseen++] = obj;
+            last[k] = 2;
+        }
+        if (k < nseen && last[k] != LO8(g_eax)) {
+            uint32_t n = MEM32(obj + 8);
+            last[k] = LO8(g_eax);
+            amped2_diag("[MARK] %08X %s%s -> %u\n", obj,
+                        (n >= 0x10000u && n < 0x08000000u) ? (const char *)XBOX_PTR(n) : "?",
+                        marker ? " (marker)" : "", LO8(g_eax));
+        }
+    }
+}
+
+extern void sub_001B1BC0_gen(void);
+
+void sub_001B1BC0(void)                     /* YetiScriptedObject */
+{
+    amped2_marker_vis(sub_001B1BC0_gen,
+                      amped2_name_starts(MEM32(g_ecx + 8), "ExplorationItem"));
+}
+
+extern void sub_001A2460_gen(void);
+
+void sub_001A2460(void)                     /* ChallengeScriptedObject */
+{
+    uint32_t type = MEM32(g_ecx + 0xAC);
+    amped2_marker_vis(sub_001A2460_gen, type >= 0x15 && type <= 0x29);
 }
 
 /* ── Text aspect in the 16:9 mode ─────────────────────────────

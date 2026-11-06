@@ -1077,6 +1077,9 @@ static const char k_ini_default[] =
     "; Show the higher-resolution movies in mods\\movie_pack\r\n"
     "; (tools\\mods\\movie_pack.py) when they are there: 1 on, 0 off.\r\n"
     ";MoviePack=1\r\n"
+    "; How far away snowmen and gap sparkles are drawn: 1 (as on the Xbox),\r\n"
+    "; 2 or 4 times as far. Options and Mods -> Mods and Graphics switches it.\r\n"
+    ";MarkerDistance=1\r\n"
     "; Console memory in MB: 64 (a retail Xbox) or 128 (a debug kit). 128\r\n"
     "; doubles the game's heap and lets its graphics pool reach its full 60 MB\r\n"
     "; (about 48 MB at 64): headroom for mods with bigger content.\r\n"
@@ -1277,6 +1280,7 @@ static void load_settings(void)
         { "Game",    "ModPacks",       "AMPED2_MOD_PACKS" },
         { "Game",    "TexturePack",    "AMPED2_TEXTURE_PACK" },
         { "Game",    "MoviePack",      "AMPED2_MOVIE_PACK" },
+        { "Game",    "MarkerDistance", "AMPED2_MARKER_DISTANCE" },
         { "Game",    "Memory",         "RECOMP_GUEST_RAM_MB" },
     };
     char path[MAX_PATH], line[1024], section[64] = "";
