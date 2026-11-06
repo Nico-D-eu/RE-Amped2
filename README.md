@@ -259,7 +259,7 @@ and about 6.5 GB. The conversion runs in a minimised window. If you close it,
 
 ## Known issues
 
-In the current release (0.3.0):
+In the current release (0.3.1):
 
 - **Linux is a preview.** It has only been tested under WSL2 (Ubuntu 24.04
   on Windows): install, menus and riding a level. It has not been run on a
