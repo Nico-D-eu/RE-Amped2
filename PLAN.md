@@ -1447,6 +1447,13 @@ findings in `docs/DEVELOPING.md` "Bring-up notes"; no player-facing change.
    (cache partition or `UDATA`), when, and how Save Replay stores them in
    the Replay Theater. Enough of the `.rpl`/`.evt` layout to find the
    start position, length and frame rate (needed to trim a run in 25).
+   **Partly answered (2026-11-07):** Save Replay makes a save of its own
+   in `UDATA\4d530041\<id>\` named like `Replay5 LX2 Brd <rider>`
+   (`SaveMeta.xbx`; photo-shoot replays are `Photo<n> <level>`), holding
+   `Career.rpl`, `.evt`, `.ActionMap` (the same 9300-byte table as the
+   disc's runs), `Career.parts` (the rider's look), `Career.boarder` and
+   `career.sig`. Same format as the Pro replays (`.rpl` starts
+   `02000000`, then bit-packed records of about 19 bytes; not decoded).
 6. **Pad input.** Which buttons the game uses in a run: Back, L3 and R3
    (stick clicks), and the triggers. The chord in 24 must not collide.
 
@@ -1521,6 +1528,13 @@ tries, like the Pro challenges. Its own main-menu item.
    files out of the save (read-only) into a challenge folder with a small
    `challenge.json`: level, start drop point, rider look, title, the
    target score, the trick list (from `.evt`), and a trim range.
+   **Proof of concept (2026-11-07), awaiting the user's play test:** a
+   local pack `mods\packs\dev-challenge-test` (loose entries) adds a
+   copy of a saved LX2 run as `Levels\LX2\LX2.res\Pro\dev1.*` and a
+   `LX2_Challenges.lua` whose three `CHAL_PRO` parts name
+   `ProReplay = "Pro\\dev1"`. It merges and boots (isolated run); whether
+   the pro rider rides the player's run is the open question. Known gap:
+   the player still starts at the original Pro drop point.
 2. **Trimming** ("a section of a run") needs the `.rpl`/`.evt` layout from
    Phase 23. Until then a challenge is a whole run started from a drop
    point; the tool adds that drop point (`DropLoc` = the run's first
