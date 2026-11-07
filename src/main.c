@@ -1122,6 +1122,20 @@ static BOOL ini_path(char *path, size_t size)
     return TRUE;
 }
 
+/* A file of the port's own beside amped2.ini (or beside the AMPED2_INI file
+ * of a test run), e.g. the developer challenges' devchallenges.json. */
+int amped2_side_file(const char *name, char *path, size_t size)
+{
+    char *slash;
+    if (!ini_path(path, size))
+        return 0;
+    slash = strrchr(path, HOST_SEP);
+    if (!slash || (size_t)(slash - path) + strlen(name) + 2 >= size)
+        return 0;
+    strcpy(slash + 1, name);
+    return 1;
+}
+
 /* The key's name if `line` sets one ("key=..." or ";key=..."), else NULL.
  * `len` gets its length. */
 static const char *ini_line_key(const char *line, size_t *len, int *commented)

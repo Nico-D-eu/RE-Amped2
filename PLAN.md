@@ -1664,7 +1664,15 @@ challenges won.
         the tool writes the table with each challenge's level and drop
         point.
      The handlers were found from their names' registrations
-     (`ecx = <handler>` after `eax = <name>`). Not yet tried.
+     (`ecx = <handler>` after `eax = <name>`).
+     **Checked from the list (2026-11-07, fresh save, menu walk: Career >
+     DEVELOPER CHALLENGES > A):** Laax 2 loads, the drop-point menu is
+     skipped, the PRO CHALLENGE intro shows and the run starts. Pause >
+     Choose New Run comes back to the DEVELOPER CHALLENGES list. Leave
+     Mountain and the end-of-run menu's Change/Leave Mountain take the same
+     way back (`sub_00102360`, then the shell's LevelSelect push becomes
+     the list); not seen on screen, nor the end of a won or failed run:
+     scripted input never finished a run.
    - **The pro's name and picture** in the intro and the avatar: a native
      hook on the fixed pro-name table (see above) gives the developer's
      name and a generic picture.
@@ -1676,6 +1684,23 @@ challenges won.
    career save changes only the way the game itself changes it. Each
    point is awarded once (the count of points given is kept too), and a
    challenge counts once, however often it is won.
+   **Built (2026-11-07), not yet seen working:** `devchallenges.json`
+   beside `amped2.ini` holds `"won"` (pack IDs) and `"points"` (given). A
+   win is the challenge's state turning 2 or 3 ("Completed"), looked for
+   every frame of the end-of-run update (`sub_00018B40`, flow object
+   `0x003AD688`) and on every way out of the level. When wins / 3 is more
+   than the points given, the next skill-point check of the end of a run
+   (end-of-run state 2, `sub_00017840`) sees `NumScoreChalDone` two higher
+   per point for that one frame, so the game shows its own
+   "EarnedSkillPoints" message and stat screen, and the count goes back
+   down at once (the career keeps only the spent point). Best score and
+   tries are not recorded yet. A test switch, `AMPED2_DEVCHAL_FAKEWIN=1`,
+   counts a dev challenge as won as soon as it is checked; with two other
+   IDs already in `"won"` the third gives the point. The probes never
+   reached the end-of-run update (no run finished), so the award and real
+   win detection need a hand test. To check: the win probably also marks
+   `DevChal1` completed in the career's level progress, as any challenge
+   (and may count toward its totals).
 5. **Developer photo shoots: possible.** A photo shoot is a
    `CHAL_MEDIASEQ` challenge whose `RingArrayFile` (e.g.
    `Levels\LX2\photoshoot\ps_1.lua`) is a plain list of `MediaRings`

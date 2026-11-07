@@ -1077,11 +1077,114 @@ static void amped2_put_cstr(uint32_t va, const char *s)
 
 extern void sub_00013800(void), sub_00020C30(void), sub_000200B0(void);
 extern void sub_0010BCB0(void), sub_0010DA50(void);
+extern void sub_00102360(void), sub_001022A0(void), sub_0010FED0(void), sub_0010FEA0(void);
+extern void sub_002194B0(void), sub_00018B40(void);
 
 /* The challenge StartDevChallenge set up: its level and drop point ID. The
  * next drop-point screen starts it (amped2_droppoint_push). */
 static char g_devchal_level[8], g_devchal_drop[24], g_devchal_playing[24];
 static int g_devchal_pending;
+/* The run in progress: its drop point (guest; valid while the level is
+ * loaded), whether its win was counted, and whether the shell, when it
+ * starts after the level, opens the DEVELOPER CHALLENGES list. */
+static uint32_t g_devchal_dp;
+static int g_devchal_counted, g_devchal_return;
+/* Stat points earned (one per three challenges won) and not yet handed to
+ * the game's own skill-point check. */
+static int g_devchal_award;
+
+/* ── Developer challenges: results, in devchallenges.json beside amped2.ini
+ *
+ *     { "won": ["dev1", "dev3"], "points": 0 }
+ *
+ * "won" holds each challenge won (its pack ID, the drop point's ID in lower
+ * case), once however often it is won; "points" the stat points already
+ * given, one per three wins. Not the career save: the career only changes
+ * by the stat point, spent the game's own way. */
+#define AMPED2_DEVCHAL_MAX 64
+static char g_devchal_won[AMPED2_DEVCHAL_MAX][24];
+static int g_devchal_nwon, g_devchal_points, g_devchal_loaded;
+
+extern int amped2_side_file(const char *name, char *path, size_t size);
+
+static void amped2_devchal_load(void)
+{
+    char path[512], buf[8192], *p, *end;
+    FILE *f;
+    size_t len;
+    if (g_devchal_loaded)
+        return;
+    g_devchal_loaded = 1;
+    if (!amped2_side_file("devchallenges.json", path, sizeof path) || !(f = fopen(path, "rb")))
+        return;
+    len = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[len] = 0;
+    p = strstr(buf, "\"won\"");
+    p = p ? strchr(p, '[') : NULL;
+    end = p ? strchr(p, ']') : NULL;
+    while (p && end && g_devchal_nwon < AMPED2_DEVCHAL_MAX) {
+        char *q = strchr(p + 1, '"'), *r;
+        if (!q || q > end) break;
+        r = strchr(q + 1, '"');
+        if (!r || r > end) break;
+        if (r - q - 1 > 0 && r - q - 1 < 24) {
+            memcpy(g_devchal_won[g_devchal_nwon], q + 1, (size_t)(r - q - 1));
+            g_devchal_won[g_devchal_nwon][r - q - 1] = 0;
+            g_devchal_nwon++;
+        }
+        p = r;
+    }
+    p = strstr(buf, "\"points\"");
+    p = p ? strchr(p, ':') : NULL;
+    g_devchal_points = p ? atoi(p + 1) : 0;
+    fprintf(stderr, "  [DEVCHAL] %s: %d won, %d point(s) given\n", path, g_devchal_nwon,
+            g_devchal_points);
+}
+
+static void amped2_devchal_save(void)
+{
+    char path[512], tmp[520];
+    FILE *f;
+    int i;
+    if (!amped2_side_file("devchallenges.json", path, sizeof path))
+        return;
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    if (!(f = fopen(tmp, "wb")))
+        return;
+    fprintf(f, "{\n  \"won\": [");
+    for (i = 0; i < g_devchal_nwon; i++)
+        fprintf(f, "%s\"%s\"", i ? ", " : "", g_devchal_won[i]);
+    fprintf(f, "],\n  \"points\": %d\n}\n", g_devchal_points);
+    fclose(f);
+    remove(path);
+    rename(tmp, path);
+}
+
+/* A win of the run in progress: count the challenge (once) and work out
+ * whether a stat point is due. */
+static void amped2_devchal_win(void)
+{
+    char id[24];
+    int i, due;
+    amped2_devchal_load();
+    for (i = 0; g_devchal_playing[i] && i < 23; i++)
+        id[i] = (char)(g_devchal_playing[i] >= 'A' && g_devchal_playing[i] <= 'Z'
+                       ? g_devchal_playing[i] + 32 : g_devchal_playing[i]);
+    id[i] = 0;
+    for (i = 0; i < g_devchal_nwon; i++)
+        if (!strcmp(g_devchal_won[i], id))
+            break;
+    if (i == g_devchal_nwon && g_devchal_nwon < AMPED2_DEVCHAL_MAX) {
+        snprintf(g_devchal_won[g_devchal_nwon++], 24, "%s", id);
+        amped2_devchal_save();
+    }
+    due = g_devchal_nwon / 3 - g_devchal_points;
+    g_devchal_award = due > 0 ? due : 0;
+    fprintf(stderr, "  [DEVCHAL] won %s: %d challenge(s) won, %d point(s) given, %d due\n",
+            id, g_devchal_nwon, g_devchal_points, g_devchal_award);
+    fflush(stderr);
+}
 
 /* The i-th argument of a GUI command call as text ("" if none). Arguments
  * are 12-byte values at [args+0x84], [args+0x88] of them; a quoted one keeps
@@ -1162,6 +1265,25 @@ static void amped2_cmd_devchal(void)
     g_esp += 8;                             /* ret 4 */
 }
 
+/* Has the run in progress been won? Its challenge (drop point +0x10) state
+ * +4 turns 2 or 3, which the drop-point menu shows as "Completed". Checked
+ * every frame of the end-of-run update and once more on the way out. */
+static void amped2_devchal_poll(void)
+{
+    static int fake = -1;
+    uint32_t chal, st;
+    if (!g_devchal_dp || g_devchal_counted)
+        return;
+    if (fake < 0)
+        fake = getenv("AMPED2_DEVCHAL_FAKEWIN") != NULL;   /* tests only */
+    chal = MEM32(g_devchal_dp + 0x10);
+    st = chal ? MEM32(chal + 4) : 0;
+    if (st == 2 || st == 3 || (fake && st == 1)) {
+        g_devchal_counted = 1;
+        amped2_devchal_win();
+    }
+}
+
 /* The level's drop-point screen (Game.rui DropPoint, object 0x003CDF90,
  * vtable 0x003573D8) builds its menu when pushed, slot 6 sub_0010BCB0
  * (thiscall, `ret 4`). With a developer challenge pending, start its drop
@@ -1203,12 +1325,132 @@ static void amped2_droppoint_push(void)
             AMPED2_GCALL(sub_0010DA50);
             MEM32(item + 0x20) = old;
             snprintf(g_devchal_playing, sizeof g_devchal_playing, "%s", g_devchal_drop);
+            g_devchal_dp = dp;
+            g_devchal_counted = 0;
         }
         g_devchal_pending = 0;
         fflush(stderr);
+    } else if (g_devchal_playing[0]) {
+        amped2_devchal_poll();
+        /* Back at the drop points after the run ("Choose new run", "New
+         * run"): a developer challenge has no menu here, so leave for the
+         * DEVELOPER CHALLENGES list. */
+        fprintf(stderr, "  [DEVCHAL] drop-point screen after %s: back to the list\n",
+                g_devchal_playing);
+        fflush(stderr);
+        g_devchal_return = 1;
+        g_esp -= 4; MEM32(g_esp) = 0;
+        AMPED2_GCALL(sub_00102360);         /* LaunchShellToCareerLevelSelect() */
     }
     g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp;
     g_eax = ret;
+}
+
+/* Leaving the mountain during or after a developer challenge (pause menu
+ * LaunchShellToMainMenu sub_001022A0, end-of-run EORLeaveMountain
+ * sub_0010FED0 and EORChangeMountain sub_0010FEA0; all thiscall `ret 4`)
+ * goes to the career's level select instead, which the shell's PushMenu
+ * then turns into the DEVELOPER CHALLENGES list. */
+static void amped2_devchal_leave(void (*orig)(void))
+{
+    if (g_devchal_playing[0]) {
+        amped2_devchal_poll();
+        fprintf(stderr, "  [DEVCHAL] leaving %s: back to the list\n", g_devchal_playing);
+        fflush(stderr);
+        g_devchal_return = 1;
+        sub_00102360();                     /* same stack: ret 4 */
+    } else {
+        orig();
+    }
+}
+static void amped2_leave_main(void) { amped2_devchal_leave(sub_001022A0); }
+static void amped2_leave_eor(void) { amped2_devchal_leave(sub_0010FED0); }
+static void amped2_leave_change(void) { amped2_devchal_leave(sub_0010FEA0); }
+
+/* The GUI's PushMenu (vtable 0x0036C868 +0x50, sub_002194B0, thiscall, one
+ * stack argument: the name, a String). When the shell starts after a
+ * developer challenge it pushes Main, MainCareer and LevelSelect (its
+ * start-up switch on [[0x003ACD0C]+0x54] = 5, at 0x00100B9B); LevelSelect
+ * becomes the list (PlayerFeedback). The name is a String the wrapper makes
+ * once and keeps at 0x00010FC0. */
+#define AMPED2_DEVLIST_STR_VA  0x00010FC0u
+#define AMPED2_DEVLIST_NAME_VA 0x00010FC4u
+static void amped2_pushmenu(void)
+{
+    uint32_t name = MEM32(g_esp + 4);
+    if (g_devchal_return && name
+        && amped2_ieq(amped2_gstr(MEM32(name)), "LevelSelect")) {
+        if (!MEM32(AMPED2_DEVLIST_STR_VA)) {
+            uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sc = g_ecx;
+            amped2_put_cstr(AMPED2_DEVLIST_NAME_VA, "PlayerFeedback");
+            g_esp -= 4; MEM32(g_esp) = AMPED2_DEVLIST_STR_VA;
+            g_eax = AMPED2_DEVLIST_NAME_VA;
+            AMPED2_GCALL(sub_000122B0);
+            g_ebx = sb; g_esi = ss; g_edi = sd; g_ecx = sc;
+        }
+        MEM32(g_esp + 4) = AMPED2_DEVLIST_STR_VA;
+        g_devchal_return = 0;
+        g_devchal_playing[0] = 0;
+        g_devchal_dp = 0;
+        fprintf(stderr, "  [DEVCHAL] shell: LevelSelect -> the DEVELOPER CHALLENGES list\n");
+        fflush(stderr);
+    }
+    sub_002194B0();
+}
+
+/* The level session's update (vtable 0x00344860, sub_00018B40, thiscall,
+ * `ret 8`; the flow object 0x003AD688, +0x10 = the player). It runs the
+ * end of a run (results, rewards); each frame looks for a developer
+ * challenge's win.
+ *
+ * A stat point goes through the game's own skill-point check: end-of-run
+ * state +0x28 = 2 (sub-state +0x1C = 0, flow +0x20 = 0) runs sub_00017840,
+ * where sub_000469E0 gives a point for every two steps the player's +0x2DD
+ * climbs to +0x2DE (NumScoreChalDone, the REWARD_SCORESKILLPOINTS count),
+ * then the "EarnedSkillPoints" message and the SkillPoints_InGame screen.
+ * +0x2DE goes up by two per point due for that one frame and both come back
+ * down after, so the career's count stays as it was (+0x2DD is not saved:
+ * the career load sets it to +0x2DE). */
+static void amped2_session_update(void)
+{
+    uint32_t sess = g_ecx, player = MEM32(sess + 0x10), bump = 0;
+    static uint32_t last = 0xFFFFFFFFu;
+    static int trace = -1;
+    if (trace < 0)
+        trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
+    if (trace) {
+        uint32_t chal = g_devchal_dp ? MEM32(g_devchal_dp + 0x10) : 0;
+        uint32_t now = (MEM32(sess + 0x20) << 24) | (MEM32(sess + 0x1C) << 16)
+                       | (MEM32(sess + 0x28) << 8) | (chal ? MEM32(chal + 4) & 0xFF : 0xFF);
+        if (now != last) {
+            fprintf(stderr, "  [DEVCHAL] session flow %u sub %u end %u chal %d 2DD %u 2DE %u\n",
+                    MEM32(sess + 0x20), MEM32(sess + 0x1C), MEM32(sess + 0x28),
+                    chal ? (int)MEM32(chal + 4) : -1, player ? MEM8(player + 0x2DD) : 0,
+                    player ? MEM8(player + 0x2DE) : 0);
+            fflush(stderr);
+            last = now;
+        }
+    }
+    amped2_devchal_poll();
+    if (g_devchal_award > 0 && player && MEM32(sess + 0x20) == 0 && MEM32(sess + 0x1C) == 0
+        && MEM32(sess + 0x28) == 2 && MEM8(player + 0x2DD) == MEM8(player + 0x2DE)
+        && MEM8(player + 0x2DE) + 2 * g_devchal_award < 256) {
+        bump = 2u * (uint32_t)g_devchal_award;
+        MEM8(player + 0x2DE) += (uint8_t)bump;
+    }
+    sub_00018B40();
+    if (bump) {
+        int given = (int)(MEM8(player + 0x2DD) - (MEM8(player + 0x2DE) - bump)) / 2;
+        MEM8(player + 0x2DE) -= (uint8_t)bump;
+        MEM8(player + 0x2DD) -= (uint8_t)(2 * given);
+        fprintf(stderr, "  [DEVCHAL] skill-point check: %d stat point(s) given\n", given);
+        fflush(stderr);
+        if (given > 0) {
+            g_devchal_points += given;
+            g_devchal_award -= given;
+            amped2_devchal_save();
+        }
+    }
 }
 
 void sub_00218140(void)
@@ -1806,6 +2048,11 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     if (xbox_va == AMPED2_QUIT_FN_VA) return amped2_cmd_quit;
     if (xbox_va == AMPED2_DEVCHAL_FN_VA) return amped2_cmd_devchal;
     if (xbox_va == 0x0010BCB0) return amped2_droppoint_push;  /* drop-point screen: push */
+    if (xbox_va == 0x001022A0) return amped2_leave_main;      /* LaunchShellToMainMenu */
+    if (xbox_va == 0x0010FED0) return amped2_leave_eor;       /* EORLeaveMountain */
+    if (xbox_va == 0x0010FEA0) return amped2_leave_change;    /* EORChangeMountain */
+    if (xbox_va == 0x002194B0) return amped2_pushmenu;        /* GUI PushMenu */
+    if (xbox_va == 0x00018B40) return amped2_session_update;  /* level session update */
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
     if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */

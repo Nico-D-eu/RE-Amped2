@@ -1934,6 +1934,39 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   `$EndMenuForward` and hides the legends (`sub_00103E60` ... on
   `0x003CDA08`). Run right after the push, with the drop point lent to the
   selected item, it goes straight to the challenge's intro screen.
+- **Leaving a run.** The pause menu is Resume, Restart Run
+  (`RestartChallenge`), Choose New Run (`QuitChallenge`, `sub_0010F0F0`:
+  back to the drop-point screen), Challenge Checklist, Recent Players,
+  Options, Leave Mountain (`LaunchShellToMainMenu`, `sub_001022A0`). The
+  end-of-run menu (`EndOfRunOptions`) has `EORQuitChallenge`
+  (`sub_0010FE80`, drop points), `EORChangeMountain` (`sub_0010FEA0`),
+  `EORLeaveMountain` (`sub_0010FED0`). `LaunchShellToCareerLevelSelect`
+  (`sub_00102360`) sets `[[0x003ACD0C]+0x54] = 5`; when the shell starts it
+  switches on that value (`0x00100B9B`, table `0x001013E4`): 5 pushes Main,
+  MainCareer, LevelSelect, 8 Main, MainCareer, Portfolio, 6 Main,
+  MainFreeRide. The pushes go through the GUI object's PushMenu, vtable
+  `0x0036C868 +0x50` = `sub_002194B0` (thiscall, the name String pushed).
+  A developer challenge leaves through `sub_00102360` from all of these
+  (and from the drop-point screen when it comes back), and the PushMenu
+  wrapper turns the LevelSelect push into `PlayerFeedback`, the list.
+- **Challenge state.** A challenge's `+4` is 2 or 3 when completed (the
+  drop-point menu shows "Completed"), 6 until first chosen, 1 after
+  (`sub_000A2590`).
+- **Skill points.** The end-of-run flow object `0x003AD688` (vtable
+  `0x0034480C`; update `+0x54` = `sub_00018B40`, `ret 8`; flow `+0x20`,
+  sub-state `+0x1C`, end-of-run state `+0x28`, the player at `+0x10`) runs
+  the rewards in `sub_00017840` (state 2: skill points, 0: unlock
+  messages). `sub_000469E0(ecx = player)` gives a point for each even value
+  as the player's `+0x2DD` climbs to `+0x2DE`; `+0x2DE` is
+  `NumScoreChalDone` from the career's `Progress` file (`0x0004A8B7`), and
+  the career load sets `+0x2DD` to it (`0x0004AFBF`), so two score
+  challenges make one point (REWARD_SCORESKILLPOINTS). The point shows as
+  the "EarnedSkillPoints" message (`0x003E32D0`, points in `0x003E32C4`)
+  and the SkillsPoints_InGame screen (`0x003E3208`, `sub_001D2A70`, ecx =
+  `[player+0x170]`). The message callbacks `0x000166A0/B0/C0` set the
+  state `0x003AD6B0` (= `0x003AD688+0x28`). The update was not seen
+  running in title-screen or menu-walk probes that never finished a run;
+  it is the results phase.
 - Calls into the game's own bodies from C push a dummy return address (the
   bodies pop it), and the generated function names (`sub_X`) link from
   `recomp_manual.c` without regenerating. Vtable slots and commands are
