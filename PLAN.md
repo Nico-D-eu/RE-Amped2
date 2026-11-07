@@ -1545,13 +1545,21 @@ tries, like the Pro challenges. Its own main-menu item.
      `<Level>_DropPoints.lua` and `Levels.res` `<Level>/<Level>_droppoints.lua`.
    - **Head start.** The disc's pros start 21-40 m ahead of the player
      along `DropDir`; with the player on the recording's own start, the
-     pro spawned inside them. The drop point goes about 20 m back up the
-     slope (test pending).
+     pro spawned inside them. Moving the drop point (and its camera) 20 m
+     back along `-DropDir`, plus 1 m up, works ("like a charm").
    - **The pro's look.** `ProParts` names a look file; a saved replay
      carries the rider's own (`Career.parts` / `Career.boarder`, plain
      Lua `BoarderParts` / `BoarderDefinition` tables, as the pros'
      `.parts`/`.boarder`). Added as `Characters\pro\pro.res\ProParts\
-     Dev1.parts` (test pending).
+     Dev1.parts`: the pro rides in the recording rider's look.
+   - **Not yet: the pro's name and picture.** The challenge intro and
+     the avatar still show the disc pro (Mitch Nelson). The names are a
+     fixed UTF-16 table in `default.xbe` (around 0x33FA04, `ProName%d`
+     at 0x335D9C), the pictures GUI textures (`Pict_Pro_Mitch.xpr` in
+     `Textures.gfx`). Needs a native hook that substitutes the
+     developer's name (from the `.boarder` `Name`) and a picture.
+   - **Win and fail both work** (user, 2026-11-07): beating the run, and
+     failing by a lower score, a missed jump or bails.
    - **Board or skate:** a board run in a snowskate challenge fails at
      once (tricks go through the wrong `.ActionMap` table).
 2. **Trimming** ("a section of a run") needs the `.rpl`/`.evt` layout from
