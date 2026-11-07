@@ -55,6 +55,12 @@ Edits:
      icons are glyphs in the same strings) lose their navigation, Xbox Live
      and Xbox demos items, in every language. Items for other actions
      (Delete, page turns, skill points, save replay ...) stay.
+ 10. Career gains DEVELOPER CHALLENGES as its second item, under RIDE!
+     (Shell.rui Scenes/MainCareer.scene; PLAN Phase 25). It runs a new
+     action, DevChallenges, added to Scenes/MainCareer.actions: $FlyButton,
+     then DevChallenges(), a shell command src/recomp_manual.c registers
+     beside QuitGame. Work in progress: the list screen it opens is not
+     written yet.
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -89,6 +95,17 @@ STRINGS = {
     "MainMenu_Quit_Help": ("MainMenu_ChangeBoarder_Help", {
         "eng": "Close RE-Amped2.", "fre": "Fermer RE-Amped2.",
         "ger": "RE-Amped2 beenden."}),
+    # Career -> DEVELOPER CHALLENGES (edit 10).
+    "Career_DevChallenges": ("Career_ChangeGear", {
+        "eng": "DEVELOPER CHALLENGES", "fre": "DÉFIS DES DÉVELOPPEURS",
+        "ger": "ENTWICKLER-CHALLENGES"}),
+    "Career_DevChallenges_Help": ("Career_ChangeGear_Help", {
+        "eng": "Race the developers' runs. For every 3 challenges won, you will"
+               " be awarded a stat point to add to your board stats.",
+        "fre": "Affrontez les descentes des développeurs. Tous les 3 défis"
+               " gagnés, vous recevez un point à ajouter aux stats de votre planche.",
+        "ger": "Fahre gegen die Läufe der Entwickler. Für je 3 gewonnene"
+               " Challenges bekommst du einen Punkt für deine Board-Werte."}),
     # Options -> Game Options: the PC settings (edit 4).
     "GameOptions_Window": ("GameOptions_Vibration", {
         "eng": "WINDOW", "fre": "FENÊTRE", "ger": "FENSTER"}),
@@ -308,6 +325,48 @@ def main_actions():
     # game's lookup (a binary search, by the look of it) never found it.
     f.actions.append(rui_actions.Action("Quit", [], [(b"", stmts)]))
     f.actions.sort(key=lambda a: a.name)
+    path = OVERRIDES / entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(rui_actions.write(f))
+    print(f"wrote {path.relative_to(ROOT)}")
+
+
+CAREER_SCENE = "GuiPackages/Shell.rui/Scenes/MainCareer.scene"
+# Inserted after the first entry of each list (keyed by that entry).
+DEV_AFTER = {
+    '"$SelectLevel"': '"$DevChallenges"',                    # AButton, Start
+    '"Career_PlayLevel"': '"Career_DevChallenges"',
+    '"Career_PlayLevel_Help"': '"Career_DevChallenges_Help"',
+}
+
+
+def career_menu():
+    """Career with DEVELOPER CHALLENGES second, under RIDE! (edit 10)."""
+    src = source_of(CAREER_SCENE)
+    kept, added = [], 0
+    for line in src.splitlines():
+        kept.append(line)
+        item = line.strip().rstrip(",")
+        if item in DEV_AFTER and line.rstrip().endswith(","):
+            indent = line[:len(line) - len(line.lstrip())]
+            kept.append(indent + DEV_AFTER[item] + ",")
+            added += 1
+    if added != 4:
+        sys.exit(f"{CAREER_SCENE}: expected 4 lists starting with RIDE!, found {added}")
+    write_override(CAREER_SCENE, "\r\n".join(kept) + "\r\n",
+                   "Career with DEVELOPER CHALLENGES under RIDE!")
+
+
+def career_actions():
+    """Scenes/MainCareer.actions plus DevChallenges ($FlyButton; DevChallenges())."""
+    entry = "GuiPackages/Shell.rui/Scenes/MainCareer.actions"
+    with zipfile.ZipFile(GAME / "GuiPackages" / "Shell.rui") as z:
+        f = rui_actions.read(z.read("Scenes/MainCareer.actions"))
+    if f.find("DevChallenges"):
+        sys.exit(f"{entry}: already has a DevChallenges action")
+    stmts = [b"$" + f.ref("FlyButton"), f.ref("DevChallenges") + b"()"]
+    f.actions.append(rui_actions.Action("DevChallenges", [], [(b"", stmts)]))
+    f.actions.sort(key=lambda a: a.name)      # the game looks them up sorted
     path = OVERRIDES / entry
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(rui_actions.write(f))
@@ -581,6 +640,8 @@ def strings():
 if __name__ == "__main__":
     main_menu()
     main_actions()
+    career_menu()
+    career_actions()
     game_options_scene()
     game_options_scene_data()
     options_scene()
