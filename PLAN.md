@@ -1410,7 +1410,7 @@ checkpoint: the rider and the score, not the machine.
 | # | Phase | Size | Depends on |
 |---|---|---|---|
 | 23 | Gameplay state map (RE groundwork) | Medium | — |
-| 24 | Practice save state (checkpoint) | Medium | 23 |
+| 24 | Practice save state (checkpoint; undoes gaps and snowmen too) | Medium–large | 23 |
 | 25 | Developer challenges (own menu item) | Medium–large | 23; the replay format |
 | 26 | Online high scores (opt-in) | Small client, plus a service to run | 23; 24's "assisted" flag |
 
@@ -1433,6 +1433,12 @@ findings in `docs/DEVELOPING.md` "Bring-up notes"; no player-facing change.
    session counters the HUD draws (`$TrickScore`, `$HighScore`,
    `$MediaScore`), and where the challenge scripts keep their progress
    (Lua tables in the guest heap, or native counters).
+   **Challenge progress in full** (Phase 24 undoes it): for gaps
+   (`JumpGap.scr`, the gap sparkles at 0x001A2460) and snowmen
+   (`ExplorationItem.scr`, 0x001B1BC0), where "found" is stored, what a
+   find changes on the object (hidden, script state, sound, HUD count),
+   and whether the find is written to `Career.progress` at once or only
+   at the end of the run.
 4. **Records.** Where best score, best photo (media) score and best trick
    live in memory and in the `.records` file, and when the game updates
    them. **Read-only;** saves are never written by our code.
@@ -1464,8 +1470,14 @@ cleared when the level is completed or left.
    now" notice. The copy is taken on the game's main thread at the top of
    a frame, never from the input thread.
 3. **Restore** at the same safe point: rider state (position, orientation,
-   velocity, so a gap can still be cleared), score, combo and meters. Then
-   one frame of settling (camera snap, trail reset). A HUD notice
+   velocity, so a gap can still be cleared), score, combo and meters, and
+   **challenge progress: gaps and snowmen found after the checkpoint are
+   undone** (user, 2026-11-07). The save copies the progress state Phase
+   23 found; the restore puts it back and brings the found objects back
+   (visible again, their scripts back in the waiting state, the CHALLENGES
+   panel counts back). If the game writes a find to `Career.progress` at
+   once, our code still writes no save: it restores memory only, and the
+   game's next save writes the restored state. Then one frame of settling (camera snap, trail reset). A HUD notice
    ("Checkpoint saved" / "Back to checkpoint") through the game's own
    `$EventNotification` or the debug overlay.
 4. **Cleared on** run end, Restart Run, Choose New Run, Leave Mountain,
@@ -1476,19 +1488,26 @@ cleared when the level is completed or left.
    point).
 6. A MODS AND GRAPHICS row "PRACTICE CHECKPOINTS: OFF/ON" (default OFF).
 
-**Open question for the user:** on restore, do gaps and snowmen found
-*after* the checkpoint stay found (simple, one-way), or are they undone
-too (needs a copy of the challenge scripts' state)? Recommended: they
-stay found; only the score goes back.
+**Decided (user, 2026-11-07):** a restore undoes everything since the
+checkpoint, gaps and snowmen included, so a checkpoint can't be used to
+bank finds. This is the larger half of the phase: the score is a few
+counters, the challenge state is spread over script tables and objects.
+If a full undo proves unsafe for one challenge type, that type falls back
+to "found stays found" and the plan notes it; the rider and score restore
+ship either way.
 
 **Risks:** restoring mid-air or mid-grind leaves the physics or animation
 inconsistent (hence the "on the ground" rule); challenge scripts may hold
-their own timers. Try ML1's gaps and snowmen first.
+their own timers; an undone find may not reappear if the object was
+freed rather than hidden, or the HUD count may drift from the script's.
+Try ML1's gaps and snowmen first.
 
 **Exit:** save before an ML1 gap, miss it, restore, clear it, with the
-score back at the saved value each time; the checkpoint is gone after
-Leave Mountain; 30 minutes of use with no crash; the default (off) changes
-nothing.
+score back at the saved value each time; save, find a snowman and clear a
+gap, restore: both are unfound again, visible, counted as before, and can
+be found again; Leave Mountain after that saves the restored progress; the
+checkpoint is gone after Leave Mountain; 30 minutes of use with no crash;
+the default (off) changes nothing.
 
 #### Phase 25: Developer challenges
 
@@ -1583,6 +1602,7 @@ time change while sending.
 | PS5 homebrew: firmware churn, toolchain changes, Sony's attention | Phase 14 breaks or draws a takedown | Exploratory only, separate target, open toolchain only, no exploit code, no Sony code |
 | Vulkan: too many pipelines, compile hitches, driver differences | Phase 22 stutters or looks different per vendor | Dynamic state, async compile with a disk pipeline cache, D3D11 screenshots as the reference, validation layers in debug builds |
 | A restored checkpoint leaves physics or scripts inconsistent | Phase 24 crashes or breaks a challenge | Save only on the ground and outside tricks and transitions; restore at the top of a frame; ML1 first |
+| Undone gaps and snowmen don't come back cleanly (freed objects, HUD drift) | A challenge can't be finished after a restore | Map the progress state fully in Phase 23; per-type fallback to "found stays found" |
 | Recorded runs contain game data (`.ActionMap`) | Can't ship developer challenges | Check the format; copy game-derived parts from the player's disc at install time |
 | Online scores: cheating, privacy, a service to keep running | Fake records, broken "no network" promise, cost | Opt-in and off by default, minimal data, caps and moderation, replay proof later, free-tier hosting the maintainer owns |
 
