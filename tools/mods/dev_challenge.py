@@ -55,8 +55,15 @@ import string_table  # noqa: E402
 TITLE_ID = "4d530041"
 LANGS = ("eng", "fre", "ger")
 # The Career screen's DEVELOPER CHALLENGES list (menus.py edit 10). A scene is
-# three entries named after it; PushMenu("DevChallenges") finds them by name.
-SCENE = "Scenes/DevChallenges"
+# three entries named after it, but PushMenu only opens names default.xbe
+# registers (a native object per screen, built at start-up): a new name, even
+# a copy of Options, never opens. So the list takes the place of
+# PlayerFeedback (Base.rui, always loaded), an Xbox Live screen nothing
+# reaches without Live. Its native class overrides the same few slots as the
+# Options_Online one the menu mod already reuses for MODS AND GRAPHICS.
+SCENE_NAME = "PlayerFeedback"
+SCENE = "Scenes/" + SCENE_NAME
+SCENE_ARCHIVE = "GuiPackages/Base.rui"
 SHELL = "GuiPackages/Shell.rui"
 BASE = "GuiPackages/Base.rui"
 # Mountain names as the menus show them (the levels' own LEVEL_NAMEs are
@@ -221,7 +228,7 @@ def lua_list(name, items, indent="        "):
 
 
 def scene_files(game: Path, items):
-    """The DevChallenges scene: {entry in Shell.rui: bytes}.
+    """The DEVELOPER CHALLENGES scene: {entry in SCENE_ARCHIVE: bytes}.
 
     items: (action, text ID, help ID, statements), statements as GUI action
     text, e.g. ['$FlyButton', 'PushMenu("LevelSelect")']. The list looks
@@ -231,7 +238,7 @@ def scene_files(game: Path, items):
              lua_list("HelpTextIDs", [h for _, _, h, _ in items]),
              lua_list("Start", [a for a, _, _, _ in items]),
              lua_list("TextIDs", [t for _, t, _, _ in items])]
-    scene = ("Scenes.DevChallenges = {\r\n"
+    scene = ("Scenes." + SCENE_NAME + " = {\r\n"
              '  ButtonLegendID = "ButtonLegend_AB",\r\n'
              "  Controls = {\r\n"
              "    [1] = {\r\n"
@@ -288,9 +295,8 @@ def challenge_strings(devs, drops_name):
         board = "snowskate" if d["kind"] == "skate" else "snowboard"
         s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
         s["DevChal_%s_Help" % d["id"]] = ("Career_ChangeGear_Help", (
-            "%s, %s. For now it takes the place of %s there: ride %s, choose %s and beat"
-            " the run with no more than three misses."
-            % (mountain, board, drops_name[d["id"]], mountain, drops_name[d["id"]])))
+            "%s, %s. Ride %s, choose %s and beat the run with at most three misses."
+            % (mountain, board, mountain, drops_name[d["id"]])))   # two lines, as Career's
     return s
 
 
@@ -460,7 +466,7 @@ def menu(proj: Project, devs, drop_names, loose: Path):
     items = [("$DevChal_" + d["id"], "DevChal_" + d["id"], "DevChal_%s_Help" % d["id"],
               ["$FlyButton", 'PushMenu("LevelSelect")']) for d in devs]
     for entry, data in scene_files(proj.game, items).items():
-        p = loose / SHELL / entry
+        p = loose / SCENE_ARCHIVE / entry
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)
     built = proj.root / "mods" / "build" / "game" / BASE

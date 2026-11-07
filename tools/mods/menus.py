@@ -57,10 +57,12 @@ Edits:
      (Delete, page turns, skill points, save replay ...) stay.
  10. Career gains DEVELOPER CHALLENGES as its second item, under RIDE!
      (Shell.rui Scenes/MainCareer.scene; PLAN Phase 25). Its action,
-     DevChallenges in Scenes/MainCareer.actions, opens a new screen,
-     Scenes/DevChallenges.* (Career's list layout with its own items),
-     which says NO CHALLENGES YET until tools/mods/dev_challenge.py's pack
-     lists its challenges there.
+     DevChallenges in Scenes/MainCareer.actions, opens the list screen
+     (Career's list layout with its own items). The game opens only screen
+     names it registers natively, so the list takes the place of an unused
+     Xbox Live screen, Base.rui Scenes/PlayerFeedback.* (see
+     dev_challenge.SCENE_NAME). It says NO CHALLENGES YET until
+     tools/mods/dev_challenge.py's pack lists its challenges there.
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -369,15 +371,16 @@ def career_menu():
 
 def career_actions():
     """Scenes/MainCareer.actions plus DevChallenges: $FlyButton, then
-    PushMenu("DevChallenges"), as the other items open their screens
+    PushMenu of the list screen, as the other items open their screens
     ($FlyButton flies the chosen button up to be the new screen's title)."""
     entry = "GuiPackages/Shell.rui/Scenes/MainCareer.actions"
     with zipfile.ZipFile(GAME / "GuiPackages" / "Shell.rui") as z:
         f = rui_actions.read(z.read("Scenes/MainCareer.actions"))
     if f.find("DevChallenges"):
         sys.exit(f"{entry}: already has a DevChallenges action")
+    import dev_challenge
     stmts = [b"$" + f.ref("FlyButton"),
-             f.ref("PushMenu") + b'("' + f.ref("DevChallenges") + b'")']
+             f.ref("PushMenu") + b'("' + f.ref(dev_challenge.SCENE_NAME) + b'")']
     f.actions.append(rui_actions.Action("DevChallenges", [], [(b"", stmts)]))
     f.actions.sort(key=lambda a: a.name)      # the game looks them up sorted
     path = OVERRIDES / entry
@@ -394,7 +397,7 @@ def dev_challenges_scene():
         "$DevChal_None", "DevChal_None", "DevChal_None_Help",
         ["PlayMenuItemSelectSound()"])])
     for entry, data in files.items():
-        path = OVERRIDES / "GuiPackages" / "Shell.rui" / entry
+        path = OVERRIDES / dev_challenge.SCENE_ARCHIVE / entry
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         print(f"wrote {path.relative_to(ROOT)}")

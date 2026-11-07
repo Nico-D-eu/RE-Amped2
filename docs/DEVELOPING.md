@@ -399,8 +399,10 @@ Save Replay (each is its own save in `UDATA\4d530041\<id>\`, in the Pro
 replay format, with the rider's look); `add --save <id>` turns one into a
 Pro challenge in `mods\packs\dev-challenges` (loose entries: the
 recording, the look, and the level's challenge and drop-point scripts from
-`mods\source`). Until the Career menu item exists, it stands in for one of
-the level's Pro challenges, so try it on a copy of the saves.
+`mods\source`). For now it stands in for one of the level's Pro
+challenges, so try it on a copy of the saves. `build` also lists the
+challenges under Career > DEVELOPER CHALLENGES (Base.rui
+`Scenes/PlayerFeedback.*`, see "GUI screens are registered natively").
 
 **Mod packs.** `mods\mods.json` lists the packs to use, highest priority
 first: `{ "packs": ["hd-snow", "menus"] }`. A pack is a folder
@@ -1867,6 +1869,31 @@ old fold.
   64–128 MB physical, so it never shares a page number with the window.
 - **Pad-handle race.** `diag/xinput_page0.bin`: the device pointer was
   written at 0x80000322 while the handle 0x80000289 expects it at +0xA3.
+
+### GUI screens are registered natively (2026-11-07)
+
+`PushMenu("<name>")` opens a screen only if default.xbe registers that name.
+Static initialisers build one object per screen (for example MainCareer at
+`0x003E378C`, vtable `0x00366688`, made by `sub_00289C60` through the base
+constructor `sub_00212770(id, name, default control)`), and the GUI code
+calls them by address (`sub_000FF040`, `sub_000FF9E0`). A scene whose three
+files (`.scene`, `.sceneData`, `.actions`) exist but whose name has no object
+is ignored: a new `Scenes/DevChallenges.*` in Shell.rui, and even an exact
+copy of Options as `Options2`, never opened, wherever they sat in the
+archive. The screen stayed on the old one, its list flown away, so A ran the
+same item again. Found with title-screen probes (Start rewired to
+`PushMenu`, `RECOMP_PAD_SCRIPT`, `RECOMP_GPU_SHOT_PRESENT`); the Options
+control opened at once.
+
+A mod that needs a screen of its own therefore reuses a registered one the
+port never shows. The Xbox Live screens in Base.rui (always loaded) are the
+candidates: the menu mod's MODS AND GRAPHICS is `Options_Online`, the
+developer-challenge list is `PlayerFeedback`. Both classes override only
+slots 6, 7, 28 and 29 of the base vtable `0x00356068`. A screen's class
+can do its own work in those slots, so check a reused one on screen.
+
+Note for tests: the game reads the pad whether or not its window has focus,
+so a test run beside a game someone is playing gets their presses too.
 
 ### Known toolkit issue (for upstream)
 
