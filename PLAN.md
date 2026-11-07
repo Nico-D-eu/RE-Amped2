@@ -825,6 +825,7 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 | 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
 | 21 | Linux build (then macOS and arm64), **next (user, 2026-10-31)** | Upstream v0.16 already has a POSIX runtime; the GPU back end is what's missing | Yes, under Linux |
 | 22 | Vulkan back end (proposed 2026-11-05) | Replaces GL off Windows and the D3D12 step of the upscaler plan; not a Windows speed fix | Yes, Windows first, then native Linux |
+| 23–26 | Gameplay features (proposed 2026-11-07): state map, practice save state, developer challenges, online high scores | Player-facing; the game's replay and Pro-challenge systems do most of the work | Yes, isolated runs |
 
 - **Standing lane:** bugs from the user's testing come before any phase.
   For each one: reproduce it, fix it, add a suite case, and ship the fix in
@@ -1371,6 +1372,201 @@ back ends.
 - [ ] The suite passes with each back end
 - [ ] The Windows default (D3D11) is unchanged
 
+### Phases 23–26: gameplay features (proposed by the user, 2026-11-07)
+
+**Status: proposed, not started.** Three player-facing ideas: a save state
+for practice, recorded "developer challenges", and shared online high
+scores. All three are possible within reason, because the game already
+has most of the machinery. Phase 23 is the groundwork that all three need.
+
+**What the game already has** (strings in `default.xbe` and the level
+scripts; checked 2026-11-07):
+- **A replay system.** Every Pro challenge (`CHAL_PRO`) plays a recorded
+  run: `ProReplay = "Pro\\Pro1"` names `Pro/Pro1.rpl` (motion), `.evt`
+  (trick events) and `.ActionMap` in the level's `.res`. The ambient
+  riders use the same format (`AmbientRuns/*`). The player's own run is
+  recorded too (`Career.rpl`, `Career.evt`, `Career.ActionMap`), for the
+  Replay Theater and the replay VCR's Save Replay (`SaveReplay`,
+  `Replay_VCR_Record`, `BOARDER_REPLAY_IO`).
+- **Three strikes.** `CHAL_PRO` parts carry `Value = 3` (tries),
+  `TrickRadius`, `PointThreshold` and a `ProParts` look file; the HUD has
+  `$ProScore_ResetStrikes`. This is the "max 3 failed" rule, ready-made.
+- **Data-driven sessions.** `Multiplayer_Session_Race.lua` takes its
+  `ProReplay` from `MultiplayerGameDescr.GameData`, so a session can be
+  described by data rather than by the career list.
+- **Drop points.** `<Level>_DropPoints.lua` spawns the rider at
+  `DropLoc`/`DropDir`; some are `IsDebugOnly` recording spots
+  (`ambrec0`, ID `Replay0`), so the developers recorded runs in game.
+- **Records.** `<Level>_Records.lua` (`HighScore`), `RecordHS`,
+  `RecordMS` (media/photo score), `StatsTrickScore`, a `.records` save
+  file, and Xbox Live stats (`/xstats/...`), which are stubbed.
+
+**What it does not have:** a mid-run save state. A whole-machine snapshot
+(as emulators do) is **not feasible** here: the recompiled game runs on
+host threads and host stacks, with live D3D11, XAudio2 and kernel objects
+that guest RAM doesn't describe. Phase 24 is therefore a gameplay
+checkpoint: the rider and the score, not the machine.
+
+| # | Phase | Size | Depends on |
+|---|---|---|---|
+| 23 | Gameplay state map (RE groundwork) | Medium | — |
+| 24 | Practice save state (checkpoint) | Medium | 23 |
+| 25 | Developer challenges (own menu item) | Medium–large | 23; the replay format |
+| 26 | Online high scores (opt-in) | Small client, plus a service to run | 23; 24's "assisted" flag |
+
+Suggested order: 23, 24, 26 (local records and submission first), then
+25. Each phase is a separate branch and PR.
+
+#### Phase 23: Gameplay state map
+
+Find, by address, what the other three phases read and write. Record the
+findings in `docs/DEVELOPING.md` "Bring-up notes"; no player-facing change.
+
+1. **Session lifecycle.** The functions for run start, Restart Run, Leave
+   Mountain, level load and unload, and challenge start, success and fail.
+   A native hook on each, with an opt-in log line (`AMPED2_GAMEPLAY_TRACE`).
+2. **The rider object.** Position, orientation, linear and angular
+   velocity, grounded or airborne, stance, trick and animation state.
+   Start from the drop-point spawn (it writes `DropLoc` into the rider)
+   and use `RECOMP_WATCH` / `RECOMP_FIND_FLOAT` to confirm.
+3. **Score state.** Run score, combo, style meter and multipliers, the
+   session counters the HUD draws (`$TrickScore`, `$HighScore`,
+   `$MediaScore`), and where the challenge scripts keep their progress
+   (Lua tables in the guest heap, or native counters).
+4. **Records.** Where best score, best photo (media) score and best trick
+   live in memory and in the `.records` file, and when the game updates
+   them. **Read-only;** saves are never written by our code.
+5. **Replay files.** Where `Career.rpl/.evt/.ActionMap` are written
+   (cache partition or `UDATA`), when, and how Save Replay stores them in
+   the Replay Theater. Enough of the `.rpl`/`.evt` layout to find the
+   start position, length and frame rate (needed to trim a run in 25).
+6. **Pad input.** Which buttons the game uses in a run: Back, L3 and R3
+   (stick clicks), and the triggers. The chord in 24 must not collide.
+
+**Exit:** every item above has an address and a one-line description, and
+the trace shows a full run (start, tricks, a challenge, Leave Mountain)
+in the right order.
+
+#### Phase 24: Practice save state
+
+**Behaviour (user's design):** a button chord stores a checkpoint; Back
+restores the rider **and the score** to that moment. The checkpoint is
+cleared when the level is completed or left.
+
+1. **Input.** Detect the chord on the host, in the toolkit's pad layer
+   (before the emulated USB report), so it works the same with every pad
+   and keyboard. Default **L3+R3** (both stick clicks; the triggers are
+   trick buttons). Configurable in `amped2.ini` `[Game] SaveStateChord`
+   and `SaveStateRestore`. While a checkpoint exists, Back is swallowed so
+   the game doesn't also act on it.
+2. **Save** (only when allowed): rider on the ground, not mid-trick, not in
+   a cut scene, menu or challenge transition. Otherwise a short "can't save
+   now" notice. The copy is taken on the game's main thread at the top of
+   a frame, never from the input thread.
+3. **Restore** at the same safe point: rider state (position, orientation,
+   velocity, so a gap can still be cleared), score, combo and meters. Then
+   one frame of settling (camera snap, trail reset). A HUD notice
+   ("Checkpoint saved" / "Back to checkpoint") through the game's own
+   `$EventNotification` or the debug overlay.
+4. **Cleared on** run end, Restart Run, Choose New Run, Leave Mountain,
+   level change and challenge completion. Never stored to disk.
+5. **Fairness.** A run that used a restore is marked **assisted**: no
+   online submission (Phase 26). Whether career challenges still count is
+   a setting (default: they count, since easing gaps and snowmen is the
+   point).
+6. A MODS AND GRAPHICS row "PRACTICE CHECKPOINTS: OFF/ON" (default OFF).
+
+**Open question for the user:** on restore, do gaps and snowmen found
+*after* the checkpoint stay found (simple, one-way), or are they undone
+too (needs a copy of the challenge scripts' state)? Recommended: they
+stay found; only the score goes back.
+
+**Risks:** restoring mid-air or mid-grind leaves the physics or animation
+inconsistent (hence the "on the ground" rule); challenge scripts may hold
+their own timers. Try ML1's gaps and snowmen first.
+
+**Exit:** save before an ML1 gap, miss it, restore, clear it, with the
+score back at the saved value each time; the checkpoint is gone after
+Leave Mountain; 30 minutes of use with no crash; the default (off) changes
+nothing.
+
+#### Phase 25: Developer challenges
+
+**Behaviour (user's design):** a recorded run, or part of one, with its
+tricks and score, that the player tries to beat, with at most three failed
+tries, like the Pro challenges. Its own main-menu item.
+
+1. **Recording.** A developer plays a run and saves it with the game's own
+   Save Replay. `tools/mods/dev_challenge.py record` copies the saved
+   files out of the save (read-only) into a challenge folder with a small
+   `challenge.json`: level, start drop point, rider look, title, the
+   target score, the trick list (from `.evt`), and a trim range.
+2. **Trimming** ("a section of a run") needs the `.rpl`/`.evt` layout from
+   Phase 23. Until then a challenge is a whole run started from a drop
+   point; the tool adds that drop point (`DropLoc` = the run's first
+   frame).
+3. **Playing it.** Don't touch the career list: new entries would shift
+   the challenge indices in `Career.progress`. Instead a "DEVELOPER
+   CHALLENGES" main-menu item (the scene overlay, as for QUIT GAME) opens a
+   list, and choosing one starts a session described by data, with a
+   `CHAL_PRO` part whose `ProReplay` names the challenge's files, served
+   through the loose-file overlay (`mod_loose.c`). First try the
+   single-player session route; the multiplayer race descriptor
+   (`GameData.ProReplay`) is the fallback.
+4. **Results** go to our own `devchallenges.json` beside `amped2.ini`
+   (beaten, best score, tries), not to the career save.
+5. **Distribution.** The `.rpl` and `.evt` files are made by a player and
+   hold no game data, so the project may ship them. The `.ActionMap`
+   (9300 bytes in every pro and ambient run) looks like a copy of a game
+   table: the recipe copies it from the player's own disc at install
+   time. Check this before shipping any recording.
+
+**Exit:** three developer challenges on two levels, playable from the new
+menu item; the pro rider follows the recording; three misses fail the
+challenge; a win is remembered; the career save is byte-identical before
+and after.
+
+#### Phase 26: Online high scores (opt-in)
+
+**Behaviour (user's design):** shared "live" high scores per level, with
+the rider name: best score, best photo score, best trick.
+
+**Before any code, three decisions:**
+- **Privacy.** Today "the game makes no network connections" (checked
+  2026-10-31) and the installer links a privacy policy that says so. This
+  phase makes it opt-in (off by default, asked once), updates the policy
+  and the README, and sends only the rider name, level, category, score,
+  game version and a random install ID. No account, no e-mail.
+- **Trust.** An open-source client can't be trusted: anyone can send any
+  score. Mitigations: sanity caps per level and category, rate limits per
+  install ID, a moderator delete, and (later) a run's replay attached as
+  proof, which also lets players watch a record run in the Replay Theater
+  or race it as a Phase 25 challenge. Runs marked assisted (24) or made
+  with gameplay-changing mods (e.g. an edited `TrickInfo.lua`) are not
+  sent.
+- **Hosting and cost.** Recommended: a small HTTP API on Cloudflare
+  Workers with D1 (SQLite), whose free tier covers this project, owned by
+  the maintainer's account. Supabase is the alternative. Not dreamlo-style
+  services (plain HTTP, no moderation).
+
+1. **Service:** `POST /scores` and `GET /scores?level=&category=`, the
+   top 100 per level and category, best per rider name. Source in its own
+   repository (MIT), not in the game's.
+2. **Client:** after a run, read the new records found in Phase 23 (best
+   score, best photo score, best trick) and queue a submission. Sent from
+   a background thread (WinHTTP on Windows, libcurl on Linux; credit it in
+   `NOTICE.md`), never from a game thread, with retries and an offline
+   queue file.
+3. **Viewing:** first a web page (served by the same Worker). Later an
+   in-game "ONLINE RECORDS" screen, reusing a stubbed Xbox Live scene.
+4. **Settings:** `[Online] Enabled`, `RiderName` (defaults to the
+   profile's name), a MODS AND GRAPHICS row, and the installer's opt-in.
+
+**Exit:** two machines submit scores and see each other's on the web page;
+with the setting off, no network connection is made (checked with a
+packet capture); a game started offline queues and sends later; no frame
+time change while sending.
+
 ---
 
 ## Risks
@@ -1386,6 +1582,9 @@ back ends.
 | Microsoft changes the Dev Mode policy | The Xbox port (Phase 13) stops working | Keep the Xbox layer thin over Phase 12; the Windows build is unaffected |
 | PS5 homebrew: firmware churn, toolchain changes, Sony's attention | Phase 14 breaks or draws a takedown | Exploratory only, separate target, open toolchain only, no exploit code, no Sony code |
 | Vulkan: too many pipelines, compile hitches, driver differences | Phase 22 stutters or looks different per vendor | Dynamic state, async compile with a disk pipeline cache, D3D11 screenshots as the reference, validation layers in debug builds |
+| A restored checkpoint leaves physics or scripts inconsistent | Phase 24 crashes or breaks a challenge | Save only on the ground and outside tricks and transitions; restore at the top of a frame; ML1 first |
+| Recorded runs contain game data (`.ActionMap`) | Can't ship developer challenges | Check the format; copy game-derived parts from the player's disc at install time |
+| Online scores: cheating, privacy, a service to keep running | Fake records, broken "no network" promise, cost | Opt-in and off by default, minimal data, caps and moderation, replay proof later, free-tier hosting the maintainer owns |
 
 ## Working agreements
 
