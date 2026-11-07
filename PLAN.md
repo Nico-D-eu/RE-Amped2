@@ -1611,19 +1611,32 @@ challenges won.
      menu, no Pro challenge taken over, and the mountain need not be
      unlocked. The item's help names the mountain and says A starts it;
      nothing else for the player to do. Plan:
-     1. *Its own challenge, not Pro N.* The pack adds a drop point and a
-        `CHAL_PRO` challenge with new IDs (`DevChal1`, ...) to the level's
-        scripts instead of moving Pro 3, with `ProReplay`/`ProParts` naming
-        the dev files. Check that the career ignores them: the checklist,
-        "Own the mountain" counts and the drop-point menu must not list or
-        count them (a native filter on the drop-point list if they do).
+     The challenges are reachable only from Career > DEVELOPER CHALLENGES,
+     never from a stage's drop-point menu under RIDE! (user, 2026-11-07).
+     1. *Its own challenge, not Pro N.* **Done (2026-11-07):** the pack
+        appends drop point `Dev<n>` and `CHAL_PRO` challenge `DevChal<n>`
+        (no rank, REWARD_NONE) to the level's scripts; the Pro challenges
+        stay as on the disc. The drop point has `IsDebugOnly = true`, as
+        the disc's own debug drop points, so the stage's menu does not list
+        it (the flag lands in byte +0xA of the parsed drop point,
+        `0x000A5EA0`). Still to check on screen: hidden from the menu, and
+        the checklist and "Own the mountain" counts unchanged.
      2. *A native command* beside QuitGame (`recomp_manual.c`, the
         `sub_00218140` wrapper): `StartDevChallenge(n)` reads challenge n's
         level and drop point from a small table the tool writes, sets the
-        level the way `SelectLevel()` does (handler `sub_001E0F50`; it
-        writes the chosen level to globals around `0x003AD748`) without
-        the unlock check, remembers the drop point, and runs what
-        `LaunchGame()` runs (handler `sub_00102630`).
+        level the way `SelectLevel()` does without the unlock check, and
+        runs what `LaunchGame()` runs (handler `sub_00102630`).
+        `SelectLevel()` (handler `sub_001E0F50`, `this` = the LevelSelect
+        scene) takes the selected entry from the list (`this+0x3C` ->
+        `+0x24` index, `+0x4C` array). An entry has the locked flag at
+        `+0x1C` (zero: locked sound and return), strings at `+0x08`,
+        `+0x28` and `+0x3C`, and `+0x2C`. It copies `+0x2C` into the
+        next-level object `0x003AD748` (`sub_00020C30`) and `+0x28` into
+        `0x003AD758`, then calls `sub_000200B0` on `0x003AD748`. The
+        native command needs Laax 2's entry (find the table the list is
+        filled from) and must do the same without the `+0x1C` check.
+        Because the drop point is debug-only, the in-level part (step 3)
+        must start it by ID, not through the menu's list.
      3. *In the level,* where the drop-point menu would open, a pending
         dev challenge picks its drop point and starts it as
         `ChooseDropPoint()` does (handler `sub_0010DA50`, Game.rui

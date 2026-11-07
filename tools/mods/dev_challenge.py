@@ -240,7 +240,12 @@ def apply_challenge(chal: str, drops: str, dev: dict):
     index = max(int(x) for x in re.findall(r"\bIndex = (\d+)", drops)) + 1
     for pat, rep in [(r'\bID = "[^"]*"', 'ID = "%s"' % drop_id),
                      (r'\bIndex = \d+', "Index = %d" % index),
-                     (r'DisplayName = L"[^"]*"', 'DisplayName = L"%s"' % dev["title"])]:
+                     (r'DisplayName = L"[^"]*"', 'DisplayName = L"%s"' % dev["title"]),
+                     # Kept out of the level's drop-point menu, as the disc's
+                     # own debug drop points are (parsed to byte +0xA of the
+                     # drop point, sub_000A5xxx): only the DEVELOPER
+                     # CHALLENGES list starts it (PLAN Phase 25).
+                     (r'IsDebugOnly = (true|false)', "IsDebugOnly = true")]:
         pro, n = re.subn(pat, lambda m, rep=rep: rep, pro, count=1)
         if n != 1:
             raise ValueError("%s: %s not found" % (slot_drop, pat))
