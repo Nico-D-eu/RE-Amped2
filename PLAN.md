@@ -1528,13 +1528,32 @@ tries, like the Pro challenges. Its own main-menu item.
    files out of the save (read-only) into a challenge folder with a small
    `challenge.json`: level, start drop point, rider look, title, the
    target score, the trick list (from `.evt`), and a trim range.
-   **Proof of concept (2026-11-07), awaiting the user's play test:** a
-   local pack `mods\packs\dev-challenge-test` (loose entries) adds a
-   copy of a saved LX2 run as `Levels\LX2\LX2.res\Pro\dev1.*` and a
-   `LX2_Challenges.lua` whose three `CHAL_PRO` parts name
-   `ProReplay = "Pro\\dev1"`. It merges and boots (isolated run); whether
-   the pro rider rides the player's run is the open question. Known gap:
-   the player still starts at the original Pro drop point.
+   **Proof of concept works (user's play test, 2026-11-07):** a local
+   loose-entry pack made Laax 2's "Pro 3" replay the user's saved
+   `Photo2 LX2` run (`Pro\dev1.*` in `LX2.res`, `ProReplay =
+   "Pro\\dev1"`). The pro rode the recorded run, there were tricks to beat
+   (3, as many as the run had) and the three strikes counted. What it
+   took, and what the tool must do:
+   - **Start position.** A `.rpl` starts with `02000000 00` and the first
+     position as three int16 X, Y, Z in 1/20 m. Recordings start within
+     3 m of the drop point they were ridden from.
+   - **Drop point type.** The session follows the drop point's `Type`;
+     only a `"Pro"` drop point starts a Pro challenge. So the tool moves
+     (or adds) a `Type = "Pro"` drop point, rather than pointing the
+     challenge at the recording's own (photo-shoot) drop point. The
+     drop points exist twice, identical: `<Level>.res`
+     `<Level>_DropPoints.lua` and `Levels.res` `<Level>/<Level>_droppoints.lua`.
+   - **Head start.** The disc's pros start 21-40 m ahead of the player
+     along `DropDir`; with the player on the recording's own start, the
+     pro spawned inside them. The drop point goes about 20 m back up the
+     slope (test pending).
+   - **The pro's look.** `ProParts` names a look file; a saved replay
+     carries the rider's own (`Career.parts` / `Career.boarder`, plain
+     Lua `BoarderParts` / `BoarderDefinition` tables, as the pros'
+     `.parts`/`.boarder`). Added as `Characters\pro\pro.res\ProParts\
+     Dev1.parts` (test pending).
+   - **Board or skate:** a board run in a snowskate challenge fails at
+     once (tricks go through the wrong `.ActionMap` table).
 2. **Trimming** ("a section of a run") needs the `.rpl`/`.evt` layout from
    Phase 23. Until then a challenge is a whole run started from a drop
    point; the tool adds that drop point (`DropLoc` = the run's first
