@@ -1636,7 +1636,15 @@ challenges won.
         native command needs Laax 2's entry (find the table the list is
         filled from) and must do the same without the `+0x1C` check.
         Because the drop point is debug-only, the in-level part (step 3)
-        must start it by ID, not through the menu's list.
+        must start it by ID, not through the menu's list. Leads for the
+        level entries: LevelSelect's class (object `0x003E3600`, vtable
+        `0x003661E8`) fills its list when pushed, slot 6 `sub_001DEBF0` ->
+        `sub_001DF370` (reads `0x003ACD24`, `0x003ACD0C`, `0x003AD748`;
+        calls `sub_001DF680`, `sub_001DFBA0`). A test harness that needs no
+        menu walk: rewire the title's Start (Shell.rui
+        `IntroMovie.actions`) to `StartDevChallenge(1)` in a scratch pack,
+        `RECOMP_PAD_SCRIPT=15000:start`, shots every 3 s (DEVELOPING.md,
+        "GUI screens are registered natively").
      3. *In the level,* where the drop-point menu would open, a pending
         dev challenge picks its drop point and starts it as
         `ChooseDropPoint()` does (handler `sub_0010DA50`, Game.rui
