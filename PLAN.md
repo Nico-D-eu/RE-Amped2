@@ -1591,9 +1591,17 @@ challenges won.
      challenge checklist's) showing each challenge's title, level, board
      or skate, and won or not. A screen of its own, pushed with
      `$FlyButton` + `PushMenu`, with its own description per challenge:
-     Career's help card must not show there (user, 2026-11-07). **Done:**
-     the Career item (menus.py edit 10); it plays only the select sound
-     until this screen exists.
+     Career's help card must not show there (user, 2026-11-07). **Done
+     (2026-11-07):** the Career item (menus.py edit 10) opens
+     `Shell.rui` `Scenes/DevChallenges.*`, a new scene with Career's list
+     layout and its own items: "NO CHALLENGES YET" from the menu mod, or
+     the pack's challenges (`dev_challenge.py build` writes the scene and
+     its strings as loose entries; the strings start from the menu mod's
+     `Base.rui` tables, so rerun `build` after `menus.py`). For now an
+     item's help says which mountain and Pro challenge it stands in for,
+     and A goes to the mountain list (`PushMenu("LevelSelect")`). The pro
+     pictures are strings too: `<Level>_<ChallengeID>` = `Pict_Pro_<name>`
+     (e.g. `LX2_ProChal3`), names `ProName<n>`.
    - **Starting one:** load the level and start a Pro session at the
      challenge's drop point, with a `CHAL_PRO` part whose `ProReplay` and
      `ProParts` name the challenge's files (the loose-file overlay, as the

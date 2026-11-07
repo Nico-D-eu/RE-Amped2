@@ -48,7 +48,25 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools" / "assets"))
+import rui_actions  # noqa: E402
+import string_table  # noqa: E402
+
 TITLE_ID = "4d530041"
+LANGS = ("eng", "fre", "ger")
+# The Career screen's DEVELOPER CHALLENGES list (menus.py edit 10). A scene is
+# three entries named after it; PushMenu("DevChallenges") finds them by name.
+SCENE = "Scenes/DevChallenges"
+SHELL = "GuiPackages/Shell.rui"
+BASE = "GuiPackages/Base.rui"
+# Mountain names as the menus show them (the levels' own LEVEL_NAMEs are
+# internal: "LaaxII", "Bear2").
+MOUNTAINS = {
+    "ML1": "Millicent 1", "ML2": "Millicent 2", "LX1": "Laax 1", "LX2": "Laax 2",
+    "BR1": "Bear Mountain 1", "BR2": "Bear Mountain 2", "BR3": "Bear Mountain 3",
+    "BR4": "Bear Mountain 4", "BK1": "Breckenridge 1", "BK2": "Breckenridge 2",
+    "AU1": "Mt. Buller 1", "AU2": "Mt. Buller 2", "HD1": "Mt. Hood 1",
+    "HD2": "Mt. Hood 2", "NZ1": "New Zealand"}
 RECORDING = ("rpl", "evt", "ActionMap")
 LOOK = ("parts", "boarder")
 HEAD_START = 20.0      # metres the player starts behind the pro
@@ -195,6 +213,87 @@ def apply_challenge(chal: str, drops: str, dev: dict):
     return chal, drops[:a] + pro + drops[b:]
 
 
+# ---- the menu screen --------------------------------------------------------
+
+def lua_list(name, items, indent="        "):
+    body = (",\r\n" + indent + "  ").join('"%s"' % i for i in items)
+    return "%s%s = {\r\n%s  %s\r\n%s}" % (indent, name, indent, body, indent)
+
+
+def scene_files(game: Path, items):
+    """The DevChallenges scene: {entry in Shell.rui: bytes}.
+
+    items: (action, text ID, help ID, statements), statements as GUI action
+    text, e.g. ['$FlyButton', 'PushMenu("LevelSelect")']. The list looks
+    and behaves like Career's (same layout file, same list actions), with
+    its own items, so Career's help texts don't show here."""
+    lists = [lua_list("AButton", [a for a, _, _, _ in items]),
+             lua_list("HelpTextIDs", [h for _, _, h, _ in items]),
+             lua_list("Start", [a for a, _, _, _ in items]),
+             lua_list("TextIDs", [t for _, t, _, _ in items])]
+    scene = ("Scenes.DevChallenges = {\r\n"
+             '  ButtonLegendID = "ButtonLegend_AB",\r\n'
+             "  Controls = {\r\n"
+             "    [1] = {\r\n"
+             '      BButton = "$Back",\r\n'
+             '      Back = "$Back",\r\n'
+             '      DefaultInput = "ListProcessInput",\r\n'
+             '      Down = "ListSelNext()",\r\n'
+             "      Items = {\r\n" + ",\r\n".join(lists) + "\r\n      },\r\n"
+             '      Up = "ListSelPrevious()"\r\n'
+             "    }\r\n"
+             "  },\r\n"
+             '  DefaultAction = "$SetupMenu"\r\n'
+             "}\r\n")
+    with zipfile.ZipFile(game / SHELL) as z:
+        layout = z.read("Scenes/MainCareer.sceneData")
+        f = rui_actions.read(z.read("Scenes/MainCareer.actions"))
+    for action, _, _, stmts in items:
+        f.actions.append(rui_actions.Action(action.lstrip("$"), [], [(b"", [
+            action_tokens(f, s) for s in stmts])]))
+    f.actions.sort(key=lambda a: a.name)      # the game looks them up sorted
+    return {SCENE + ".scene": ("-- RE-Amped2 developer challenges (tools/mods/dev_challenge.py)\r\n"
+                               + scene).encode("latin-1"),
+            SCENE + ".sceneData": layout,
+            SCENE + ".actions": rui_actions.write(f)}
+
+
+def action_tokens(f, stmt: str) -> bytes:
+    """GUI action text -> tokens: names and quoted strings become string refs."""
+    out, i = b"", 0
+    for m in re.finditer(r"[A-Za-z_][A-Za-z_0-9]*", stmt):
+        out += stmt[i:m.start()].encode("ascii") + f.ref(m.group())
+        i = m.end()
+    return out + stmt[i:].encode("ascii")
+
+
+def string_tables(base_rui: Path, strings):
+    """Base.rui's string tables with strings = {key: (like, text)} added."""
+    out = {}
+    with zipfile.ZipFile(base_rui) as z:
+        for lang in LANGS:
+            entry = "StringTables/%s/StringTable.dat" % lang
+            table = string_table.read(z.read(entry))
+            for key, (like, text) in strings.items():
+                table.set(key, text[lang] if isinstance(text, dict) else text, like)
+            out[entry] = string_table.write(table)
+    return out
+
+
+def challenge_strings(devs, drops_name):
+    """{key: (like, text)} for the list's items."""
+    s = {}
+    for d in devs:
+        mountain = MOUNTAINS.get(d["level"], d["level"])
+        board = "snowskate" if d["kind"] == "skate" else "snowboard"
+        s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
+        s["DevChal_%s_Help" % d["id"]] = ("Career_ChangeGear_Help", (
+            "%s, %s. For now it takes the place of %s there: ride %s, choose %s and beat"
+            " the run with no more than three misses."
+            % (mountain, board, drops_name[d["id"]], mountain, drops_name[d["id"]])))
+    return s
+
+
 # ---- the pack ---------------------------------------------------------------
 
 class Project:
@@ -318,10 +417,16 @@ def cmd_build(proj: Project, args):
     for c in data["challenges"]:
         by_level.setdefault(c["level"], []).append(c)
     levels_res = proj.game / "Levels" / "Levels.res"
+    drop_names = {}
     for level, devs in sorted(by_level.items()):
         res = proj.game / "Levels" / level / (level + ".res")
         chal = read(proj.level_source(level, "Challenges"))
         drops = read(proj.level_source(level, "DropPoints"))
+        slots = pro_slots(chal, drops)
+        for dev in devs:
+            a, b = table_with(drops, slots[dev["slot"]][0])
+            m = re.search(r'DisplayName = L"([^"]*)"', drops[a:b])
+            drop_names[dev["id"]] = m.group(1) if m else dev["slot"]
         for dev in devs:
             chal, drops = apply_challenge(chal, drops, dev)
             rec = proj.pack / "recordings" / dev["id"]
@@ -341,7 +446,31 @@ def cmd_build(proj: Project, args):
         write(loose / "Levels" / "Levels.res"
               / proj.entry(levels_res, "%s/%s_droppoints.lua" % (level, level)), drops)
         print("built %s: %s" % (level, ", ".join("%s -> %s" % (d["id"], d["slot"]) for d in devs)))
+    if data["challenges"]:
+        menu(proj, data["challenges"], drop_names, loose)
     enable(proj, bool(data["challenges"]))
+
+
+def menu(proj: Project, devs, drop_names, loose: Path):
+    """Career -> DEVELOPER CHALLENGES lists this pack's challenges.
+
+    Its strings go into Base.rui's string tables, starting from the menu
+    mod's (mods\\build\\game) when it is there: rerun `build` after
+    tools/mods/menus.py."""
+    items = [("$DevChal_" + d["id"], "DevChal_" + d["id"], "DevChal_%s_Help" % d["id"],
+              ["$FlyButton", 'PushMenu("LevelSelect")']) for d in devs]
+    for entry, data in scene_files(proj.game, items).items():
+        p = loose / SHELL / entry
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+    built = proj.root / "mods" / "build" / "game" / BASE
+    base = built if built.exists() else proj.game / BASE
+    for entry, data in string_tables(base, challenge_strings(devs, drop_names)).items():
+        p = loose / BASE / entry
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+    print("built the DEVELOPER CHALLENGES list: %d item(s), strings from %s"
+          % (len(items), base.relative_to(proj.root)))
 
 
 def enable(proj: Project, on: bool):

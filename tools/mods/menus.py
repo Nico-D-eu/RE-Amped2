@@ -56,11 +56,11 @@ Edits:
      and Xbox demos items, in every language. Items for other actions
      (Delete, page turns, skill points, save replay ...) stay.
  10. Career gains DEVELOPER CHALLENGES as its second item, under RIDE!
-     (Shell.rui Scenes/MainCareer.scene; PLAN Phase 25). It runs a new
-     action, DevChallenges, added to Scenes/MainCareer.actions: the select
-     sound, then DevChallenges(), a shell command src/recomp_manual.c is to
-     register beside QuitGame. Work in progress: the list screen it opens
-     is not written yet, so for now the item only plays the sound.
+     (Shell.rui Scenes/MainCareer.scene; PLAN Phase 25). Its action,
+     DevChallenges in Scenes/MainCareer.actions, opens a new screen,
+     Scenes/DevChallenges.* (Career's list layout with its own items),
+     which says NO CHALLENGES YET until tools/mods/dev_challenge.py's pack
+     lists its challenges there.
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -105,6 +105,16 @@ STRINGS = {
         "fre": "Affrontez les descentes des développeurs. Tous les 3 défis"
                " gagnés, vous recevez un point à ajouter aux stats de votre planche.",
         "ger": "Fahre gegen die Läufe der Entwickler. Für je 3 gewonnene"
+               " Challenges bekommst du einen Punkt für deine Board-Werte."}),
+    "DevChal_None": ("Career_ChangeGear", {
+        "eng": "NO CHALLENGES YET", "fre": "AUCUN DÉFI POUR L'INSTANT",
+        "ger": "NOCH KEINE CHALLENGES"}),
+    "DevChal_None_Help": ("Career_ChangeGear_Help", {
+        "eng": "No developer challenges are installed yet. For every 3 challenges won,"
+               " you will be awarded a stat point to add to your board stats.",
+        "fre": "Aucun défi des développeurs n'est encore installé. Tous les 3 défis"
+               " gagnés, vous recevez un point à ajouter aux stats de votre planche.",
+        "ger": "Noch keine Entwickler-Challenges installiert. Für je 3 gewonnene"
                " Challenges bekommst du einen Punkt für deine Board-Werte."}),
     # Options -> Game Options: the PC settings (edit 4).
     "GameOptions_Window": ("GameOptions_Vibration", {
@@ -358,24 +368,36 @@ def career_menu():
 
 
 def career_actions():
-    """Scenes/MainCareer.actions plus DevChallenges (select sound; DevChallenges()).
-
-    Not $FlyButton yet: it flies the list's buttons out for the next screen
-    (the other items then PushMenu), and with no screen to push the Career
-    frame stayed empty with its help card (user's test, 2026-11-07). Once
-    the list screen exists, this becomes $FlyButton plus its PushMenu."""
+    """Scenes/MainCareer.actions plus DevChallenges: $FlyButton, then
+    PushMenu("DevChallenges"), as the other items open their screens
+    ($FlyButton flies the chosen button up to be the new screen's title)."""
     entry = "GuiPackages/Shell.rui/Scenes/MainCareer.actions"
     with zipfile.ZipFile(GAME / "GuiPackages" / "Shell.rui") as z:
         f = rui_actions.read(z.read("Scenes/MainCareer.actions"))
     if f.find("DevChallenges"):
         sys.exit(f"{entry}: already has a DevChallenges action")
-    stmts = [f.ref("PlayMenuItemSelectSound") + b"()", f.ref("DevChallenges") + b"()"]
+    stmts = [b"$" + f.ref("FlyButton"),
+             f.ref("PushMenu") + b'("' + f.ref("DevChallenges") + b'")']
     f.actions.append(rui_actions.Action("DevChallenges", [], [(b"", stmts)]))
     f.actions.sort(key=lambda a: a.name)      # the game looks them up sorted
     path = OVERRIDES / entry
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(rui_actions.write(f))
     print(f"wrote {path.relative_to(ROOT)}")
+
+
+def dev_challenges_scene():
+    """The DEVELOPER CHALLENGES screen with nothing installed (edit 10).
+    tools/mods/dev_challenge.py's pack replaces it with its challenges."""
+    import dev_challenge
+    files = dev_challenge.scene_files(GAME, [(
+        "$DevChal_None", "DevChal_None", "DevChal_None_Help",
+        ["PlayMenuItemSelectSound()"])])
+    for entry, data in files.items():
+        path = OVERRIDES / "GuiPackages" / "Shell.rui" / entry
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        print(f"wrote {path.relative_to(ROOT)}")
 
 
 def lua_list_append(src, name, items, start=0, indent=None):
@@ -647,6 +669,7 @@ if __name__ == "__main__":
     main_actions()
     career_menu()
     career_actions()
+    dev_challenges_scene()
     game_options_scene()
     game_options_scene_data()
     options_scene()
