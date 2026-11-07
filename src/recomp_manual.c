@@ -1076,7 +1076,7 @@ static void amped2_put_cstr(uint32_t va, const char *s)
 #define AMPED2_GCALL(fn) do { g_esp -= 4; MEM32(g_esp) = 0; fn(); } while (0)
 
 extern void sub_00013800(void), sub_00020C30(void), sub_000200B0(void);
-extern void sub_0010BCB0(void), sub_0010DA50(void);
+extern void sub_0010BCB0(void), sub_0010DA50(void), sub_000A2590(void);
 extern void sub_00102360(void), sub_001022A0(void), sub_0010FED0(void), sub_0010FEA0(void);
 extern void sub_002194B0(void), sub_00018B40(void);
 
@@ -1284,46 +1284,79 @@ static void amped2_devchal_poll(void)
     }
 }
 
+/* The level's drop points: [[[0x003ACDC8]+0x24]+0x58], +8 array, +0xC
+ * count, +0 the current one. The one whose ID (+0x4C) is `id`, or 0. */
+static uint32_t amped2_find_drop(const char *id)
+{
+    uint32_t mgr = MEM32(MEM32(MEM32(0x003ACDC8u) + 0x24) + 0x58), i, n;
+    n = mgr ? MEM32(mgr + 0xC) : 0;
+    for (i = 0; i < n; i++) {
+        uint32_t d = MEM32(MEM32(mgr + 8) + 4 * i);
+        if (d && amped2_ieq(amped2_gstr(MEM32(d + 0x4C)), id))
+            return d;
+    }
+    return 0;
+}
+
 /* The level's drop-point screen (Game.rui DropPoint, object 0x003CDF90,
  * vtable 0x003573D8) builds its menu when pushed, slot 6 sub_0010BCB0
- * (thiscall, `ret 4`). With a developer challenge pending, start its drop
- * point straight away, as ChooseDropPoint() (sub_0010DA50) does for the
- * menu's selected item: the drop point is IsDebugOnly, so it is not in the
- * menu, and the selected item lends it its slot for the call. */
+ * (thiscall, `ret 4`). With a developer challenge pending, its drop point
+ * goes into this one menu as any other (its IsDebugOnly flag, byte +0xA,
+ * is cleared while the menu is built), selected beforehand as the current
+ * drop point (sub_000A2590), and is chosen at once as ChooseDropPoint()
+ * (sub_0010DA50) does for the selected item: the run then starts as from
+ * the menu. Lending another item the drop point instead put the player at
+ * the right place but started no challenge (no pro, no markers) when the
+ * challenge was not "New". */
 static void amped2_droppoint_push(void)
 {
-    uint32_t self = g_ecx, ret;
-    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp;
+    uint32_t self = g_ecx, ret, dp = 0;
+    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp, sc = g_ecx;
+    uint8_t debug_only = 0;
+    if (g_devchal_pending && (dp = amped2_find_drop(g_devchal_drop)) != 0) {
+        debug_only = MEM8(dp + 0xA);
+        MEM8(dp + 0xA) = 0;
+        g_ecx = MEM32(MEM32(MEM32(0x003ACDC8u) + 0x24) + 0x58);
+        g_edi = dp;
+        AMPED2_GCALL(sub_000A2590);
+        g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp; g_ecx = sc;
+    }
     sub_0010BCB0();
     ret = g_eax;
     if (g_devchal_pending) {
-        uint32_t mgr = MEM32(MEM32(MEM32(0x003ACDC8u) + 0x24) + 0x58);
-        uint32_t list = MEM32(self + 0x3C), dp = 0, item = 0, i, n, sel = 0;
-        n = mgr ? MEM32(mgr + 0xC) : 0;
-        for (i = 0; i < n && !dp; i++) {
-            uint32_t d = MEM32(MEM32(mgr + 8) + 4 * i);
-            if (amped2_ieq(amped2_gstr(MEM32(d + 0x4C)), g_devchal_drop))
-                dp = d;
-        }
+        uint32_t list = MEM32(self + 0x3C), item = 0, i, n, sel = 0;
+        if (dp)
+            MEM8(dp + 0xA) = debug_only;
         n = list ? MEM32(list + 0x50) : 0;
-        for (i = 0; i < n && !item; i++) {
+        for (i = 0; i < n && dp && !item; i++) {
             uint32_t it = MEM32(MEM32(list + 0x4C) + 4 * i);
-            if (it && MEM32(it + 0x20) && !amped2_ieq(amped2_gstr(MEM32(it + 8)), "Locked")) {
+            if (it && MEM32(it + 0x20) == dp) {
                 item = it;
                 sel = i;
             }
         }
-        fprintf(stderr, "  [DEVCHAL] drop-point screen: %s -> dp %08X, menu item %u of %u\n",
-                g_devchal_drop, dp, sel, n);
-        if (dp && item) {
-            uint32_t old = MEM32(item + 0x20);
+        /* The career menu lists only plain drop points and the fixed
+         * Sponsor1-3, PhotoShoot1-3, Pro1-3: a Dev<n> is never in it, so an
+         * unlocked item lends it its slot. */
+        for (i = 0; i < n && dp && !item; i++) {
+            uint32_t it = MEM32(MEM32(list + 0x4C) + 4 * i);
+            if (it && MEM32(it + 0x20) && !amped2_ieq(amped2_gstr(MEM32(it + 8)), "Locked")) {
+                item = it;
+                sel = i;
+                MEM32(it + 0x20) = dp;
+            }
+        }
+        fprintf(stderr, "  [DEVCHAL] drop-point screen: %s -> dp %08X (challenge %08X state %d),"
+                " menu item %u of %u%s, was selected %d\n", g_devchal_drop, dp,
+                dp ? MEM32(dp + 0x10) : 0,
+                dp && MEM32(dp + 0x10) ? (int)MEM32(MEM32(dp + 0x10) + 4) : -1, sel, n,
+                item ? "" : " (not in the menu)", list ? (int)MEM32(list + 0x24) : -1);
+        if (item) {
             MEM32(list + 0x24) = sel;
-            MEM32(item + 0x20) = dp;
             MEM32(self + 0x7C) = 0;         /* 0.0f: the screen's input delay */
             g_ecx = self;
             g_esp -= 4; MEM32(g_esp) = 0;   /* the (unused) call arguments */
             AMPED2_GCALL(sub_0010DA50);
-            MEM32(item + 0x20) = old;
             snprintf(g_devchal_playing, sizeof g_devchal_playing, "%s", g_devchal_drop);
             g_devchal_dp = dp;
             g_devchal_counted = 0;

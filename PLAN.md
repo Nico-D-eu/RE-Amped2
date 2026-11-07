@@ -1673,6 +1673,25 @@ challenges won.
      way back (`sub_00102360`, then the shell's LevelSelect push becomes
      the list); not seen on screen, nor the end of a won or failed run:
      scripted input never finished a run.
+     **Open: `DevChal<n>` never runs as a Pro challenge (user's hand test,
+     2026-11-07).** The player starts at `Dev1`, but there is no pro, no
+     markers and no score (with a "New" challenge only its intro card
+     shows); with no input the player's own rider rides and does tricks.
+     Started the same way on the same save, `Pro1` (ProChal1) runs fully:
+     "1 OF 10", the miss markers, the target score, launch circles. So the
+     start path is right and the challenge itself is the problem. Ruled
+     out: the lent menu item (the drop point now stays in it); a
+     `<L>_Progress.lua` entry for `Dev1`/`DevChal1` (Available, no locks;
+     no change). Leads: the game knows Pro challenges by ID. The career
+     drop-point menu adds only the fixed names Sponsor1-3, PhotoShoot1-3
+     and Pro1-3 (`0x0010C416` on, `sub_000A1E70` by name), plain drop
+     points only of type 0, 4 or 9 (`0x0010C205`); challenge code finds
+     "ProChal" in the ID and reads its number 1-3 (`0x0004CC3F`,
+     `strstr` + `atoi`); the end of a run builds "ProChal%d" from a pro
+     index (`0x00016F7B`, `[obj+0x40]`). Next: find where a run starts a
+     CHAL_PRO challenge's pro and HUD, and whether an ID like
+     `ProChal4`/`ProChalDev1` or a temporary in-memory stand-in for a
+     ProChal slot gets it running without touching the career's records.
    - **The pro's name and picture** in the intro and the avatar: a native
      hook on the fixed pro-name table (see above) gives the developer's
      name and a generic picture.
