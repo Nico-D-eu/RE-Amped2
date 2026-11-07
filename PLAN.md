@@ -1412,10 +1412,11 @@ checkpoint: the rider and the score, not the machine.
 | 23 | Gameplay state map (RE groundwork) | Medium | — |
 | 24 | Practice save state (checkpoint; undoes gaps and snowmen too) | Medium–large | 23 |
 | 25 | Developer challenges (own menu item) | Medium–large | 23; the replay format |
-| 26 | Online high scores (opt-in) | Small client, plus a service to run | 23; 24's "assisted" flag |
+| 26 | Online high scores with replays (opt-in, honor system) | Medium client, plus a service to run | 23; 24's "assisted" flag; 25's replay playback for watching in game |
 
-Suggested order: 23, 24, 26 (local records and submission first), then
-25. Each phase is a separate branch and PR.
+Suggested order: 23, 24, then 26's upload and web page (steps 1-3, 5,
+6), then 25, then 26's in-game watching (step 4), which plays replays the
+way 25 does. Each phase is a separate branch and PR.
 
 #### Phase 23: Gameplay state map
 
@@ -1548,43 +1549,74 @@ and after.
 #### Phase 26: Online high scores (opt-in)
 
 **Behaviour (user's design):** shared "live" high scores per level, with
-the rider name: best score, best photo score, best trick.
+the rider name: best score, best photo score, best trick. **Every entry
+carries the run's replay**, for verification and bragging rights, and
+the board is an **honor system** (user, 2026-11-07): no anti-cheat, the
+replay is the proof, and anyone can watch it.
 
 **Before any code, three decisions:**
 - **Privacy.** Today "the game makes no network connections" (checked
   2026-10-31) and the installer links a privacy policy that says so. This
   phase makes it opt-in (off by default, asked once), updates the policy
   and the README, and sends only the rider name, level, category, score,
-  game version and a random install ID. No account, no e-mail.
-- **Trust.** An open-source client can't be trusted: anyone can send any
-  score. Mitigations: sanity caps per level and category, rate limits per
-  install ID, a moderator delete, and (later) a run's replay attached as
-  proof, which also lets players watch a record run in the Replay Theater
-  or race it as a Phase 25 challenge. Runs marked assisted (24) or made
-  with gameplay-changing mods (e.g. an edited `TrickInfo.lua`) are not
-  sent.
+  game version, a random install ID, the list of active gameplay mods and
+  the replay. A replay holds the rider's motion and trick events, nothing
+  personal. No account, no e-mail.
+- **Honor system.** An open-source client can't be trusted, and this
+  phase doesn't try: no score checks against the replay, no signing. What
+  keeps the board honest is that every record can be watched. The server
+  only guards against abuse, not cheating: a size cap per upload, rate
+  limits per install ID, a "report" link and a moderator delete. Runs
+  that used a checkpoint restore (24) are not sent (the replay would show
+  the jumps anyway); runs with gameplay-changing mods (e.g. an edited
+  `TrickInfo.lua`) are sent with a visible "modded" tag.
 - **Hosting and cost.** Recommended: a small HTTP API on Cloudflare
-  Workers with D1 (SQLite), whose free tier covers this project, owned by
-  the maintainer's account. Supabase is the alternative. Not dreamlo-style
-  services (plain HTTP, no moderation).
+  Workers, with D1 (SQLite) for the entries and R2 for the replay files,
+  owned by the maintainer's account. A replay is about 50-150 KB (the
+  pro and ambient runs are 40-100 KB of `.rpl` plus `.evt`; a full career
+  run may be longer, measured in Phase 23), so the free tiers cover
+  thousands of records. Only replays still on a board are kept; a beaten
+  entry's replay is deleted. Supabase (Postgres plus storage) is the
+  alternative. Not dreamlo-style services (plain HTTP, no file storage,
+  no moderation).
 
-1. **Service:** `POST /scores` and `GET /scores?level=&category=`, the
-   top 100 per level and category, best per rider name. Source in its own
-   repository (MIT), not in the game's.
-2. **Client:** after a run, read the new records found in Phase 23 (best
-   score, best photo score, best trick) and queue a submission. Sent from
-   a background thread (WinHTTP on Windows, libcurl on Linux; credit it in
-   `NOTICE.md`), never from a game thread, with retries and an offline
-   queue file.
-3. **Viewing:** first a web page (served by the same Worker). Later an
-   in-game "ONLINE RECORDS" screen, reusing a stubbed Xbox Live scene.
-4. **Settings:** `[Online] Enabled`, `RiderName` (defaults to the
+1. **Capturing the replay.** The game overwrites `Career.rpl`/`.evt` on
+   every run, so the client copies them the moment Phase 23's records
+   hook sees a new personal best, before the next run starts, into a
+   local `replays/` folder beside `amped2.ini` (never into the save). One
+   whole-run replay serves all three categories; for best trick and best
+   photo the entry also stores the time of that trick or photo (from
+   `.evt`), so viewers jump straight to it. Only `.rpl` and `.evt` are
+   uploaded: if `.ActionMap` turns out to be game data (see Phase 25), the
+   viewer supplies it from the player's own disc.
+2. **Service:** `POST /scores` (entry plus replay, one multipart upload),
+   `GET /scores?level=&category=` (top 100, best per rider name),
+   `GET /replays/<id>` (the files), `POST /report/<id>`. Source in its
+   own repository (MIT), not in the game's.
+3. **Client upload:** from a background thread (WinHTTP on Windows,
+   libcurl on Linux; credit it in `NOTICE.md`), never from a game thread,
+   with retries and an offline queue (the entry and its replay copy stay
+   in `replays/` until sent).
+4. **Watching records in game.** An "ONLINE RECORDS" screen (a stubbed
+   Xbox Live scene reused) lists the boards; choosing an entry downloads
+   its replay and plays it in the level, the way the game plays a Pro
+   rider's run: through the loose-file overlay, as a data-described
+   session (the Phase 25 route), never by writing into the Replay
+   Theater's save slots. "Race this run" turns the same replay into a
+   Phase 25 challenge, three tries included.
+5. **Web page** served by the same Worker: the boards, rider names, tags
+   and a download link per replay. A 3D web viewer is out of scope.
+6. **Settings:** `[Online] Enabled`, `RiderName` (defaults to the
    profile's name), a MODS AND GRAPHICS row, and the installer's opt-in.
 
-**Exit:** two machines submit scores and see each other's on the web page;
-with the setting off, no network connection is made (checked with a
-packet capture); a game started offline queues and sends later; no frame
-time change while sending.
+**Exit:** two machines submit records and see each other's on the web
+page and in game; each entry's replay downloads and plays back in the
+right level, matching the run that was recorded, and the best-trick and
+best-photo entries start at the right moment; a checkpoint-assisted run
+is not sent and a modded one shows its tag; a beaten entry's replay is
+deleted from storage; with the setting off, no network connection is made
+(checked with a packet capture); a game started offline queues and sends
+later; no frame-time change while uploading.
 
 ---
 
@@ -1604,7 +1636,8 @@ time change while sending.
 | A restored checkpoint leaves physics or scripts inconsistent | Phase 24 crashes or breaks a challenge | Save only on the ground and outside tricks and transitions; restore at the top of a frame; ML1 first |
 | Undone gaps and snowmen don't come back cleanly (freed objects, HUD drift) | A challenge can't be finished after a restore | Map the progress state fully in Phase 23; per-type fallback to "found stays found" |
 | Recorded runs contain game data (`.ActionMap`) | Can't ship developer challenges | Check the format; copy game-derived parts from the player's disc at install time |
-| Online scores: cheating, privacy, a service to keep running | Fake records, broken "no network" promise, cost | Opt-in and off by default, minimal data, caps and moderation, replay proof later, free-tier hosting the maintainer owns |
+| Online scores: cheating, privacy, a service to keep running | Fake records, broken "no network" promise, cost | Honor system with the replay as proof on every entry, report and moderator delete; opt-in and off by default, minimal data; free-tier hosting the maintainer owns, replays kept only while on a board |
+| A downloaded replay doesn't play back as recorded (version or mod differences) | Records can't be verified | Store the game version and mod list with each entry; play back only with a matching version; Phase 23 maps the replay format first |
 
 ## Working agreements
 
