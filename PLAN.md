@@ -1411,7 +1411,7 @@ checkpoint: the rider and the score, not the machine.
 |---|---|---|---|
 | 23 | Gameplay state map (RE groundwork) | Medium | — |
 | 24 | Practice save state (checkpoint; undoes gaps and snowmen too) | Medium–large | 23 |
-| 25 | Developer challenges (own menu item) | Medium–large | 23; the replay format |
+| 25 | Developer challenges (Career menu item, stat-point reward, photo shoots); the challenge tool is done | Medium–large | 23; the replay format |
 | 26 | Online high scores with replays (opt-in, honor system) | Medium client, plus a service to run | 23; 24's "assisted" flag; 25's replay playback for watching in game |
 
 Suggested order: 23, 24, then 26's upload and web page (steps 1-3, 5,
@@ -1521,13 +1521,24 @@ the default (off) changes nothing.
 
 **Behaviour (user's design):** a recorded run, or part of one, with its
 tricks and score, that the player tries to beat, with at most three failed
-tries, like the Pro challenges. Its own main-menu item.
+tries, like the Pro challenges. **Menu (user, 2026-11-07):** Career ->
+"DEVELOPER CHALLENGES", the second item, under "Ride!", with a description
+that ends "For every 3 challenges won, you will be awarded a stat point to
+add to your board stats." **Reward:** one stat point per three developer
+challenges won.
 
-1. **Recording.** A developer plays a run and saves it with the game's own
-   Save Replay. `tools/mods/dev_challenge.py record` copies the saved
-   files out of the save (read-only) into a challenge folder with a small
-   `challenge.json`: level, start drop point, rider look, title, the
-   target score, the trick list (from `.evt`), and a trim range.
+1. **Recording. Done (2026-11-07): `tools/mods/dev_challenge.py`.** A
+   developer saves a run with the game's own Save Replay; `list` shows the
+   saved replays (level, board or skate, start position), `add --save ID`
+   copies one (read-only) into `mods\packs\dev-challenges\recordings\` and
+   its list `devchallenges.json`, `remove` and `build` keep the pack's
+   loose entries in step, and the pack is listed first in `mods.json`.
+   It does everything the proof of concept below did by hand, and its
+   output is byte-identical to the play-tested pack. Until the menu
+   exists, a developer challenge stands in for one of the level's Pro
+   challenges of the same board type (`--slot`), so a win there is
+   recorded as that Pro challenge's in the career save: test on a copy of
+   the saves.
    **Proof of concept works (user's play test, 2026-11-07):** a local
    loose-entry pack made Laax 2's "Pro 3" replay the user's saved
    `Photo2 LX2` run (`Pro\dev1.*` in `LX2.res`, `ProReplay =
@@ -1566,26 +1577,59 @@ tries, like the Pro challenges. Its own main-menu item.
    Phase 23. Until then a challenge is a whole run started from a drop
    point; the tool adds that drop point (`DropLoc` = the run's first
    frame).
-3. **Playing it.** Don't touch the career list: new entries would shift
-   the challenge indices in `Career.progress`. Instead a "DEVELOPER
-   CHALLENGES" main-menu item (the scene overlay, as for QUIT GAME) opens a
-   list, and choosing one starts a session described by data, with a
-   `CHAL_PRO` part whose `ProReplay` names the challenge's files, served
-   through the loose-file overlay (`mod_loose.c`). First try the
-   single-player session route; the multiplayer race descriptor
-   (`GameData.ProReplay`) is the fallback.
-4. **Results** go to our own `devchallenges.json` beside `amped2.ini`
-   (beaten, best score, tries), not to the career save.
-5. **Distribution.** The `.rpl` and `.evt` files are made by a player and
-   hold no game data, so the project may ship them. The `.ActionMap`
-   (9300 bytes in every pro and ambient run) looks like a copy of a game
-   table: the recipe copies it from the player's own disc at install
-   time. Check this before shipping any recording.
+3. **Playing it: the menu.** Don't add to the career list: new entries
+   would shift the challenge indices in `Career.progress`.
+   - **Menu item:** the Career screen (`Shell.rui`, found and edited by
+     `tools/mods/menus.py` the way it already edits the main menu) gets
+     "DEVELOPER CHALLENGES" as its second item, under "Ride!", with a new
+     action name caught by the native GUI-action hook (as QUIT GAME) and a
+     help line in the string table: "Race runs recorded by the RE-Amped2
+     developers: beat their tricks and score with no more than three
+     misses. For every 3 challenges won, you will be awarded a stat point
+     to add to your board stats."
+   - **List screen:** a reused list scene (the Replay Theater's or the
+     challenge checklist's) showing each challenge's title, level, board
+     or skate, and won or not.
+   - **Starting one:** load the level and start a Pro session at the
+     challenge's drop point, with a `CHAL_PRO` part whose `ProReplay` and
+     `ProParts` name the challenge's files (the loose-file overlay, as the
+     tool does now), without that part being one of the career's
+     challenges. First try the single-player session route (find how
+     "Choose New Run" starts a challenge); the multiplayer race descriptor
+     (`GameData.ProReplay`) is the fallback.
+   - **The pro's name and picture** in the intro and the avatar: a native
+     hook on the fixed pro-name table (see above) gives the developer's
+     name and a generic picture.
+4. **Results and the reward.** Wins, best score and tries go to our own
+   `devchallenges.json` beside `amped2.ini`, not to the career save. On
+   every third win, the player gets one stat point through the game's own
+   reward path (the one a `REWARD_PROSKILLPOINTS` or
+   `REWARD_SCORESKILLPOINTS` challenge takes, "EarnedSkillPoints"), so the
+   career save changes only the way the game itself changes it. Each
+   point is awarded once (the count of points given is kept too), and a
+   challenge counts once, however often it is won.
+5. **Developer photo shoots: possible.** A photo shoot is a
+   `CHAL_MEDIASEQ` challenge whose `RingArrayFile` (e.g.
+   `Levels\LX2\photoshoot\ps_1.lua`) is a plain list of `MediaRings`
+   points, with the score to beat as `Value`. A developer photo shoot puts
+   rings along the developer's own line and sets their photo score as the
+   target; it starts from a `Type = "Sequence"` drop point (the photo
+   shoots' type). Needs the `.rpl` positions over the whole run (Phase 23,
+   item 5), not just the start; the target score comes from the
+   recording's `.evt` or is typed in. Shown in the same menu, marked
+   "photo".
+6. **Distribution.** The `.rpl` and `.evt` files are made by a player and
+   hold no game data, so the project may ship them. The `.ActionMap` is a
+   snapshot of a game table (8 versions across 441 disc files): the
+   recipe copies the matching one from the player's own disc at install
+   time. The look files (`Career.parts`/`.boarder`) name the game's
+   meshes and textures only; check them before shipping a recording.
 
-**Exit:** three developer challenges on two levels, playable from the new
-menu item; the pro rider follows the recording; three misses fail the
-challenge; a win is remembered; the career save is byte-identical before
-and after.
+**Exit:** three developer challenges on two levels, played from Career ->
+DEVELOPER CHALLENGES; the pro rider follows the recording, in the
+developer's look and name; three misses fail the challenge; a win is
+remembered; after three wins the player has one more stat point to spend,
+and the career save differs only by it; one developer photo shoot.
 
 #### Phase 26: Online high scores (opt-in)
 

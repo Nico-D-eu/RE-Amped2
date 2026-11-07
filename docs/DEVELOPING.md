@@ -393,6 +393,15 @@ command closes the window. New labels go into the game's string table
 (`tools/assets/string_table.py`). `Mods=0` turns all of it off. The recipe
 needs the toolkit's Python packages: `py -3.10 tools/mods/menus.py` here.
 
+**Developer challenges (in progress, PLAN Phase 25).** `python
+tools/mods/dev_challenge.py list` shows the replays saved with the game's
+Save Replay (each is its own save in `UDATA\4d530041\<id>\`, in the Pro
+replay format, with the rider's look); `add --save <id>` turns one into a
+Pro challenge in `mods\packs\dev-challenges` (loose entries: the
+recording, the look, and the level's challenge and drop-point scripts from
+`mods\source`). Until the Career menu item exists, it stands in for one of
+the level's Pro challenges, so try it on a copy of the saves.
+
 **Mod packs.** `mods\mods.json` lists the packs to use, highest priority
 first: `{ "packs": ["hd-snow", "menus"] }`. A pack is a folder
 `mods\packs\<name>\` with `game\` (files that stand in for the same paths in
