@@ -57,10 +57,10 @@ Edits:
      (Delete, page turns, skill points, save replay ...) stay.
  10. Career gains DEVELOPER CHALLENGES as its second item, under RIDE!
      (Shell.rui Scenes/MainCareer.scene; PLAN Phase 25). It runs a new
-     action, DevChallenges, added to Scenes/MainCareer.actions: $FlyButton,
-     then DevChallenges(), a shell command src/recomp_manual.c registers
-     beside QuitGame. Work in progress: the list screen it opens is not
-     written yet.
+     action, DevChallenges, added to Scenes/MainCareer.actions: the select
+     sound, then DevChallenges(), a shell command src/recomp_manual.c is to
+     register beside QuitGame. Work in progress: the list screen it opens
+     is not written yet, so for now the item only plays the sound.
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -358,13 +358,18 @@ def career_menu():
 
 
 def career_actions():
-    """Scenes/MainCareer.actions plus DevChallenges ($FlyButton; DevChallenges())."""
+    """Scenes/MainCareer.actions plus DevChallenges (select sound; DevChallenges()).
+
+    Not $FlyButton yet: it flies the list's buttons out for the next screen
+    (the other items then PushMenu), and with no screen to push the Career
+    frame stayed empty with its help card (user's test, 2026-11-07). Once
+    the list screen exists, this becomes $FlyButton plus its PushMenu."""
     entry = "GuiPackages/Shell.rui/Scenes/MainCareer.actions"
     with zipfile.ZipFile(GAME / "GuiPackages" / "Shell.rui") as z:
         f = rui_actions.read(z.read("Scenes/MainCareer.actions"))
     if f.find("DevChallenges"):
         sys.exit(f"{entry}: already has a DevChallenges action")
-    stmts = [b"$" + f.ref("FlyButton"), f.ref("DevChallenges") + b"()"]
+    stmts = [f.ref("PlayMenuItemSelectSound") + b"()", f.ref("DevChallenges") + b"()"]
     f.actions.append(rui_actions.Action("DevChallenges", [], [(b"", stmts)]))
     f.actions.sort(key=lambda a: a.name)      # the game looks them up sorted
     path = OVERRIDES / entry

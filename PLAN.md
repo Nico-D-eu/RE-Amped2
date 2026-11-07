@@ -1589,7 +1589,11 @@ challenges won.
      to add to your board stats."
    - **List screen:** a reused list scene (the Replay Theater's or the
      challenge checklist's) showing each challenge's title, level, board
-     or skate, and won or not.
+     or skate, and won or not. A screen of its own, pushed with
+     `$FlyButton` + `PushMenu`, with its own description per challenge:
+     Career's help card must not show there (user, 2026-11-07). **Done:**
+     the Career item (menus.py edit 10); it plays only the select sound
+     until this screen exists.
    - **Starting one:** load the level and start a Pro session at the
      challenge's drop point, with a `CHAL_PRO` part whose `ProReplay` and
      `ProParts` name the challenge's files (the loose-file overlay, as the
