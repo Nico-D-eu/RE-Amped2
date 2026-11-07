@@ -1606,13 +1606,36 @@ challenges won.
      and A goes to the mountain list (`PushMenu("LevelSelect")`). The pro
      pictures are strings too: `<Level>_<ChallengeID>` = `Pict_Pro_<name>`
      (e.g. `LX2_ProChal3`), names `ProName<n>`.
-   - **Starting one:** load the level and start a Pro session at the
-     challenge's drop point, with a `CHAL_PRO` part whose `ProReplay` and
-     `ProParts` name the challenge's files (the loose-file overlay, as the
-     tool does now), without that part being one of the career's
-     challenges. First try the single-player session route (find how
-     "Choose New Run" starts a challenge); the multiplayer race descriptor
-     (`GameData.ProReplay`) is the fallback.
+   - **Starting one (user, 2026-11-07, after checking the list):** A on a
+     challenge loads it straight away. No mountain list, no drop-point
+     menu, no Pro challenge taken over, and the mountain need not be
+     unlocked. The item's help names the mountain and says A starts it;
+     nothing else for the player to do. Plan:
+     1. *Its own challenge, not Pro N.* The pack adds a drop point and a
+        `CHAL_PRO` challenge with new IDs (`DevChal1`, ...) to the level's
+        scripts instead of moving Pro 3, with `ProReplay`/`ProParts` naming
+        the dev files. Check that the career ignores them: the checklist,
+        "Own the mountain" counts and the drop-point menu must not list or
+        count them (a native filter on the drop-point list if they do).
+     2. *A native command* beside QuitGame (`recomp_manual.c`, the
+        `sub_00218140` wrapper): `StartDevChallenge(n)` reads challenge n's
+        level and drop point from a small table the tool writes, sets the
+        level the way `SelectLevel()` does (handler `sub_001E0F50`; it
+        writes the chosen level to globals around `0x003AD748`) without
+        the unlock check, remembers the drop point, and runs what
+        `LaunchGame()` runs (handler `sub_00102630`).
+     3. *In the level,* where the drop-point menu would open, a pending
+        dev challenge picks its drop point and starts it as
+        `ChooseDropPoint()` does (handler `sub_0010DA50`, Game.rui
+        `DropPoint.actions`). Leaving the run (pause menu, end of run) goes
+        back to the DEVELOPER CHALLENGES list, not the level select
+        (`LaunchShellToCareerLevelSelect`, handler `sub_00102360`, is
+        the existing way back).
+     4. The list's A action becomes `$FlyButton` + `StartDevChallenge(n)`;
+        the tool writes the table with each challenge's level and drop
+        point.
+     The handlers were found from their names' registrations
+     (`ecx = <handler>` after `eax = <name>`). Not yet tried.
    - **The pro's name and picture** in the intro and the avatar: a native
      hook on the fixed pro-name table (see above) gives the developer's
      name and a generic picture.
