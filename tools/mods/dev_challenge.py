@@ -19,18 +19,19 @@ mods\packs\<pack>\loose\ and enables the pack in mods\mods.json:
 
 - Levels\<L>\<L>.res\Pro\devN.{rpl,evt,ActionMap}: the recording;
 - Characters\pro\pro.res\ProParts\DevN.{parts,boarder}: the rider's look;
-- <L>_Challenges.lua: the Pro challenge in the chosen slot gets
-  ProReplay = "Pro\\devN" and ProParts = "...\\DevN.Parts";
+- <L>_Challenges.lua: a challenge of its own, DevChal<n>, a copy of the
+  level's Pro challenge of the same board (--slot, the template) with
+  ProReplay = "Pro\devN", ProParts = "...\DevN.Parts", no rank and no
+  reward. The career's Pro challenges stay as they are;
 - <L>_DropPoints.lua, in <L>.res and again in Levels.res (the game keeps two
-  identical copies): that challenge's drop point moves to where the
-  recording starts, 20 m back up the slope, so the pro has the head start
-  the disc's pros have (21-40 m). The drop point keeps its Type "Pro", which
-  is what makes the game start a Pro challenge there.
+  identical copies): its own drop point Dev<n>, named after the challenge,
+  where the recording starts, 20 m back up the slope, so the pro has the
+  head start the disc's pros have (21-40 m). Type "Pro" is what makes the
+  game start a Pro challenge there.
+- the DEVELOPER CHALLENGES list (Career) with one item per challenge.
 
-Until the game has its own Developer Challenges menu (PLAN Phase 25), a
-developer challenge takes the place of one of the level's Pro challenges,
-board or snowskate as the recording, and a win is saved as that Pro
-challenge's: try it on a copy of the saves (tools/testenv.ps1). The edited scripts come from the
+For now the challenge is started from the level's drop-point menu; starting
+it straight from the list is PLAN Phase 25's next step. The edited scripts come from the
 decompiled sources in mods\source (tools/assets, amped_assets.py), so this
 runs only where those exist. Nothing made from the game goes into git.
 
@@ -187,29 +188,62 @@ def nearest_drop(drops: str, pos):
     return best
 
 
+def dev_ids(dev: dict):
+    """The challenge's own IDs in the level's scripts: drop point Dev<n>,
+    challenge DevChal<n>, from the pack ID dev<n>."""
+    n = dev["id"][3:]
+    return "Dev" + n, "DevChal" + n
+
+
+def append_table(text: str, block: str) -> str:
+    """Add a top-level table ("  {" ... "  }") after the last one."""
+    end = tables(text)[-1][1] + 4
+    return text[:end] + ",\r\n" + block + text[end:]
+
+
 def apply_challenge(chal: str, drops: str, dev: dict):
-    """Edit one level's two scripts for one developer challenge."""
+    """Add one developer challenge to a level's two scripts.
+
+    It gets its own drop point and its own CHAL_PRO challenge (copies of the
+    template Pro challenge of the same board, dev["slot"]), so the career's
+    Pro challenges stay as they are. No rank and no reward: wins are counted
+    by the mod, not the career."""
+    drop_id, chal_id = dev_ids(dev)
     slot_drop, _ = pro_slots(chal, drops)[dev["slot"]]
     i, j = table_with(chal, dev["slot"])
-    block = chal[i:j]
-    block, n1 = re.subn(r'ProReplay = "[^"]*"',
-                        lambda m: 'ProReplay = "Pro\\\\%s"' % dev["id"], block)
-    block, n2 = re.subn(r'ProParts = "[^"]*"',
-                        lambda m: 'ProParts = "Characters\\\\Pro\\\\ProParts\\\\%s.Parts"'
-                        % dev["id"].capitalize(), block)
-    if (n1, n2) != (1, 1):
-        raise ValueError("%s: ProReplay/ProParts not found once" % dev["slot"])
-    chal = chal[:i] + block + chal[j:]
+    block = chal[i + 1:j + 4]
+    subs = [(r'\bID = "[^"]*"', 'ID = "%s"' % chal_id),
+            (r'RankIncrease = \d+', "RankIncrease = 0"),
+            (r'RewardType = "[^"]*"', 'RewardType = "REWARD_NONE"'),
+            (r'RewardIndex = \d+', "RewardIndex = 0"),
+            (r'RewardInfo = "[^"]*"', 'RewardInfo = "Empty"'),
+            (r'ProReplay = "[^"]*"', 'ProReplay = "Pro\\\\%s"' % dev["id"]),
+            (r'ProParts = "[^"]*"',
+             'ProParts = "Characters\\\\Pro\\\\ProParts\\\\%s.Parts"' % dev["id"].capitalize()),
+            (r'DropPoints = \{"[^"]*"\}', 'DropPoints = {"%s"}' % drop_id)]
+    for pat, rep in subs:
+        block, n = re.subn(pat, lambda m, rep=rep: rep, block, count=1)
+        if n != 1:
+            raise ValueError("%s: %s not found" % (dev["slot"], pat))
+    chal = append_table(chal, block)
 
     # Start point: the drop point the recording began at gives the facing
-    # and the camera; the slot's own drop point (Type "Pro") is moved there.
+    # and the camera; the new drop point sits HEAD_START m behind it, so the
+    # pro starts ahead of the player.
     near = nearest_drop(drops, dev["start"])
     if near is None or near[0] > NEAR_START:
         raise ValueError("%s: no drop point within %.0f m of the recording's start %s"
                          % (dev["id"], NEAR_START, dev["start"]))
     src, raw = near[2], near[3]
     a, b = table_with(drops, slot_drop)
-    pro = drops[a:b]
+    pro = drops[a + 1:b + 4]
+    index = max(int(x) for x in re.findall(r"\bIndex = (\d+)", drops)) + 1
+    for pat, rep in [(r'\bID = "[^"]*"', 'ID = "%s"' % drop_id),
+                     (r'\bIndex = \d+', "Index = %d" % index),
+                     (r'DisplayName = L"[^"]*"', 'DisplayName = L"%s"' % dev["title"])]:
+        pro, n = re.subn(pat, lambda m, rep=rep: rep, pro, count=1)
+        if n != 1:
+            raise ValueError("%s: %s not found" % (slot_drop, pat))
     for axis in "XYZ":
         back = HEAD_START * src["DropDir" + axis]
         lift = LIFT if axis == "Y" else 0.0
@@ -217,7 +251,7 @@ def apply_challenge(chal: str, drops: str, dev: dict):
             pro = set_number(pro, field + axis, src[field + axis] - back + lift)
         pro = set_number(pro, "CamDir" + axis, raw["CamDir" + axis])
         pro = set_number(pro, "DropDir" + axis, raw["DropDir" + axis])
-    return chal, drops[:a] + pro + drops[b:]
+    return chal, append_table(drops, pro)
 
 
 # ---- the menu screen --------------------------------------------------------
@@ -295,8 +329,8 @@ def challenge_strings(devs, drops_name):
         board = "snowskate" if d["kind"] == "skate" else "snowboard"
         s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
         s["DevChal_%s_Help" % d["id"]] = ("Career_ChangeGear_Help", (
-            "%s, %s. Ride %s, choose %s and beat the run with at most three misses."
-            % (mountain, board, mountain, drops_name[d["id"]])))   # two lines, as Career's
+            "%s, %s. Beat the run with at most three misses. For now: ride %s and choose %s."
+            % (mountain, board, mountain, d["title"])))   # two lines, as Career's
     return s
 
 
@@ -451,7 +485,8 @@ def cmd_build(proj: Project, args):
               / proj.entry(res, level + "_DropPoints.lua"), drops)
         write(loose / "Levels" / "Levels.res"
               / proj.entry(levels_res, "%s/%s_droppoints.lua" % (level, level)), drops)
-        print("built %s: %s" % (level, ", ".join("%s -> %s" % (d["id"], d["slot"]) for d in devs)))
+        print("built %s: %s" % (level, ", ".join("%s -> %s (template %s)"
+                                                  % (d["id"], dev_ids(d)[1], d["slot"]) for d in devs)))
     if data["challenges"]:
         menu(proj, data["challenges"], drop_names, loose)
     enable(proj, bool(data["challenges"]))
