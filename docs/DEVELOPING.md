@@ -1895,6 +1895,51 @@ can do its own work in those slots, so check a reused one on screen.
 Note for tests: the game reads the pad whether or not its window has focus,
 so a test run beside a game someone is playing gets their presses too.
 
+### Starting a level and a drop point natively (2026-11-07)
+
+What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
+
+- **GUI command arguments.** A command is thiscall with one stack argument,
+  the call: `[arg+0x88]` arguments, 12 bytes each from `[arg+0x84]`. A quoted
+  one (`"LX2"`) has type 2 at +0 and its text as a String (`char *`) at +8;
+  a bare number has type 1. Commands registered in `sub_00218140` (the shell)
+  and in the game's own table (`LaunchGame` and the other `0x0010xxxx`
+  handlers, registered around `0x00100235`) are all callable from any scene,
+  shell or Base.rui.
+- **The level.** Level Select's entries (`0x003E3600 +0x74`, `+0x78` of them,
+  filled when the screen is pushed) hold the level's path at `+0x28`
+  (`D:\LEVELS\LX2\`), its file at `+0x2C` (`LX2.LVL`), its code at `+0x3C`
+  and the unlocked flag at `+0x1C`. `SelectLevel()` (`sub_001E0F50`) copies
+  the file into the session `0x003AD748` with `sub_00020C30` (thiscall, the
+  String pushed; also derives +0x10), sets the path (`+0x10`, `0x003AD758`)
+  with `sub_00013800` (eax = source String, ebx = target), writes the
+  session to Lua (`sub_000200B0`, ecx = session), sets
+  `[[0x003ACD14]+0x94] = -1` and calls `[[0x003AD0DC]]` vtable `+0x58`.
+  Its remaining work (marking the level's state "Available" in the career's
+  `.levels`) is not needed to play. `LaunchGame()` (`sub_00102630`) only
+  writes the session again and calls `sub_00023700([0x003ACD0C])`. The
+  session's other fields (`+0x14` AniInfoFilename, `+0x18` CareerName ...)
+  are already set by then, so a locked level loads like any other; checked
+  from the title screen with a save where Laax 2 is locked.
+- **The drop point.** The level's drop-point screen (Game.rui `DropPoint`,
+  object `0x003CDF90`, vtable `0x003573D8`) fills its menu when pushed (slot
+  6, `sub_0010BCB0`, `ret 4`). The level's drop points are in
+  `[[[0x003ACDC8]+0x24]+0x58]`: `+8` array, `+0xC` count, `+0` current;
+  each has its ID at `+0x4C` (char *) and its challenge at `+0x10`.
+  `IsDebugOnly` ones are there but not in the menu. `ChooseDropPoint()`
+  (`sub_0010DA50`) needs the screen's `+0x7C` (a float delay) at or below
+  zero, takes the list's (`+0x3C`) selected item (`+0x24`), refuses a
+  "Locked" item (`+8`), selects its drop point (`+0x20`) with
+  `sub_000A2590` (ecx = the drop points, edi = the drop point), runs
+  `$EndMenuForward` and hides the legends (`sub_00103E60` ... on
+  `0x003CDA08`). Run right after the push, with the drop point lent to the
+  selected item, it goes straight to the challenge's intro screen.
+- Calls into the game's own bodies from C push a dummy return address (the
+  bodies pop it), and the generated function names (`sub_X`) link from
+  `recomp_manual.c` without regenerating. Vtable slots and commands are
+  reached through `recomp_lookup_manual`, so they can be wrapped there
+  without a `sub_X_gen` regeneration.
+
 ### Known toolkit issue (for upstream)
 
 The lifter emits immediate shift counts unmasked: `shl ecx, 0x32` becomes

@@ -30,8 +30,9 @@ mods\packs\<pack>\loose\ and enables the pack in mods\mods.json:
   game start a Pro challenge there.
 - the DEVELOPER CHALLENGES list (Career) with one item per challenge.
 
-For now the challenge is started from the level's drop-point menu; starting
-it straight from the list is PLAN Phase 25's next step. The edited scripts come from the
+A on a list item starts the challenge straight away (start_statements): no
+mountain list, no drop-point menu, and the mountain need not be unlocked.
+The edited scripts come from the
 decompiled sources in mods\source (tools/assets, amped_assets.py), so this
 runs only where those exist. Nothing made from the game goes into git.
 
@@ -334,8 +335,8 @@ def challenge_strings(devs, drops_name):
         board = "snowskate" if d["kind"] == "skate" else "snowboard"
         s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
         s["DevChal_%s_Help" % d["id"]] = ("Career_ChangeGear_Help", (
-            "%s, %s. Beat the run with at most three misses. For now: ride %s and choose %s."
-            % (mountain, board, mountain, d["title"])))   # two lines, as Career's
+            "%s, %s. Beat the run with at most three misses. Press A to start."
+            % (mountain, board)))   # two lines, as Career's
     return s
 
 
@@ -497,6 +498,25 @@ def cmd_build(proj: Project, args):
     enable(proj, bool(data["challenges"]))
 
 
+def start_statements(dev: dict):
+    """The list item's A action: start the challenge at once.
+
+    StartDevChallenge(level, drop point) is a native command (src/
+    recomp_manual.c): it sets the session's level as SelectLevel() does,
+    without the mountain's locked check, and makes the level's drop-point
+    screen start the hidden drop point Dev<n> without showing its menu. The
+    rest is what Level Select's $SetupForLoadingScreen runs."""
+    drop_id, _ = dev_ids(dev)
+    return ["$FlyButton",
+            'StartDevChallenge("%s", "%s")' % (dev["level"], drop_id),
+            'SetActiveControl("")',
+            "FlyEverythingOff()",
+            "WaitForFlyEverythingOff()",
+            "Yield()",
+            "Yield()",
+            "LaunchGame()"]
+
+
 def menu(proj: Project, devs, drop_names, loose: Path):
     """Career -> DEVELOPER CHALLENGES lists this pack's challenges.
 
@@ -504,7 +524,7 @@ def menu(proj: Project, devs, drop_names, loose: Path):
     mod's (mods\\build\\game) when it is there: rerun `build` after
     tools/mods/menus.py."""
     items = [("$DevChal_" + d["id"], "DevChal_" + d["id"], "DevChal_%s_Help" % d["id"],
-              ["$FlyButton", 'PushMenu("LevelSelect")']) for d in devs]
+              start_statements(d)) for d in devs]
     for entry, data in scene_files(proj.game, items).items():
         p = loose / SCENE_ARCHIVE / entry
         p.parent.mkdir(parents=True, exist_ok=True)

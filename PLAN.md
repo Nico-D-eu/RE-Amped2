@@ -1621,6 +1621,14 @@ challenges won.
         it (the flag lands in byte +0xA of the parsed drop point,
         `0x000A5EA0`). Still to check on screen: hidden from the menu, and
         the checklist and "Own the mountain" counts unchanged.
+     **Steps 2-4 done (2026-11-07), checked from the title screen** (a
+     scratch pack's Start calls the command, save copy with Laax 2
+     locked): Laax 2 loads and opens on the Pro challenge intro of the
+     developer run, no drop-point menu. `StartDevChallenge("LX2", "Dev1")`
+     takes the level and drop point as arguments (the tool writes them
+     into the item's action), so there is no table file to keep in step.
+     Details in DEVELOPING.md, "Starting a level and a drop point
+     natively". Not yet checked from the Career list itself.
      2. *A native command* beside QuitGame (`recomp_manual.c`, the
         `sub_00218140` wrapper): `StartDevChallenge(n)` reads challenge n's
         level and drop point from a small table the tool writes, sets the

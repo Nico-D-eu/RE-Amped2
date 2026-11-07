@@ -1040,13 +1040,186 @@ static void amped2_register_command(uint32_t self, const char *name, uint32_t fn
     g_ecx = saved_ecx;
 }
 
+/* ── Developer challenges: StartDevChallenge(n) ─────────────────────── */
+#define AMPED2_DEVCHAL_NAME_VA 0x00010F10u
+#define AMPED2_DEVCHAL_FN_VA   0xFEFFFF10u
+
+static const char *amped2_gstr(uint32_t va)
+{
+    if (va < 0x10000u || va >= 0x08000000u)
+        return "(null)";
+    return (const char *)XBOX_PTR(va);
+}
+
+static int amped2_ieq(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++) {
+        char x = *a, y = *b;
+        if (x >= 'A' && x <= 'Z') x += 32;
+        if (y >= 'A' && y <= 'Z') y += 32;
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+
+/* A C string into the header-page scratch at va (64 bytes each). */
+static void amped2_put_cstr(uint32_t va, const char *s)
+{
+    size_t i;
+    for (i = 0; s[i] && i < 63; i++)
+        MEM8(va + i) = (uint8_t)s[i];
+    MEM8(va + i) = 0;
+}
+
+/* Call a guest function from C: dummy return address, as the generated
+ * bodies pop it themselves. Callers push stack arguments first. */
+#define AMPED2_GCALL(fn) do { g_esp -= 4; MEM32(g_esp) = 0; fn(); } while (0)
+
+extern void sub_00013800(void), sub_00020C30(void), sub_000200B0(void);
+extern void sub_0010BCB0(void), sub_0010DA50(void);
+
+/* The challenge StartDevChallenge set up: its level and drop point ID. The
+ * next drop-point screen starts it (amped2_droppoint_push). */
+static char g_devchal_level[8], g_devchal_drop[24], g_devchal_playing[24];
+static int g_devchal_pending;
+
+/* The i-th argument of a GUI command call as text ("" if none). Arguments
+ * are 12-byte values at [args+0x84], [args+0x88] of them; a quoted one keeps
+ * its text as a String (char *) at +8. */
+static const char *amped2_cmd_arg(uint32_t args, uint32_t i)
+{
+    if (i >= MEM32(args + 0x88))
+        return "";
+    return amped2_gstr(MEM32(MEM32(args + 0x84) + 12 * i + 8));
+}
+
+static void amped2_cmd_devchal(void)
+{
+    uint32_t args = MEM32(g_esp + 4);
+    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp, key;
+    const char *level = amped2_cmd_arg(args, 0), *drop = amped2_cmd_arg(args, 1);
+    char buf[64];
+    size_t i;
+
+    if (!level[0] || strlen(level) > 4 || !drop[0] || strlen(drop) >= sizeof g_devchal_drop) {
+        fprintf(stderr, "  [DEVCHAL] StartDevChallenge(\"%s\", \"%s\"): bad arguments\n", level, drop);
+        fflush(stderr);
+        SET_LO8(g_eax, 0);
+        g_esp += 8;
+        return;
+    }
+    for (i = 0; level[i]; i++)
+        g_devchal_level[i] = (char)(level[i] >= 'a' && level[i] <= 'z' ? level[i] - 32 : level[i]);
+    g_devchal_level[i] = 0;
+    snprintf(g_devchal_drop, sizeof g_devchal_drop, "%s", drop);
+    g_devchal_pending = 1;
+
+    /* What SelectLevel() does for the level's entry (sub_001E0F50), without
+     * the entry's locked check: the session's level file and path, as the
+     * Level Select entries hold them ("LX2.LVL", "D:\LEVELS\LX2\"). */
+    snprintf(buf, sizeof buf, "%s.LVL", g_devchal_level);
+    amped2_put_cstr(0x00010F40u, buf);
+    snprintf(buf, sizeof buf, "D:\\LEVELS\\%s\\", g_devchal_level);
+    amped2_put_cstr(0x00010F80u, buf);
+    g_esp -= 16;
+    key = g_esp;
+    MEM32(key) = 0;
+    MEM32(key + 4) = 0;
+    g_esp -= 4; MEM32(g_esp) = key;         /* String("LX2.LVL") */
+    g_eax = 0x00010F40u;
+    AMPED2_GCALL(sub_000122B0);
+    g_esp -= 4; MEM32(g_esp) = key + 4;     /* String("D:\LEVELS\LX2\") */
+    g_eax = 0x00010F80u;
+    AMPED2_GCALL(sub_000122B0);
+    g_esp -= 4; MEM32(g_esp) = key;         /* session.SetLevelFile(file) */
+    g_ecx = 0x003AD748u;
+    AMPED2_GCALL(sub_00020C30);
+    g_eax = key + 4;                        /* session.LevelPath = path */
+    g_ebx = 0x003AD758u;
+    AMPED2_GCALL(sub_00013800);
+    g_ecx = 0x003AD748u;                    /* session -> SessionDetails */
+    AMPED2_GCALL(sub_000200B0);
+    MEM32(MEM32(0x003ACD14u) + 0x94) = 0xFFFFFFFFu;
+    {
+        uint32_t obj = MEM32(0x003AD0DCu), va = MEM32(MEM32(obj) + 0x58);
+        recomp_func_t fn = recomp_lookup_manual(va);
+        if (!fn) fn = recomp_lookup(va);
+        g_ecx = obj;
+        if (fn) AMPED2_GCALL(fn);
+    }
+    g_ecx = key;
+    AMPED2_GCALL(sub_0001A490);
+    g_ecx = key + 4;
+    AMPED2_GCALL(sub_0001A490);
+    g_esp += 16;
+
+    fprintf(stderr, "  [DEVCHAL] StartDevChallenge: level %s ('%s', '%s'), drop point %s\n",
+            g_devchal_level, amped2_gstr(MEM32(0x003AD754u)), amped2_gstr(MEM32(0x003AD758u)),
+            g_devchal_drop);
+    fflush(stderr);
+    g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp;
+    SET_LO8(g_eax, 0);
+    g_esp += 8;                             /* ret 4 */
+}
+
+/* The level's drop-point screen (Game.rui DropPoint, object 0x003CDF90,
+ * vtable 0x003573D8) builds its menu when pushed, slot 6 sub_0010BCB0
+ * (thiscall, `ret 4`). With a developer challenge pending, start its drop
+ * point straight away, as ChooseDropPoint() (sub_0010DA50) does for the
+ * menu's selected item: the drop point is IsDebugOnly, so it is not in the
+ * menu, and the selected item lends it its slot for the call. */
+static void amped2_droppoint_push(void)
+{
+    uint32_t self = g_ecx, ret;
+    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp;
+    sub_0010BCB0();
+    ret = g_eax;
+    if (g_devchal_pending) {
+        uint32_t mgr = MEM32(MEM32(MEM32(0x003ACDC8u) + 0x24) + 0x58);
+        uint32_t list = MEM32(self + 0x3C), dp = 0, item = 0, i, n, sel = 0;
+        n = mgr ? MEM32(mgr + 0xC) : 0;
+        for (i = 0; i < n && !dp; i++) {
+            uint32_t d = MEM32(MEM32(mgr + 8) + 4 * i);
+            if (amped2_ieq(amped2_gstr(MEM32(d + 0x4C)), g_devchal_drop))
+                dp = d;
+        }
+        n = list ? MEM32(list + 0x50) : 0;
+        for (i = 0; i < n && !item; i++) {
+            uint32_t it = MEM32(MEM32(list + 0x4C) + 4 * i);
+            if (it && MEM32(it + 0x20) && !amped2_ieq(amped2_gstr(MEM32(it + 8)), "Locked")) {
+                item = it;
+                sel = i;
+            }
+        }
+        fprintf(stderr, "  [DEVCHAL] drop-point screen: %s -> dp %08X, menu item %u of %u\n",
+                g_devchal_drop, dp, sel, n);
+        if (dp && item) {
+            uint32_t old = MEM32(item + 0x20);
+            MEM32(list + 0x24) = sel;
+            MEM32(item + 0x20) = dp;
+            MEM32(self + 0x7C) = 0;         /* 0.0f: the screen's input delay */
+            g_ecx = self;
+            g_esp -= 4; MEM32(g_esp) = 0;   /* the (unused) call arguments */
+            AMPED2_GCALL(sub_0010DA50);
+            MEM32(item + 0x20) = old;
+            snprintf(g_devchal_playing, sizeof g_devchal_playing, "%s", g_devchal_drop);
+        }
+        g_devchal_pending = 0;
+        fflush(stderr);
+    }
+    g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp;
+    g_eax = ret;
+}
+
 void sub_00218140(void)
 {
     uint32_t self = g_ecx, ret;
     sub_00218140_gen();
     ret = g_eax;
     amped2_register_command(self, "QuitGame", AMPED2_QUIT_FN_VA, AMPED2_QUIT_NAME_VA);
-    fprintf(stderr, "  [MOD] shell command QuitGame registered\n");
+    amped2_register_command(self, "StartDevChallenge", AMPED2_DEVCHAL_FN_VA,
+                            AMPED2_DEVCHAL_NAME_VA);
+    fprintf(stderr, "  [MOD] shell commands QuitGame, StartDevChallenge registered\n");
     fflush(stderr);
     g_eax = ret;
 }
@@ -1631,6 +1804,8 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
     if (xbox_va == 0x00248FF0) return sub_00248FF0;  /* text aspect (vtable 0x0036E518) */
     if (xbox_va == AMPED2_QUIT_FN_VA) return amped2_cmd_quit;
+    if (xbox_va == AMPED2_DEVCHAL_FN_VA) return amped2_cmd_devchal;
+    if (xbox_va == 0x0010BCB0) return amped2_droppoint_push;  /* drop-point screen: push */
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
     if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */
