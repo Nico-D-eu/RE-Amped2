@@ -1734,6 +1734,14 @@ challenges won.
    career save changes only the way the game itself changes it. Each
    point is awarded once (the count of points given is kept too), and a
    challenge counts once, however often it is won.
+   **User, 2026-11-09:** best score and tries are not needed. The intro
+   must show the developer: per challenge a display name and a 128x128
+   portrait (the pros' `Pict_Pro_<name>.xpr` in `Gui/Textures/Textures.gfx`
+   are 128x128, one byte per pixel, no mips; loose entries can add to a
+   .gfx). The picture is data (`<L>_<ChallengeID>` = texture name in Base.rui's
+   strings, e.g. `LX2_ProChal3 = Pict_Pro_Mitch`); the name needs a look at
+   where the intro takes it (the fixed `ProName%d` table, PLAN above). The
+   current dev1 (3 jumps) is a test run, not for release.
    **Works (user's hand test, 2026-11-09):** a won developer challenge is
    added to `devchallenges.json`, and the third win gave one stat point
    through the game's own "new skill point" screen; the career's
