@@ -1139,8 +1139,8 @@ int amped2_side_file(const char *name, char *path, size_t size)
 /*
  * Developer challenges: marking a section of a run with L3+R3 (recording
  * sessions only, AMPED2_DEVCHAL_RECORD=1, test\devchal-play.cmd). The first
- * press marks where the challenge starts, the next where it ends; one beep,
- * then two. A mark is the time into the run as the replay counts it, give
+ * press marks where the challenge starts, the next where it ends; one high
+ * beep, then two lower ones (Beep: MessageBeep dropped the second). A mark is the time into the run as the replay counts it, give
  * or take the drop's fly-out: the clock starts when a drop point is chosen
  * or the run restarts (recomp_manual.c calls amped2_devrec_event) and stops
  * while the game is paused. Each finished section goes into
@@ -1231,13 +1231,13 @@ static DWORD WINAPI devrec_thread(LPVOID unused)
             } else if (s_devrec_mark < 0) {
                 s_devrec_mark = t;
                 fprintf(stderr, "  [DEVCHAL] L3+R3: start %.2f s\n", t);
-                MessageBeep(MB_OK);
+                Beep(1200, 120);                /* plays to the end, unlike MessageBeep */
             } else if (t > s_devrec_mark + 1.0) {
                 devrec_write(s_devrec_mark, t);
                 s_devrec_mark = -1.0;
-                MessageBeep(MB_OK);
-                Sleep(250);
-                MessageBeep(MB_OK);
+                Beep(800, 120);
+                Sleep(80);
+                Beep(800, 120);
             }
             fflush(stderr);
         }

@@ -110,8 +110,10 @@ def rpl_records(data: bytes):
     m), the orientation (three int16), more state whose size depends on its
     flags (20-22 bytes in all), and ends with the run's time as a float32.
     The fields between are not needed: records are told apart by the time
-    climbing and the position moving at most 3 m from one to the next. A
-    short trailer (18 bytes in the ones seen) follows the last."""
+    climbing and two of the three coordinates moving at most 3 m from one
+    to the next (near a level's origin X can jump: an ML1 run went from 1 to
+    19994 as the rider crossed X = 0, so values there are not plain int16).
+    A short trailer (18 bytes in the ones seen) follows the last."""
     rpl_start(data)
     out, o, t = [], 5, 0.0
     while o < len(data) - 10:
@@ -127,7 +129,7 @@ def rpl_records(data: bytes):
                 break
             here = struct.unpack_from("<3h", data, o)
             nxt = struct.unpack_from("<3h", data, o + n)
-            if all(abs(a - b) < 60 for a, b in zip(here, nxt)):
+            if sum(abs(a - b) < 60 for a, b in zip(here, nxt)) >= 2:
                 found = n
                 break
         if found is None:
@@ -142,22 +144,25 @@ def rpl_records(data: bytes):
 
 
 EVT_HEADER = 0x53
+# Bytes after an event's time and kind (kind 10, the pad, has a uint16
+# length instead). Found on all the saved replays at hand; any other kind
+# carries 4.
+EVT_SIZES = {22: 20, 23: 20, 6: 2, 17: 0}
 
 
 def evt_events(data: bytes):
     """The event file's events after its 0x53-byte header: [(offset, size,
     time s)]. An event is float32 time, uint32 kind, then for kind 10 (the
-    pad) a uint16 length and that many bytes, for kind 22 (a jump: positions)
-    20 bytes, for the others (0, 2, 7, 11, 12: tricks and states) 4."""
+    pad) a uint16 length and that many bytes, for kinds 22 and 23 (jumps:
+    positions) 20, kind 6 2, kind 17 none, the others (0-3, 7, 11-13: tricks
+    and states) 4 (EVT_SIZES)."""
     out, o = [], EVT_HEADER
     while o + 8 <= len(data):
         t, kind = struct.unpack_from("<fI", data, o)
         if kind == 10:
             n = 10 + struct.unpack_from("<H", data, o + 8)[0]
-        elif kind == 22:
-            n = 28
         else:
-            n = 12
+            n = 8 + EVT_SIZES.get(kind, 4)
         out.append((o, n, t))
         o += n
     if o != len(data):
@@ -518,17 +523,22 @@ def write(p: Path, text: str):
         f.write(text)
 
 
-def marks_for(proj: Project, args, level: str):
-    """The last complete L3+R3 section marked on `level` (devchal-marks.json,
-    written by the game beside amped2.ini with AMPED2_DEVCHAL_RECORD=1)."""
+def marks_for(proj: Project, args, level: str, saved=None):
+    """The last complete L3+R3 section marked on `level` before the replay
+    was saved (`saved`, a file time) (devchal-marks.json, written by the
+    game beside amped2.ini with AMPED2_DEVCHAL_RECORD=1)."""
     folder = Path(args.ini) if args.ini else proj.root / "test" / "runs" / "devchal-play"
     path = folder / "devchal-marks.json"
     if not path.exists():
         sys.exit("no %s: mark a section with L3+R3 in test\\devchal-play.cmd first" % path)
     marks = [m for m in json.loads(path.read_text("utf-8"))["marks"]
              if m.get("level") == level and m.get("end") is not None]
+    if saved is not None:
+        import time
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(saved + 1))
+        marks = [m for m in marks if m.get("when", "") <= stamp]
     if not marks:
-        sys.exit("no complete section marked on %s in %s" % (level, path))
+        sys.exit("no complete section marked on %s in %s before the replay was saved" % (level, path))
     m = marks[-1]
     print("marks: %s, %s, %.1f-%.1f s" % (m.get("when", "?"), level, m["start"], m["end"]))
     return m["start"], m["end"]
@@ -585,7 +595,7 @@ def cmd_add(proj: Project, args):
         "save": run["save"], "save_name": run["name"]}
     t0, t1 = args.from_, args.to
     if args.marks and t0 is None:
-        t0, t1 = marks_for(proj, args, level)
+        t0, t1 = marks_for(proj, args, level, (run["folder"] / "Career.rpl").stat().st_mtime)
     if t0 is not None:
         rpl = (run["folder"] / "Career.rpl").read_bytes()
         evt = (run["folder"] / "Career.evt").read_bytes()
