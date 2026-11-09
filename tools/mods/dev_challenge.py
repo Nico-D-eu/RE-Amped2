@@ -2,6 +2,7 @@ r"""Developer challenges: a saved run of yours, raced as a Pro challenge.
 
     python tools/mods/dev_challenge.py list   [--udata DIR]
     python tools/mods/dev_challenge.py add    --save ID [--title TEXT] [--slot ProChalN]
+                                              (--slot: the Pro challenge to copy, same board)
     python tools/mods/dev_challenge.py remove DEV_ID
     python tools/mods/dev_challenge.py build
     (all take --project DIR and --pack NAME, default dev-challenges)
@@ -417,16 +418,18 @@ def cmd_add(proj: Project, args):
     chal = read(proj.level_source(level, "Challenges"))
     drops = read(proj.level_source(level, "DropPoints"))
     slots = pro_slots(chal, drops)
-    taken = {c["slot"] for c in data["challenges"] if c["level"] == level}
+    # The slot is only the template (a Pro challenge of the same board) the
+    # challenge and its drop point are copied from; any number of developer
+    # challenges can share one.
     if args.slot:
         if args.slot not in slots:
             sys.exit("%s has no Pro challenge %s (has %s)" % (level, args.slot, ", ".join(slots)))
         slot = args.slot
     else:
-        free = [s for s, (_, k) in slots.items() if k == run["kind"] and s not in taken]
-        if not free:
-            sys.exit("%s has no free %s Pro challenge slot" % (level, run["kind"]))
-        slot = free[-1]
+        same = [s for s, (_, k) in slots.items() if k == run["kind"]]
+        if not same:
+            sys.exit("%s has no %s Pro challenge to copy" % (level, run["kind"]))
+        slot = same[-1]
     if slots[slot][1] != run["kind"]:
         sys.exit("%s is a %s challenge, the recording is a %s run"
                  % (slot, slots[slot][1], run["kind"]))
@@ -441,7 +444,7 @@ def cmd_add(proj: Project, args):
         "slot": slot, "kind": run["kind"], "start": run["start"],
         "save": run["save"], "save_name": run["name"]})
     proj.store(data)
-    print("added %s: %s, %s, replaces %s (%s)" % (dev_id, level, run["kind"], slot, slots[slot][0]))
+    print("added %s: %s, %s, template %s (%s)" % (dev_id, level, run["kind"], slot, slots[slot][0]))
     cmd_build(proj, args)
 
 
