@@ -1283,7 +1283,7 @@ static void amped2_devchal_poll(void)
         fake = getenv("AMPED2_DEVCHAL_FAKEWIN") != NULL;   /* tests only */
     rec = MEM32(g_devchal_chal + 0x38);
     st = rec ? MEM32(rec + 4) : 0;
-    if (((st == 2 || st == 3) && st != g_devchal_state0) || fake) {
+    if (((st == 2 || st == 3) && st != g_devchal_state0) || fake) {   /* loaded as 1 */
         g_devchal_counted = 1;
         amped2_devchal_win();
     }
@@ -1367,12 +1367,15 @@ static void amped2_challenges_load(void)
         if (rec) {
             uint32_t parts = MEM32(c + 0x24), nparts = MEM32(c + 0x28), i;
             if (MEM32(rec + 4) == 0) {      /* missing: the loader's defaults */
-                MEM32(rec + 4) = 1;         /* Available */
                 MEM32(rec + 0xC) = 1;
                 MEM32(rec + 0x10) = 2;
-            } else if (MEM32(rec + 4) == 2) {
-                MEM32(rec + 4) = 3;         /* Complete -> Improve: ride it again */
             }
+            /* Available every time, won before or not: a win turns it into
+             * its StateOnComplete (Improve), which is how the win is seen
+             * (a career that saved it as Improve kept it at 3 through a
+             * win, user's trace 2026-11-09). */
+            if (MEM32(rec + 4) != 6)
+                MEM32(rec + 4) = 1;
             MEM32(rec + 8) = 3;             /* on complete: Improve, as the pros */
             MEM32(rec + 0x28) = 0;          /* LockedByChallenge (vector +0x24): none */
             MEM8(c + 0x4C) = 1;
@@ -1390,10 +1393,8 @@ static void amped2_challenges_load(void)
                 if (!prec || prec < 0x00400000u || prec >= 0x04000000u
                     || MEM32(prec + 4) > 6 || MEM32(prec + 8) > 6)
                     continue;
-                if (MEM32(prec + 4) == 0)
-                    MEM32(prec + 4) = 1;
-                else if (MEM32(prec + 4) == 2)
-                    MEM32(prec + 4) = 3;
+                if (MEM32(prec + 4) != 6)
+                    MEM32(prec + 4) = 1;    /* Available, as the challenge */
                 MEM32(prec + 8) = 3;
             }
             fprintf(stderr, "  [DEVCHAL] %s set up: state %d, %u part(s)\n", id,
@@ -1623,6 +1624,18 @@ static void amped2_session_update(void)
         }
     }
     amped2_devchal_poll();
+    /* The end of a run from a Pro drop point runs the Pro rewards
+     * (sub-state +0x1C = the drop point's type, 1: sub_00017D60), which has
+     * no skill-point check; a developer challenge has no reward of its own,
+     * so the end of its run takes the normal one (0: sub_00017840) when a
+     * point is due, as a High Score challenge's run does (user's trace:
+     * end-of-run state 2 -> 3 as +0x2DD climbs, then the stat screen). */
+    if (g_devchal_award > 0 && g_devchal_chal && player && MEM32(sess + 0x20) == 0
+        && MEM32(sess + 0x1C) == 1 && MEM32(sess + 0x28) == 2) {
+        MEM32(sess + 0x1C) = 0;
+        fprintf(stderr, "  [DEVCHAL] end of the run: normal rewards, for the stat point\n");
+        fflush(stderr);
+    }
     if (g_devchal_award > 0 && player && MEM32(sess + 0x20) == 0 && MEM32(sess + 0x1C) == 0
         && MEM32(sess + 0x28) == 2 && MEM8(player + 0x2DD) == MEM8(player + 0x2DE)
         && MEM8(player + 0x2DE) + 2 * g_devchal_award < 256) {
