@@ -1582,6 +1582,20 @@ challenges won.
    `devchal-marks.json`; the clock was seen starting at ChooseDropPoint, the
    presses themselves need a hand test (scripted input is not XInput). The
    `.rpl`/`.evt` layouts used are in DEVELOPING.md.
+   **Open (user's test, 2026-11-09): an ML1 developer challenge fails at
+   once.** Replay6 ML1 (`151C6100500E`), cut 0.9-82.5 s and also uncut:
+   "GO!", "Slow Down", "Ahead of the pro", three misses, "Challenge
+   failed", the pro never leads. The HUD reads the recording ("1 OF 9",
+   pro score 42,677), the drop point sits at the section's start, the
+   challenge and drop-point templates match LX2's, and the recorded rider
+   starts moving at 2.5 s as dev1 does. Ruled out: the cut's first record,
+   the pro folder's case (ML1 has "pro/", fixed anyway). Leads: this run
+   crosses X = 0 (a coordinate that jumps 1 -> 19994 there, so near the
+   origin the encoding differs; whether the game's own reader copes, and
+   whether the start of this run is affected); whether the pro waits for
+   the player on ML1 (compare a disc ML1 pro started the same way:
+   StartDevChallenge("ML1", "Pro3")); a run recorded on LX2 or another
+   level away from X = 0.
    **Marking the section by pad (user, 2026-11-09):** in developer
    recording sessions (`test\devchal-play.cmd`), L3+R3 during a run marks
    the challenge's start, pressed again its end, so a challenge can be a
