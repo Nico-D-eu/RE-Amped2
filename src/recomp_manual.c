@@ -1364,13 +1364,40 @@ static void amped2_challenges_load(void)
                 rec ? (int)MEM32(rec + 4) : -1, c ? MEM8(c + 0x4C) : 0);
         g_devchal_chal = c;
         g_devchal_counted = 0;
-        if (rec && MEM32(rec + 4) == 0) {
-            MEM32(rec + 4) = 1;             /* Available */
-            MEM32(rec + 8) = 3;             /* on complete: Improve */
-            MEM32(rec + 0xC) = 1;
-            MEM32(rec + 0x10) = 2;
+        if (rec) {
+            uint32_t parts = MEM32(c + 0x24), nparts = MEM32(c + 0x28), i;
+            if (MEM32(rec + 4) == 0) {      /* missing: the loader's defaults */
+                MEM32(rec + 4) = 1;         /* Available */
+                MEM32(rec + 0xC) = 1;
+                MEM32(rec + 0x10) = 2;
+            } else if (MEM32(rec + 4) == 2) {
+                MEM32(rec + 4) = 3;         /* Complete -> Improve: ride it again */
+            }
+            MEM32(rec + 8) = 3;             /* on complete: Improve, as the pros */
+            MEM32(rec + 0x28) = 0;          /* LockedByChallenge (vector +0x24): none */
             MEM8(c + 0x4C) = 1;
-            fprintf(stderr, "  [DEVCHAL] %s made Available (not in the career's progress)\n", id);
+            /* Its parts (vector at challenge +0x24, +0x28 of them; a Pro
+             * part, vtable 0x00349220, keeps its record at +0x18, state +4,
+             * on complete +8; challenge +4 is its drop-point list): a
+             * missing entry gets the previous challenge's part states
+             * too (RecordHSlegend: Complete, Complete), and the game saves
+             * them after a win, so every later run ended at once. */
+            for (i = 0; parts && i < nparts && i < 8; i++) {
+                uint32_t part = MEM32(parts + 4 * i), prec = part ? MEM32(part + 0x18) : 0;
+                fprintf(stderr, "  [DEVCHAL] part %u %08X vt %08X record %08X state %d/%d\n", i,
+                        part, part ? MEM32(part) : 0, prec, prec ? (int)MEM32(prec + 4) : -1,
+                        prec ? (int)MEM32(prec + 8) : -1);
+                if (!prec || prec < 0x00400000u || prec >= 0x04000000u
+                    || MEM32(prec + 4) > 6 || MEM32(prec + 8) > 6)
+                    continue;
+                if (MEM32(prec + 4) == 0)
+                    MEM32(prec + 4) = 1;
+                else if (MEM32(prec + 4) == 2)
+                    MEM32(prec + 4) = 3;
+                MEM32(prec + 8) = 3;
+            }
+            fprintf(stderr, "  [DEVCHAL] %s set up: state %d, %u part(s)\n", id,
+                    (int)MEM32(rec + 4), nparts);
         }
         g_devchal_state0 = rec ? MEM32(rec + 4) : 0;
         fflush(stderr);
