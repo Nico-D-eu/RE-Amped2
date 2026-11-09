@@ -1949,9 +1949,23 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   A developer challenge leaves through `sub_00102360` from all of these
   (and from the drop-point screen when it comes back), and the PushMenu
   wrapper turns the LevelSelect push into `PlayerFeedback`, the list.
-- **Challenge state.** A challenge's `+4` is 2 or 3 when completed (the
-  drop-point menu shows "Completed"), 6 until first chosen, 1 after
-  (`sub_000A2590`).
+- **Progress states** (`sub_00031960`, table `0x00031AE0`): 0 Locked,
+  1 Available, 2 Complete, 3 Improve, 6 New. A drop point's `+0x10` is the
+  drop point's own progress record (state at `+4`), not a challenge.
+- **Challenges.** Loaded when a run starts, not with the level:
+  `sub_0004A700` (vtable `0x00347814`, thiscall, `ret`) calls
+  `sub_0005C450` on `<L>_Challenges.lua`. A challenge object has its ID
+  (String `char *`) at `+0x1C`, its progress record at `+0x38` (record
+  `+0` points back; `+4` state, `+8` on complete), and `+0x4C` set when
+  it can run. The record comes from the career's own `<L>_Progress.lua`
+  (`sub_00031020` per entry; a missing entry parses as Locked and clears
+  `+0x4C`), or, with no progress file, the default at `0x0005D855`
+  (Available, Improve, 1, 2, `+0x34 = 0xFA`). The career is signed
+  (`career.sig`): a hand-edited progress file hangs the load.
+- The career drop-point menu lists only plain drop points (type `+0x54`
+  0, 4 or 9; `0x0010C205`) and the fixed IDs Sponsor1-3, PhotoShoot1-3,
+  Pro1-3 (`0x0010C416` on). Challenge code also knows Pro challenges as
+  "ProChal" + 1-3 (`0x0004CC3F`).
 - **Skill points.** The end-of-run flow object `0x003AD688` (vtable
   `0x0034480C`; update `+0x54` = `sub_00018B40`, `ret 8`; flow `+0x20`,
   sub-state `+0x1C`, end-of-run state `+0x28`, the player at `+0x10`) runs

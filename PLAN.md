@@ -1673,7 +1673,19 @@ challenges won.
      way back (`sub_00102360`, then the shell's LevelSelect push becomes
      the list); not seen on screen, nor the end of a won or failed run:
      scripted input never finished a run.
-     **Open: `DevChal<n>` never runs as a Pro challenge (user's hand test,
+     **Fixed (2026-11-09): the challenge runs as a Pro challenge.** The
+     level's challenges are loaded when the run starts (`sub_0004A700`,
+     vtable `0x00347814`, calls the loader `sub_0005C450`), each with its
+     state from the career's own `<L>_Progress.lua`; a challenge missing
+     from it parses as Locked and is switched off (`+0x4C`). After that
+     load, a Locked developer challenge of the run is set Available in
+     memory (the loader's own defaults); the career's file is not touched.
+     Checked on a copy of the user's save: "1 OF 3", the misses, "Pro
+     Trick Score", launch circles. (The career is signed, `career.sig`:
+     editing its progress file hangs the load.) Leave Mountain and the
+     list's header after a run were fixed too. The note below is how it
+     was found.
+     **Was open: `DevChal<n>` never runs as a Pro challenge (user's hand test,
      2026-11-07).** The player starts at `Dev1`, but there is no pro, no
      markers and no score (with a "New" challenge only its intro card
      shows); with no input the player's own rider rides and does tricks.

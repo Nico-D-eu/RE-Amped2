@@ -1089,6 +1089,8 @@ static int g_devchal_pending;
  * loaded), whether its win was counted, and whether the shell, when it
  * starts after the level, opens the DEVELOPER CHALLENGES list. */
 static uint32_t g_devchal_dp;
+/* The run's challenge object (amped2_challenges_load) and its state then. */
+static uint32_t g_devchal_chal, g_devchal_state0;
 static int g_devchal_counted, g_devchal_return;
 /* Stat points earned (one per three challenges won) and not yet handed to
  * the game's own skill-point check. */
@@ -1266,20 +1268,22 @@ static void amped2_cmd_devchal(void)
     g_esp += 8;                             /* ret 4 */
 }
 
-/* Has the run in progress been won? Its challenge (drop point +0x10) state
- * +4 turns 2 or 3, which the drop-point menu shows as "Completed". Checked
- * every frame of the end-of-run update and once more on the way out. */
+/* Has the run in progress been won? Its challenge's progress record
+ * (challenge +0x38) state +4 turns 2 (Complete) or 3 (Improve, the
+ * challenge's StateOnComplete). Checked every frame of the end-of-run update
+ * and once more on the way out. A drop point's +0x10 is the drop point's
+ * own record, not the challenge's. */
 static void amped2_devchal_poll(void)
 {
     static int fake = -1;
-    uint32_t chal, st;
-    if (!g_devchal_dp || g_devchal_counted)
+    uint32_t rec, st;
+    if (!g_devchal_chal || g_devchal_counted)
         return;
     if (fake < 0)
         fake = getenv("AMPED2_DEVCHAL_FAKEWIN") != NULL;   /* tests only */
-    chal = MEM32(g_devchal_dp + 0x10);
-    st = chal ? MEM32(chal + 4) : 0;
-    if (st == 2 || st == 3 || (fake && st == 1)) {
+    rec = MEM32(g_devchal_chal + 0x38);
+    st = rec ? MEM32(rec + 4) : 0;
+    if (((st == 2 || st == 3) && st != g_devchal_state0) || fake) {
         g_devchal_counted = 1;
         amped2_devchal_win();
     }
@@ -1309,6 +1313,71 @@ static uint32_t amped2_find_drop(const char *id)
  * the menu. Lending another item the drop point instead put the player at
  * the right place but started no challenge (no pro, no markers) when the
  * challenge was not "New". */
+/* A level's challenge by ID: an object whose +0x1C is its ID (a String's
+ * char *) and whose progress record (+0x38) points back at it (+0), as the
+ * challenge loader (sub_0005C450, 0x0005D89C) links them. Found by a scan of
+ * the guest heap, once per level; 0 if none. */
+static uint32_t amped2_find_challenge(const char *id)
+{
+    const uint32_t lo = 0x00400000u, hi = 0x04000000u;
+    size_t n = strlen(id);
+    uint32_t a, b;
+    for (a = lo; a + n + 1 < hi; a += 4) {
+        if (MEM8(a) != (uint8_t)id[0] || memcmp((const void *)XBOX_PTR(a), id, n + 1))
+            continue;
+        for (b = lo; b + 0x40 < hi; b += 4) {
+            uint32_t obj, rec;
+            if (MEM32(b) != a)
+                continue;
+            obj = b - 0x1C;
+            rec = MEM32(obj + 0x38);
+            if (rec >= lo && rec < hi && MEM32(rec) == obj)
+                return obj;
+        }
+    }
+    return 0;
+}
+
+/* The level's challenges are built when the run starts (vtable 0x00347814,
+ * sub_0004A700, thiscall, `ret`; it calls the loader sub_0005C450 on the
+ * level's <L>_Challenges.lua). The loader takes each challenge's state from
+ * the career's own <L>_Progress.lua when the career has one: a challenge it
+ * does not list (a developer challenge, added after the career was saved)
+ * parses as Locked (sub_00031020 on a missing entry), and its +0x4C
+ * ("active") is cleared, so the run had no pro, markers or score. Without a
+ * progress file the loader makes a default record instead (0x0005D855:
+ * Available, on complete Improve). After the load, a Locked developer
+ * challenge of the run gets those defaults in memory; the career's file is
+ * not touched. */
+extern void sub_0004A700(void);
+static void amped2_challenges_load(void)
+{
+    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp;
+    sub_0004A700();
+    if (g_devchal_playing[0]) {
+        char id[32];
+        uint32_t c, rec;
+        snprintf(id, sizeof id, "DevChal%s", g_devchal_playing + 3);  /* Dev1 -> DevChal1 */
+        c = amped2_find_challenge(id);
+        rec = c ? MEM32(c + 0x38) : 0;
+        fprintf(stderr, "  [DEVCHAL] challenges loaded: %s at %08X, state %d, active %u\n", id, c,
+                rec ? (int)MEM32(rec + 4) : -1, c ? MEM8(c + 0x4C) : 0);
+        g_devchal_chal = c;
+        g_devchal_counted = 0;
+        if (rec && MEM32(rec + 4) == 0) {
+            MEM32(rec + 4) = 1;             /* Available */
+            MEM32(rec + 8) = 3;             /* on complete: Improve */
+            MEM32(rec + 0xC) = 1;
+            MEM32(rec + 0x10) = 2;
+            MEM8(c + 0x4C) = 1;
+            fprintf(stderr, "  [DEVCHAL] %s made Available (not in the career's progress)\n", id);
+        }
+        g_devchal_state0 = rec ? MEM32(rec + 4) : 0;
+        fflush(stderr);
+    }
+    g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp;
+}
+
 static void amped2_droppoint_push(void)
 {
     uint32_t self = g_ecx, ret, dp = 0;
@@ -1436,6 +1505,7 @@ static void amped2_pushmenu(void)
         && amped2_ieq(amped2_gstr(MEM32(name)), "Main")) {
         g_devchal_playing[0] = 0;           /* the shell, some other way */
         g_devchal_dp = 0;
+        g_devchal_chal = 0;
     }
     if (g_devchal_return && name
         && amped2_ieq(amped2_gstr(MEM32(name)), "LevelSelect")) {
@@ -1458,6 +1528,7 @@ static void amped2_pushmenu(void)
         g_devchal_return = 0;
         g_devchal_playing[0] = 0;
         g_devchal_dp = 0;
+        g_devchal_chal = 0;
         fprintf(stderr, "  [DEVCHAL] shell: LevelSelect -> the DEVELOPER CHALLENGES list\n");
         fflush(stderr);
     }
@@ -2121,6 +2192,7 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     if (xbox_va == 0x0010ED60) return amped2_leave_pause;     /* LeaveMountain (pause) */
     if (xbox_va == 0x002194B0) return amped2_pushmenu;        /* GUI PushMenu */
     if (xbox_va == 0x00018B40) return amped2_session_update;  /* level session update */
+    if (xbox_va == 0x0004A700) return amped2_challenges_load; /* level challenges: load */
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
     if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */
