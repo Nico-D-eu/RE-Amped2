@@ -1574,7 +1574,21 @@ challenges won.
    - **Board or skate:** a board run in a snowskate challenge fails at
      once (tricks go through the wrong `.ActionMap` table).
 2. **Trimming** ("a section of a run") needs the `.rpl`/`.evt` layout from
-   Phase 23. Until then a challenge is a whole run started from a drop
+   Phase 23.
+   **Marking the section by pad (user, 2026-11-09):** in developer
+   recording sessions (`test\devchal-play.cmd`), L3+R3 during a run marks
+   the challenge's start, pressed again its end, so a challenge can be a
+   short, doable mid-run section instead of a whole run with three misses.
+   Plan: (a) a native check of the pad each frame (only with a recording
+   switch set, e.g. `AMPED2_DEVCHAL_RECORD=1`): on L3+R3 note the player's
+   position and the time since the run started, show a short confirmation
+   (sound or HUD text), and write the marks to `devchal-marks.json` beside
+   amped2.ini, tagged with the level and the run; (b) `dev_challenge.py add
+   --save ID` picks the marks for that saved replay and cuts `.rpl`/`.evt`
+   to the section, starting the drop point (and the 20 m head start) at the
+   start mark. (b) needs the `.rpl` frame layout and the `.evt` event
+   times decoded (Phase 23 item 5): first finding is that a `.rpl` starts
+   `02 00 00 00 00` then int16 X, Y, Z in 1/20 m. Until then a challenge is a whole run started from a drop
    point; the tool adds that drop point (`DropLoc` = the run's first
    frame).
 3. **Playing it: the menu.** Don't add to the career list: new entries
