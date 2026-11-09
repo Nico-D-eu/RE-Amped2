@@ -1988,6 +1988,16 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   3 SPONSORSTUFF, 4 PROTAUGHTTRICK, 5 PROSKILLPOINTS, 6 PROBIOVIDEO ...;
   word RewardIndex; String RewardInfo), described by `sub_00066890`
   (challenge vtable `0x0034A424` slot 3).
+- **Replay files** (as far as tools/mods/dev_challenge.py needs them).
+  `.rpl`: 5-byte header `02 00 00 00 00`, then 20-22-byte records: position
+  (three int16, 1/20 m; Y up, the drop points' coordinates), orientation
+  (three int16), state sized by a flags byte, and the run's time as a
+  float32 at the end (about 1/60 s apart); an 18-byte trailer. `.evt`:
+  0x53-byte header, then events: float32 time, uint32 kind, and for kind
+  10 (the pad) a uint16 length and that many bytes, kind 22 (a jump, with
+  positions in m) 20 bytes, kinds 0, 2, 7, 11, 12 (tricks and states; 12
+  per trick) 4 bytes. Cutting both to a time window and moving the times
+  back to the run's start plays as a run of its own.
 - **A challenge's win** shows on its part: the part's record (part at
   challenge `+0x24` vector, record at part `+0x18`) turns its
   StateOnComplete during the run, while the challenge's own record keeps

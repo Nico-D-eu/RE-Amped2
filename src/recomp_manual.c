@@ -1615,6 +1615,29 @@ static void amped2_trace_reward(void)
     sub_00066890();
 }
 
+/* Recording sessions (AMPED2_DEVCHAL_RECORD, src/main.c): the run clock
+ * for the L3+R3 marks. ChooseDropPoint() (sub_0010DA50), the restarts
+ * (RestartChallenge sub_0010F150, EORRestartChallenge sub_0010FEE0), Pause()
+ * (sub_0010F200) and Unpause() (sub_0010F1C0) are GUI commands, thiscall,
+ * `ret 4`; the level is the session's file (0x003AD754, "LX2.LVL"). */
+extern void amped2_devrec_event(int what);
+extern void sub_0010F150(void), sub_0010FEE0(void), sub_0010F200(void), sub_0010F1C0(void);
+char amped2_devrec_level[8];
+
+static void amped2_devrec_level_now(void)
+{
+    const char *f = amped2_gstr(MEM32(0x003AD754u));
+    size_t i;
+    for (i = 0; f[i] && f[i] != '.' && i < sizeof amped2_devrec_level - 1; i++)
+        amped2_devrec_level[i] = (char)(f[i] >= 'a' && f[i] <= 'z' ? f[i] - 32 : f[i]);
+    amped2_devrec_level[i] = 0;
+}
+static void amped2_rec_choose(void) { amped2_devrec_level_now(); amped2_devrec_event(0); sub_0010DA50(); }
+static void amped2_rec_restart(void) { amped2_devrec_event(0); sub_0010F150(); }
+static void amped2_rec_eor_restart(void) { amped2_devrec_event(0); sub_0010FEE0(); }
+static void amped2_rec_pause(void) { amped2_devrec_event(1); sub_0010F200(); }
+static void amped2_rec_unpause(void) { amped2_devrec_event(2); sub_0010F1C0(); }
+
 static void amped2_session_update(void)
 {
     uint32_t sess = g_ecx, player = MEM32(sess + 0x10), bump = 0;
@@ -2286,6 +2309,11 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     if (xbox_va == 0x00018B40) return amped2_session_update;  /* level session update */
     if (xbox_va == 0x0004A700) return amped2_challenges_load; /* level challenges: load */
     if (xbox_va == 0x00066890) return amped2_trace_reward;    /* challenge reward text */
+    if (xbox_va == 0x0010DA50) return amped2_rec_choose;      /* ChooseDropPoint() */
+    if (xbox_va == 0x0010F150) return amped2_rec_restart;     /* RestartChallenge() */
+    if (xbox_va == 0x0010FEE0) return amped2_rec_eor_restart; /* EORRestartChallenge() */
+    if (xbox_va == 0x0010F200) return amped2_rec_pause;       /* Pause() */
+    if (xbox_va == 0x0010F1C0) return amped2_rec_unpause;     /* Unpause() */
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
     if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */

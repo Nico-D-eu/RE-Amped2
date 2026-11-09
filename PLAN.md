@@ -1575,6 +1575,13 @@ challenges won.
      once (tricks go through the wrong `.ActionMap` table).
 2. **Trimming** ("a section of a run") needs the `.rpl`/`.evt` layout from
    Phase 23.
+   **Built (2026-11-09):** `add --from/--to` (seconds) or `--marks` cuts a
+   run to a section (checked in the game: a 2-trick challenge from 10-30 s
+   of the Photo2 run); L3+R3 marks in `test\devchal-play.cmd`
+   (`AMPED2_DEVCHAL_RECORD=1`, XInput thread, src/main.c) go to
+   `devchal-marks.json`; the clock was seen starting at ChooseDropPoint, the
+   presses themselves need a hand test (scripted input is not XInput). The
+   `.rpl`/`.evt` layouts used are in DEVELOPING.md.
    **Marking the section by pad (user, 2026-11-09):** in developer
    recording sessions (`test\devchal-play.cmd`), L3+R3 during a run marks
    the challenge's start, pressed again its end, so a challenge can be a
