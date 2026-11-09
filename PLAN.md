@@ -1734,7 +1734,21 @@ challenges won.
    career save changes only the way the game itself changes it. Each
    point is awarded once (the count of points given is kept too), and a
    challenge counts once, however often it is won.
-   **Built (2026-11-07), not yet seen working:** `devchallenges.json`
+   **Works (user's hand test, 2026-11-09):** a won developer challenge is
+   added to `devchallenges.json`, and the third win gave one stat point
+   through the game's own "new skill point" screen; the career's
+   NumScoreChalDone stayed at its value (60). What it took, beyond the
+   design below: the win shows on the challenge's *part* (its record
+   goes 1 -> 3; the challenge's own record stays 1 during the run), the
+   challenge and part load as Available every time so the change shows,
+   and the end of a developer run takes the normal rewards (end-of-run
+   sub-state 0, `sub_00017840`) instead of the Pro ones (1,
+   `sub_00017D60`, no skill-point check) when a point is due. The
+   end-of-run update `sub_00018B40` runs only after a run really ends,
+   which no scripted probe reached. Still open: best score and tries are
+   not recorded; the career's progress keeps a `DevChal1` entry the game
+   saves (Improve), as for any challenge.
+   **Built (2026-11-07), then fixed as above:** `devchallenges.json`
    beside `amped2.ini` holds `"won"` (pack IDs) and `"points"` (given). A
    win is the challenge's state turning 2 or 3 ("Completed"), looked for
    every frame of the end-of-run update (`sub_00018B40`, flow object

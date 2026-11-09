@@ -1978,9 +1978,20 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   the "EarnedSkillPoints" message (`0x003E32D0`, points in `0x003E32C4`)
   and the SkillsPoints_InGame screen (`0x003E3208`, `sub_001D2A70`, ecx =
   `[player+0x170]`). The message callbacks `0x000166A0/B0/C0` set the
-  state `0x003AD6B0` (= `0x003AD688+0x28`). The update was not seen
-  running in title-screen or menu-walk probes that never finished a run;
-  it is the results phase.
+  state `0x003AD6B0` (= `0x003AD688+0x28`). The update runs only after a
+  run really ends (flow 0, 1, 3, 4 ... 23 through the results; traced by
+  hand, 2026-11-09): scripted probes that never finished a run never saw
+  it. The sub-state `+0x1C` is the drop point's type: 0 runs
+  `sub_00017840` (skill points), 1 (Pro) `sub_00017D60` (Pro rewards, no
+  skill-point check). Rewards per challenge are data: a reward object at
+  challenge `+0x18` (word type: 1 SCORESKILLPOINTS, 2 PHOTOSHOOTREPLAY,
+  3 SPONSORSTUFF, 4 PROTAUGHTTRICK, 5 PROSKILLPOINTS, 6 PROBIOVIDEO ...;
+  word RewardIndex; String RewardInfo), described by `sub_00066890`
+  (challenge vtable `0x0034A424` slot 3).
+- **A challenge's win** shows on its part: the part's record (part at
+  challenge `+0x24` vector, record at part `+0x18`) turns its
+  StateOnComplete during the run, while the challenge's own record keeps
+  its state until later.
 - Calls into the game's own bodies from C push a dummy return address (the
   bodies pop it), and the generated function names (`sub_X`) link from
   `recomp_manual.c` without regenerating. Vtable slots and commands are
