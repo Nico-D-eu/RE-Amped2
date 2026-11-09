@@ -325,6 +325,7 @@ and the result stays there.
 **Can I get the game files here?** No. You need your own copy of Amped 2.
 
 **Which disc works?** The USA and the European/Australian releases.
+Pre-release and dev-kit builds of the game don't: the installer says so.
 
 **Online play?** No. Xbox Live for the original Xbox shut down long ago.
 

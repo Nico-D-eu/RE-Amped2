@@ -29,6 +29,7 @@
 set -euo pipefail
 
 TITLE_ID=4D530041
+ENTRY_POINT=00254899    # the retail build, on both the USA and the PAL disc
 BOX=re-amped2
 # Set inside a Distrobox container (its name): the game then starts through it.
 IN_BOX="${CONTAINER_ID:-}"
@@ -220,14 +221,27 @@ mkdir -p "$DEST/game"
     mv -f "$DISC_TMP/$f" "$DEST/game/$f"
 done
 rm -rf "$DISC_TMP"
-python3 - "$DEST/game/default.xbe" "$TITLE_ID" <<'EOF' || fail "this is not an Amped 2 disc (USA or Europe/Australia)."
+# The recompiled code is tied to one build of the game, the retail one on
+# both the USA and the European/Australian discs. Pre-release and dev-kit
+# builds carry the same title ID but other code, so the entry point (stored
+# XORed with the retail key) is checked too.
+disc_rc=0
+python3 - "$DEST/game/default.xbe" "$TITLE_ID" "$ENTRY_POINT" <<'EOF' || disc_rc=$?
 import struct, sys
 data = open(sys.argv[1], 'rb').read()
 base, cert = struct.unpack_from('<I', data, 0x104)[0], struct.unpack_from('<I', data, 0x118)[0]
 tid = struct.unpack_from('<I', data, cert - base + 8)[0]
-print('Title ID %08X' % tid)
-sys.exit(0 if tid == int(sys.argv[2], 16) else 1)
+entry = struct.unpack_from('<I', data, 0x128)[0] ^ 0xA8FC57AB
+print('Title ID %08X, entry point %08X' % (tid, entry))
+if tid != int(sys.argv[2], 16):
+    sys.exit(1)
+sys.exit(0 if entry == int(sys.argv[3], 16) else 2)
 EOF
+case $disc_rc in
+    0) ;;
+    2) fail "this is a different build of Amped 2 (a pre-release or dev-kit disc). RE-Amped2 needs the retail USA or Europe/Australia disc." ;;
+    *) fail "this is not an Amped 2 disc (USA or Europe/Australia)." ;;
+esac
 
 # ── Recompiler ────────────────────────────────────────────────────────
 stage "Recompiler"
