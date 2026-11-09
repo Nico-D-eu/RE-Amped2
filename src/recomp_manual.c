@@ -1575,13 +1575,40 @@ static void amped2_pushmenu(void)
  * +0x2DE goes up by two per point due for that one frame and both come back
  * down after, so the career's count stays as it was (+0x2DD is not saved:
  * the career load sets it to +0x2DE). */
+/* AMPED2_DEVCHAL_TRACE: a challenge's reward description (challenge
+ * vtable 0x0034A424 slot 3, sub_00066890, thiscall, `ret 4`; switches on
+ * the reward type at [challenge+0x18]) is logged with the challenge's ID,
+ * to see when the career hands out rewards. */
+extern void sub_00066890(void);
+static void amped2_trace_reward(void)
+{
+    uint32_t c = g_ecx, r = MEM32(c + 0x18);
+    static int trace = -1;
+    if (trace < 0)
+        trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
+    if (trace) {
+        fprintf(stderr, "  [DEVCHAL] reward of %s: type %u index %u\n", amped2_gstr(MEM32(c + 0x1C)),
+                r ? MEM16(r) : 0, r ? MEM16(r + 2) : 0);
+        fflush(stderr);
+    }
+    sub_00066890();
+}
+
 static void amped2_session_update(void)
 {
     uint32_t sess = g_ecx, player = MEM32(sess + 0x10), bump = 0;
     static uint32_t last = 0xFFFFFFFFu;
     static int trace = -1;
-    if (trace < 0)
+    if (trace < 0) {
+        int due;
         trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
+        /* A point earned and not given yet (left before the check ran, or
+         * from an earlier game) is given at the next check, any mountain. */
+        amped2_devchal_load();
+        due = g_devchal_nwon / 3 - g_devchal_points;
+        if (due > g_devchal_award)
+            g_devchal_award = due;
+    }
     if (trace) {
         uint32_t chal = g_devchal_dp ? MEM32(g_devchal_dp + 0x10) : 0;
         uint32_t now = (MEM32(sess + 0x20) << 24) | (MEM32(sess + 0x1C) << 16)
@@ -2220,6 +2247,7 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     if (xbox_va == 0x002194B0) return amped2_pushmenu;        /* GUI PushMenu */
     if (xbox_va == 0x00018B40) return amped2_session_update;  /* level session update */
     if (xbox_va == 0x0004A700) return amped2_challenges_load; /* level challenges: load */
+    if (xbox_va == 0x00066890) return amped2_trace_reward;    /* challenge reward text */
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
     if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */
