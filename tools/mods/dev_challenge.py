@@ -315,7 +315,7 @@ def append_table(text: str, block: str) -> str:
     return text[:end] + ",\r\n" + block + text[end:]
 
 
-def apply_challenge(chal: str, drops: str, dev: dict):
+def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro"):
     """Add one developer challenge to a level's two scripts.
 
     It gets its own drop point and its own CHAL_PRO challenge (copies of the
@@ -331,7 +331,7 @@ def apply_challenge(chal: str, drops: str, dev: dict):
             (r'RewardType = "[^"]*"', 'RewardType = "REWARD_NONE"'),
             (r'RewardIndex = \d+', "RewardIndex = 0"),
             (r'RewardInfo = "[^"]*"', 'RewardInfo = "Empty"'),
-            (r'ProReplay = "[^"]*"', 'ProReplay = "Pro\\\\%s"' % dev["id"]),
+            (r'ProReplay = "[^"]*"', 'ProReplay = "%s\\\\%s"' % (pro_dir, dev["id"])),
             (r'ProParts = "[^"]*"',
              'ProParts = "Characters\\\\Pro\\\\ProParts\\\\%s.Parts"' % dev["id"].capitalize()),
             (r'DropPoints = \{"[^"]*"\}', 'DropPoints = {"%s"}' % drop_id)]
@@ -639,19 +639,25 @@ def cmd_build(proj: Project, args):
         res = proj.game / "Levels" / level / (level + ".res")
         chal = read(proj.level_source(level, "Challenges"))
         drops = read(proj.level_source(level, "DropPoints"))
+        # The level's own spelling of its pro folder ("pro/" in ML1.res,
+        # "Pro/" in LX2.res): entries are matched by case, and with "Pro" on
+        # ML1 the pro's recording was not found and the pro never moved
+        # (user's test: "Ahead of the pro" at once, 2026-11-09).
+        names = zipfile.ZipFile(res).namelist()
+        pro_dir = next((n.split("/")[0] for n in names if n.lower().startswith("pro/")), "Pro")
         slots = pro_slots(chal, drops)
         for dev in devs:
             a, b = table_with(drops, slots[dev["slot"]][0])
             m = re.search(r'DisplayName = L"([^"]*)"', drops[a:b])
             drop_names[dev["id"]] = m.group(1) if m else dev["slot"]
         for dev in devs:
-            chal, drops = apply_challenge(chal, drops, dev)
+            chal, drops = apply_challenge(chal, drops, dev, pro_dir)
             rec = proj.pack / "recordings" / dev["id"]
             files = {ext: (rec / ("Career." + ext)).read_bytes() for ext in RECORDING}
             if dev.get("cut"):
                 files["rpl"], files["evt"], _ = cut_recording(files["rpl"], files["evt"], *dev["cut"])
             for ext in RECORDING:
-                dst = loose / "Levels" / level / (level + ".res") / "Pro" / ("%s.%s" % (dev["id"], ext))
+                dst = loose / "Levels" / level / (level + ".res") / pro_dir / ("%s.%s" % (dev["id"], ext))
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 dst.write_bytes(files[ext])
             for ext in LOOK:
