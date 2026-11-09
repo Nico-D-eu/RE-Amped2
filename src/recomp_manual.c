@@ -533,7 +533,7 @@ static void xmv_stats(uint32_t dec, uint32_t status, int req_before, double ms)
         drain_t0 = 0;
     }
     if (GetTickCount() - t0 >= 1000) {
-        extern volatile long g_xbox_vblank_count;
+        extern volatile int32_t g_xbox_vblank_count;   /* LONG in the toolkit */
         static uint32_t last_d3d, last_ours;
         uint32_t dev = MEM32(0x0032CEF8u);
         uint32_t d3d = dev ? MEM32(dev + 0x1DD8) : 0, ours = (uint32_t)g_xbox_vblank_count;
@@ -729,7 +729,7 @@ void sub_0032F2C6(void)
  */
 void sub_0031AE90(void)
 {
-    extern volatile long g_xbox_vblank_count;
+    extern volatile int32_t g_xbox_vblank_count;   /* LONG in the toolkit */
     long v = g_xbox_vblank_count;
     unsigned long t0 = GetTickCount();
     uint32_t dev = MEM32(0x32CEF8);
@@ -763,7 +763,7 @@ void sub_0031AE90(void)
  */
 static uint32_t xmv_vblank_count(void)
 {
-    extern volatile long g_xbox_vblank_count;
+    extern volatile int32_t g_xbox_vblank_count;   /* LONG in the toolkit */
     static int d3d_clock = -1;
 
     if (d3d_clock < 0) {
@@ -1504,6 +1504,8 @@ void sub_001A2460(void)                     /* ChallengeScriptedObject */
  * device is [0x0032CEF8], [dev] the write pointer and [dev+4] the point
  * where 0x0031E940 (stdcall, its two arguments from [0x0032DDC4]) has to
  * make room first. */
+extern void sub_0031E940(void);
+
 static void amped2_pb_nop(uint32_t param)
 {
     uint32_t dev = MEM32(0x0032CEF8), put, saved_eax = g_eax;
