@@ -1685,6 +1685,25 @@ challenges won.
      editing its progress file hangs the load.) Leave Mountain and the
      list's header after a run were fixed too. The note below is how it
      was found.
+     **User's hand test after that (2026-11-09):** runs as a full challenge,
+     won, the ways out work. Two open problems:
+     - *Replays fail at once after a win.* A challenge missing from the
+       career's progress inherits the previous entry's leftovers in the
+       loader (here `RecordHSlegend`: LockedByChallenge LegendChal, part
+       State/StateOnComplete Complete), and the game saved that into the
+       test career after the win. Fix to make after the load, in memory:
+       challenge record (`+0x38`) state Locked -> Available and Complete ->
+       Improve, on complete Improve, LockedByChallenge count (record
+       `+0x28`, vector at `+0x24`) 0; the part (challenge `+4` vector,
+       element 0; Pro part vtable `0x0034A268`) record at part `+0x18`, the
+       same states. Layout read from dumps, not yet tried.
+     - *No stat point.* The win was counted only on the way out
+       (`devchallenges.json` got dev1), after the end of the run; the
+       end-of-run update `sub_00018B40` was never seen running in career,
+       so the skill-point trick there never fires. Needs the career's own
+       end-of-run reward path (EarnedSkillPoints message 0x003E32D0,
+       SkillsPoints_InGame 0x003E3208) found and driven, or a frame hook
+       during the run.
      **Was open: `DevChal<n>` never runs as a Pro challenge (user's hand test,
      2026-11-07).** The player starts at `Dev1`, but there is no pro, no
      markers and no score (with a "New" challenge only its intro card
