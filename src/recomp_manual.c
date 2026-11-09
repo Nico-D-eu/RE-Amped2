@@ -1277,12 +1277,32 @@ static void amped2_devchal_poll(void)
 {
     static int fake = -1;
     uint32_t rec, st;
+    if (g_devchal_chal && getenv("AMPED2_DEVCHAL_TRACE")) {
+        uint32_t r = MEM32(g_devchal_chal + 0x38), ps = MEM32(g_devchal_chal + 0x24);
+        uint32_t pr = ps && MEM32(ps) ? MEM32(MEM32(ps) + 0x18) : 0;
+        static uint32_t lastlog = 0xFFFFFFFFu;
+        uint32_t now = (r ? MEM32(r + 4) : 0xFF) << 8 | (pr ? MEM32(pr + 4) : 0xFF);
+        if (now != lastlog) {
+            fprintf(stderr, "  [DEVCHAL] poll: challenge %d part %d active %u counted %d\n",
+                    r ? (int)MEM32(r + 4) : -1, pr ? (int)MEM32(pr + 4) : -1,
+                    MEM8(g_devchal_chal + 0x4C), g_devchal_counted);
+            fflush(stderr);
+            lastlog = now;
+        }
+    }
     if (!g_devchal_chal || g_devchal_counted)
         return;
     if (fake < 0)
         fake = getenv("AMPED2_DEVCHAL_FAKEWIN") != NULL;   /* tests only */
     rec = MEM32(g_devchal_chal + 0x38);
     st = rec ? MEM32(rec + 4) : 0;
+    {
+        /* Its part (loaded as Available too) completes with the run. */
+        uint32_t ps = MEM32(g_devchal_chal + 0x24), pr = ps && MEM32(ps) ? MEM32(MEM32(ps) + 0x18) : 0;
+        uint32_t pst = pr ? MEM32(pr + 4) : 0;
+        if (pst == 2 || pst == 3)
+            st = pst;
+    }
     if (((st == 2 || st == 3) && st != g_devchal_state0) || fake) {   /* loaded as 1 */
         g_devchal_counted = 1;
         amped2_devchal_win();
@@ -1611,16 +1631,21 @@ static void amped2_session_update(void)
             g_devchal_award = due;
     }
     if (trace) {
-        uint32_t chal = g_devchal_dp ? MEM32(g_devchal_dp + 0x10) : 0;
+        uint32_t c = g_devchal_chal, rec = c ? MEM32(c + 0x38) : 0;
+        uint32_t parts = c ? MEM32(c + 0x24) : 0, part = parts ? MEM32(parts) : 0;
+        uint32_t prec = part ? MEM32(part + 0x18) : 0;
+        int cs = rec ? (int)MEM32(rec + 4) : -1, ps = prec ? (int)MEM32(prec + 4) : -1;
+        int act = c ? MEM8(c + 0x4C) : -1;
         uint32_t now = (MEM32(sess + 0x20) << 24) | (MEM32(sess + 0x1C) << 16)
-                       | (MEM32(sess + 0x28) << 8) | (chal ? MEM32(chal + 4) & 0xFF : 0xFF);
-        if (now != last) {
-            fprintf(stderr, "  [DEVCHAL] session flow %u sub %u end %u chal %d 2DD %u 2DE %u\n",
-                    MEM32(sess + 0x20), MEM32(sess + 0x1C), MEM32(sess + 0x28),
-                    chal ? (int)MEM32(chal + 4) : -1, player ? MEM8(player + 0x2DD) : 0,
-                    player ? MEM8(player + 0x2DE) : 0);
+                       | (MEM32(sess + 0x28) << 8) | ((uint32_t)(cs & 0xF) << 4) | (uint32_t)(ps & 0xF);
+        static int lastact = -2;
+        if (now != last || act != lastact) {
+            fprintf(stderr, "  [DEVCHAL] session flow %u sub %u end %u challenge %d part %d active %d"
+                    " 2DD %u 2DE %u\n", MEM32(sess + 0x20), MEM32(sess + 0x1C), MEM32(sess + 0x28),
+                    cs, ps, act, player ? MEM8(player + 0x2DD) : 0, player ? MEM8(player + 0x2DE) : 0);
             fflush(stderr);
             last = now;
+            lastact = act;
         }
     }
     amped2_devchal_poll();
