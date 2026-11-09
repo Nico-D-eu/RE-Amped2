@@ -328,8 +328,10 @@ def string_tables(base_rui: Path, strings):
 
 
 def challenge_strings(devs, drops_name):
-    """{key: (like, text)} for the list's items."""
-    s = {}
+    """{key: (like, text)} for the list's items, and the list's header when
+    the shell comes back to it after a run (DevChal_Title, short enough for
+    the native code to put in place of FreeRide_PlayLevel)."""
+    s = {"DevChal_Title": ("Career_ChangeGear", "DEVELOPER CHALLENGES")}
     for d in devs:
         mountain = MOUNTAINS.get(d["level"], d["level"])
         board = "snowskate" if d["kind"] == "skate" else "snowboard"

@@ -1078,6 +1078,7 @@ static void amped2_put_cstr(uint32_t va, const char *s)
 extern void sub_00013800(void), sub_00020C30(void), sub_000200B0(void);
 extern void sub_0010BCB0(void), sub_0010DA50(void), sub_000A2590(void);
 extern void sub_00102360(void), sub_001022A0(void), sub_0010FED0(void), sub_0010FEA0(void);
+extern void sub_0010ED60(void);
 extern void sub_002194B0(void), sub_00018B40(void);
 
 /* The challenge StartDevChallenge set up: its level and drop point ID. The
@@ -1399,6 +1400,7 @@ static void amped2_devchal_leave(void (*orig)(void))
 static void amped2_leave_main(void) { amped2_devchal_leave(sub_001022A0); }
 static void amped2_leave_eor(void) { amped2_devchal_leave(sub_0010FED0); }
 static void amped2_leave_change(void) { amped2_devchal_leave(sub_0010FEA0); }
+static void amped2_leave_pause(void) { amped2_devchal_leave(sub_0010ED60); }
 
 /* The GUI's PushMenu (vtable 0x0036C868 +0x50, sub_002194B0, thiscall, one
  * stack argument: the name, a String). When the shell starts after a
@@ -1408,11 +1410,42 @@ static void amped2_leave_change(void) { amped2_devchal_leave(sub_0010FEA0); }
  * once and keeps at 0x00010FC0. */
 #define AMPED2_DEVLIST_STR_VA  0x00010FC0u
 #define AMPED2_DEVLIST_NAME_VA 0x00010FC4u
+/* After those pushes the start-up sets the screen's header from the text ID
+ * "FreeRide_PlayLevel" (RIDE!), a C string at 0x00355530 with 18 characters
+ * of room. For this one start it reads "DevChal_Title" (DEVELOPER
+ * CHALLENGES, a string dev_challenge.py adds), put back at the next push. */
+#define AMPED2_TITLE_ID_VA 0x00355530u
+static char g_title_saved[19];
+static int g_title_patched;
+
+static void amped2_title_restore(void)
+{
+    size_t i;
+    if (!g_title_patched)
+        return;
+    for (i = 0; i < sizeof g_title_saved; i++)
+        MEM8(AMPED2_TITLE_ID_VA + i) = (uint8_t)g_title_saved[i];
+    g_title_patched = 0;
+}
+
 static void amped2_pushmenu(void)
 {
     uint32_t name = MEM32(g_esp + 4);
+    amped2_title_restore();
+    if (!g_devchal_return && g_devchal_playing[0] && name
+        && amped2_ieq(amped2_gstr(MEM32(name)), "Main")) {
+        g_devchal_playing[0] = 0;           /* the shell, some other way */
+        g_devchal_dp = 0;
+    }
     if (g_devchal_return && name
         && amped2_ieq(amped2_gstr(MEM32(name)), "LevelSelect")) {
+        size_t i;
+        for (i = 0; i < sizeof g_title_saved; i++)
+            g_title_saved[i] = (char)MEM8(AMPED2_TITLE_ID_VA + i);
+        if (!strcmp(g_title_saved, "FreeRide_PlayLevel")) {
+            amped2_put_cstr(AMPED2_TITLE_ID_VA, "DevChal_Title");
+            g_title_patched = 1;
+        }
         if (!MEM32(AMPED2_DEVLIST_STR_VA)) {
             uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sc = g_ecx;
             amped2_put_cstr(AMPED2_DEVLIST_NAME_VA, "PlayerFeedback");
@@ -2075,6 +2108,7 @@ void sub_00248FF0(void)
     }
 }
 
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
     if (xbox_va == 0x00248FF0) return sub_00248FF0;  /* text aspect (vtable 0x0036E518) */
@@ -2084,6 +2118,7 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     if (xbox_va == 0x001022A0) return amped2_leave_main;      /* LaunchShellToMainMenu */
     if (xbox_va == 0x0010FED0) return amped2_leave_eor;       /* EORLeaveMountain */
     if (xbox_va == 0x0010FEA0) return amped2_leave_change;    /* EORChangeMountain */
+    if (xbox_va == 0x0010ED60) return amped2_leave_pause;     /* LeaveMountain (pause) */
     if (xbox_va == 0x002194B0) return amped2_pushmenu;        /* GUI PushMenu */
     if (xbox_va == 0x00018B40) return amped2_session_update;  /* level session update */
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
