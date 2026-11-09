@@ -103,6 +103,113 @@ def rpl_start(data: bytes):
     return [v / 20.0 for v in struct.unpack_from("<3h", data, 5)]
 
 
+def rpl_records(data: bytes):
+    """The replay's records: [(offset, length, (x, y, z) in m, time s)].
+
+    After the 5-byte header, each record is the position (three int16, 1/20
+    m), the orientation (three int16), more state whose size depends on its
+    flags (20-22 bytes in all), and ends with the run's time as a float32.
+    The fields between are not needed: records are told apart by the time
+    climbing and the position moving at most 3 m from one to the next. A
+    short trailer (18 bytes in the ones seen) follows the last."""
+    rpl_start(data)
+    out, o, t = [], 5, 0.0
+    while o < len(data) - 10:
+        found = None
+        for n in range(16, 48):
+            if o + n > len(data):
+                break
+            tv = struct.unpack_from("<f", data, o + n - 4)[0]
+            if not t <= tv < t + 0.5:
+                continue
+            if o + n + 6 > len(data):
+                found = n
+                break
+            here = struct.unpack_from("<3h", data, o)
+            nxt = struct.unpack_from("<3h", data, o + n)
+            if all(abs(a - b) < 60 for a, b in zip(here, nxt)):
+                found = n
+                break
+        if found is None:
+            break
+        x, y, z = struct.unpack_from("<3h", data, o)
+        t = struct.unpack_from("<f", data, o + found - 4)[0]
+        out.append((o, found, (x / 20.0, y / 20.0, z / 20.0), t))
+        o += found
+    if not out:
+        raise ValueError("no replay records found")
+    return out
+
+
+EVT_HEADER = 0x53
+
+
+def evt_events(data: bytes):
+    """The event file's events after its 0x53-byte header: [(offset, size,
+    time s)]. An event is float32 time, uint32 kind, then for kind 10 (the
+    pad) a uint16 length and that many bytes, for kind 22 (a jump: positions)
+    20 bytes, for the others (0, 2, 7, 11, 12: tricks and states) 4."""
+    out, o = [], EVT_HEADER
+    while o + 8 <= len(data):
+        t, kind = struct.unpack_from("<fI", data, o)
+        if kind == 10:
+            n = 10 + struct.unpack_from("<H", data, o + 8)[0]
+        elif kind == 22:
+            n = 28
+        else:
+            n = 12
+        out.append((o, n, t))
+        o += n
+    if o != len(data):
+        raise ValueError("event file not understood (stopped at %d of %d)" % (o, len(data)))
+    return out
+
+
+def cut_recording(rpl: bytes, evt: bytes, t0: float, t1: float):
+    """The section t0..t1 (seconds of the run) of a replay and its events,
+    with times moved so the section starts where the run did."""
+    recs = rpl_records(rpl)
+    keep = [r for r in recs if t0 <= r[3] <= t1]
+    if len(keep) < 60:
+        raise ValueError("cut %.1f-%.1f s keeps %d records (run is %.1f s)"
+                         % (t0, t1, len(keep), recs[-1][3]))
+    shift = keep[0][3] - recs[0][3]
+    out = bytearray(rpl[:5])
+    for o, n, _, t in keep:
+        rec = bytearray(rpl[o:o + n])
+        struct.pack_into("<f", rec, n - 4, t - shift)
+        out += rec
+    last = recs[-1]
+    out += rpl[last[0] + last[1]:]               # the trailer
+    ev = bytearray(evt[:EVT_HEADER])
+    for o, n, t in evt_events(evt):
+        if keep[0][3] <= t <= keep[-1][3]:
+            e = bytearray(evt[o:o + n])
+            struct.pack_into("<f", e, 0, t - shift)
+            ev += e
+    return bytes(out), bytes(ev), keep
+
+
+def cut_start(rpl: bytes, t0: float):
+    """Where a section starting at t0 puts the player and the pro.
+
+    The player starts where the rider was at t0 (a place on the line, on the
+    snow), facing the way the rider went; the pro's recording starts once
+    the rider had covered HEAD_START m along the line from there (at most 4
+    s later), which gives the head start the disc's pros have. Returns
+    (position, unit direction, the pro's start time)."""
+    recs = rpl_records(rpl)
+    i = next(k for k, r in enumerate(recs) if r[3] >= t0)
+    a, path, j = recs[i], 0.0, i
+    while j + 1 < len(recs) and path < HEAD_START and recs[j + 1][3] < a[3] + 4.0:
+        path += math.dist(recs[j][2], recs[j + 1][2])
+        j += 1
+    b = recs[j]
+    d = [q - p for p, q in zip(a[2], b[2])]
+    n = math.sqrt(sum(v * v for v in d)) or 1.0
+    return a[2], [v / n for v in d], b[3]
+
+
 def board_kind(parts_text: str) -> str:
     m = re.search(r'MeshType\s*=\s*"([^"]+)"', parts_text)
     return "skate" if m and "skate" in m.group(1).lower() else "board"
@@ -232,11 +339,26 @@ def apply_challenge(chal: str, drops: str, dev: dict):
     # Start point: the drop point the recording began at gives the facing
     # and the camera; the new drop point sits HEAD_START m behind it, so the
     # pro starts ahead of the player.
-    near = nearest_drop(drops, dev["start"])
-    if near is None or near[0] > NEAR_START:
-        raise ValueError("%s: no drop point within %.0f m of the recording's start %s"
-                         % (dev["id"], NEAR_START, dev["start"]))
-    src, raw = near[2], near[3]
+    if dev.get("cut"):
+        # A section from the middle of a run: the drop point is where the
+        # section starts, facing the way the rider went (cut_start), and the
+        # camera is 15 m behind it and 6 m up, looking at it.
+        pos, d = dev["cut_start"], dev["cut_dir"]
+        src = {}
+        for i, axis in enumerate("XYZ"):
+            src["DropLoc" + axis] = pos[i]
+            src["DropDir" + axis] = d[i]
+            src["CamLoc" + axis] = pos[i] - 15.0 * d[i] + (6.0 if axis == "Y" else 0.0)
+        c = [pos[i] - src["CamLoc" + a] for i, a in enumerate("XYZ")]
+        cn = math.sqrt(sum(v * v for v in c)) or 1.0
+        raw = {"CamDir" + a: round(c[i] / cn, 3) for i, a in enumerate("XYZ")}
+        raw.update({"DropDir" + a: round(d[i], 3) for i, a in enumerate("XYZ")})
+    else:
+        near = nearest_drop(drops, dev["start"])
+        if near is None or near[0] > NEAR_START:
+            raise ValueError("%s: no drop point within %.0f m of the recording's start %s"
+                             % (dev["id"], NEAR_START, dev["start"]))
+        src, raw = near[2], near[3]
     a, b = table_with(drops, slot_drop)
     pro = drops[a + 1:b + 4]
     index = max(int(x) for x in re.findall(r"\bIndex = (\d+)", drops)) + 1
@@ -252,7 +374,9 @@ def apply_challenge(chal: str, drops: str, dev: dict):
         if n != 1:
             raise ValueError("%s: %s not found" % (slot_drop, pat))
     for axis in "XYZ":
-        back = HEAD_START * src["DropDir" + axis]
+        # A cut puts the player on the line itself and the pro ahead
+        # (cut_start); a whole run steps the drop point back instead.
+        back = 0.0 if dev.get("cut") else HEAD_START * src["DropDir" + axis]
         lift = LIFT if axis == "Y" else 0.0
         for field in DROP_FIELDS:
             pro = set_number(pro, field + axis, src[field + axis] - back + lift)
@@ -394,6 +518,22 @@ def write(p: Path, text: str):
         f.write(text)
 
 
+def marks_for(proj: Project, args, level: str):
+    """The last complete L3+R3 section marked on `level` (devchal-marks.json,
+    written by the game beside amped2.ini with AMPED2_DEVCHAL_RECORD=1)."""
+    folder = Path(args.ini) if args.ini else proj.root / "test" / "runs" / "devchal-play"
+    path = folder / "devchal-marks.json"
+    if not path.exists():
+        sys.exit("no %s: mark a section with L3+R3 in test\\devchal-play.cmd first" % path)
+    marks = [m for m in json.loads(path.read_text("utf-8"))["marks"]
+             if m.get("level") == level and m.get("end") is not None]
+    if not marks:
+        sys.exit("no complete section marked on %s in %s" % (level, path))
+    m = marks[-1]
+    print("marks: %s, %s, %.1f-%.1f s" % (m.get("when", "?"), level, m["start"], m["end"]))
+    return m["start"], m["end"]
+
+
 def cmd_list(proj: Project, args):
     udata = Path(args.udata) if args.udata else proj.game / "UDATA"
     runs = list(saved_runs(udata, proj.levels()))
@@ -439,10 +579,26 @@ def cmd_add(proj: Project, args):
     rec.mkdir(parents=True, exist_ok=True)
     for ext in RECORDING + LOOK:
         shutil.copyfile(run["folder"] / ("Career." + ext), rec / ("Career." + ext))
-    data["challenges"].append({
+    entry = {
         "id": dev_id, "title": args.title or run["name"], "level": level,
         "slot": slot, "kind": run["kind"], "start": run["start"],
-        "save": run["save"], "save_name": run["name"]})
+        "save": run["save"], "save_name": run["name"]}
+    t0, t1 = args.from_, args.to
+    if args.marks and t0 is None:
+        t0, t1 = marks_for(proj, args, level)
+    if t0 is not None:
+        rpl = (run["folder"] / "Career.rpl").read_bytes()
+        evt = (run["folder"] / "Career.evt").read_bytes()
+        t1 = t1 if t1 is not None else rpl_records(rpl)[-1][3]
+        pos, d, t_pro = cut_start(rpl, t0)
+        _, _, keep = cut_recording(rpl, evt, t_pro, t1)
+        tricks = sum(1 for o, n, t in evt_events(evt)
+                     if keep[0][3] <= t <= keep[-1][3] and struct.unpack_from("<I", evt, o + 4)[0] == 12)
+        entry.update({"cut": [round(t_pro, 3), round(t1, 2)], "cut_start": [round(v, 2) for v in pos],
+                      "cut_dir": [round(v, 3) for v in d]})
+        print("section %.1f-%.1f s of %.1f s (the pro from %.1f s), %d trick(s), starts at"
+              " (%.1f, %.1f, %.1f)" % (t0, t1, rpl_records(rpl)[-1][3], t_pro, tricks, *pos))
+    data["challenges"].append(entry)
     proj.store(data)
     print("added %s: %s, %s, template %s (%s)" % (dev_id, level, run["kind"], slot, slots[slot][0]))
     cmd_build(proj, args)
@@ -481,10 +637,13 @@ def cmd_build(proj: Project, args):
         for dev in devs:
             chal, drops = apply_challenge(chal, drops, dev)
             rec = proj.pack / "recordings" / dev["id"]
+            files = {ext: (rec / ("Career." + ext)).read_bytes() for ext in RECORDING}
+            if dev.get("cut"):
+                files["rpl"], files["evt"], _ = cut_recording(files["rpl"], files["evt"], *dev["cut"])
             for ext in RECORDING:
                 dst = loose / "Levels" / level / (level + ".res") / "Pro" / ("%s.%s" % (dev["id"], ext))
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(rec / ("Career." + ext), dst)
+                dst.write_bytes(files[ext])
             for ext in LOOK:
                 dst = (loose / "Characters" / "pro" / "pro.res" / "ProParts"
                        / ("%s.%s" % (dev["id"].capitalize(), ext)))
@@ -565,7 +724,13 @@ def main():
     p = sub.add_parser("add", help="make a developer challenge from a saved replay")
     p.add_argument("--save", required=True, help="save folder ID from `list`")
     p.add_argument("--title")
-    p.add_argument("--slot", help="Pro challenge to stand in for, e.g. ProChal3")
+    p.add_argument("--slot", help="Pro challenge to copy, e.g. ProChal3")
+    p.add_argument("--from", dest="from_", type=float,
+                   help="start of the section, seconds into the run")
+    p.add_argument("--to", type=float, help="end of the section, seconds into the run")
+    p.add_argument("--marks", action="store_true",
+                   help="the section from the last L3+R3 marks (devchal-marks.json)")
+    p.add_argument("--ini", help="folder of amped2.ini for --marks (default: test\\runs\\devchal-play)")
     p.add_argument("--udata")
     p = sub.add_parser("remove", help="take a developer challenge out")
     p.add_argument("dev_id")
