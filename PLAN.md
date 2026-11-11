@@ -1812,7 +1812,13 @@ challenges won.
    win detection need a hand test. To check: the win probably also marks
    `DevChal1` completed in the career's level progress, as any challenge
    (and may count toward its totals).
-5. **Developer photo shoots: next (user, 2026-11-11).** First recording:
+5. **Developer photo shoots: built (2026-11-11, commit a9b9239)**, checked
+   in the game with Replay8 BR2: intro, 10 rings along the line, 10,000
+   points to beat, a missed ring fails. Not yet: a win by hand, the stat
+   point after a photo win (its drop point type is Sequence, not Pro: the
+   end-of-run switch to the normal rewards only handles sub-state 1), the
+   run's own photo score as the default target.
+   **Planned as:** First recording:
    Replay8 BR2 (`2F6DDEB4737B`, marks 6.66-19.42 s, in the devchal-play
    test save). Plan: `add --photo` writes a `CHAL_MEDIASEQ` challenge
    DevChal<n> (copy of the level's PhotoShoot challenge: its parts,
