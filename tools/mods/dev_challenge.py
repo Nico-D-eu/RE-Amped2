@@ -439,7 +439,7 @@ def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro",
             block, n = re.subn(pat, lambda m, rep=rep: rep, block, count=1)
             if n != 1:
                 raise ValueError("%s: %s not found" % (dev["slot"], pat))
-        return _add_drop(prepend_table(chal, block), drops, dev, slot_drop, drop_id)
+        return _add_drop(append_table(chal, block), drops, dev, slot_drop, drop_id)
     subs = [(r'\bID = "[^"]*"', 'ID = "%s"' % chal_id),
             (r'RankIncrease = \d+', "RankIncrease = 0"),
             (r'RewardType = "[^"]*"', 'RewardType = "REWARD_NONE"'),
@@ -453,7 +453,7 @@ def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro",
         block, n = re.subn(pat, lambda m, rep=rep: rep, block, count=1)
         if n != 1:
             raise ValueError("%s: %s not found" % (dev["slot"], pat))
-    return _add_drop(prepend_table(chal, block), drops, dev, slot_drop, drop_id)
+    return _add_drop(append_table(chal, block), drops, dev, slot_drop, drop_id)
 
 
 def _add_drop(chal: str, drops: str, dev: dict, slot_drop: str, drop_id: str):
