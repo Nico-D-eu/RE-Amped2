@@ -111,11 +111,14 @@ def rpl_records(data: bytes):
     flags (20-22 bytes in all), and ends with the run's time as a float32.
     The fields between are not needed: records are told apart by the time
     climbing and two of the three coordinates moving at most 3 m from one
-    to the next (near a level's origin X can jump: an ML1 run went from 1 to
-    19994 as the rider crossed X = 0, so values there are not plain int16).
+    to the next. A coordinate is kept modulo 1000 m (20000 units): ML1's
+    pros are recorded 1000 m short of their drop points in X, and a run
+    there went from 1 to 19994 crossing X = 1000 m. Positions here are
+    unwrapped along the run; level_offset() finds the run's own 1000 m.
     A short trailer (18 bytes in the ones seen) follows the last."""
     rpl_start(data)
     out, o, t = [], 5, 0.0
+    prev, wrap = None, [0, 0, 0]
     while o < len(data) - 10:
         found = None
         for n in range(16, 48):
@@ -134,9 +137,17 @@ def rpl_records(data: bytes):
                 break
         if found is None:
             break
-        x, y, z = struct.unpack_from("<3h", data, o)
+        raw = struct.unpack_from("<3h", data, o)
+        if prev is not None:
+            for k in range(3):
+                d = raw[k] + wrap[k] - prev[k]
+                if d > 10000:
+                    wrap[k] -= 20000
+                elif d < -10000:
+                    wrap[k] += 20000
+        prev = [raw[k] + wrap[k] for k in range(3)]
         t = struct.unpack_from("<f", data, o + found - 4)[0]
-        out.append((o, found, (x / 20.0, y / 20.0, z / 20.0), t))
+        out.append((o, found, tuple(v / 20.0 for v in prev), t))
         o += found
     if not out:
         raise ValueError("no replay records found")
@@ -168,6 +179,22 @@ def evt_events(data: bytes):
     if o != len(data):
         raise ValueError("event file not understood (stopped at %d of %d)" % (o, len(data)))
     return out
+
+
+def level_offset(drops: str, rpl: bytes):
+    """The whole 1000 m per axis a replay's positions are short of where they
+    are (rpl_records): a run starts at a drop point, so the offset that puts
+    its first position on one of the level's drop points (none on LX2, X +1000
+    m on ML1)."""
+    first = rpl_records(rpl)[0][2]
+    best = None
+    for dx in (-1000.0, 0.0, 1000.0, 2000.0):
+        for dy in (-1000.0, 0.0, 1000.0):
+            for dz in (-1000.0, 0.0, 1000.0, 2000.0):
+                near = nearest_drop(drops, [first[0] + dx, first[1] + dy, first[2] + dz])
+                if near and (best is None or near[0] < best[0]):
+                    best = (near[0], (dx, dy, dz))
+    return best[1] if best and best[0] < 50.0 else (0.0, 0.0, 0.0)
 
 
 def cut_recording(rpl: bytes, evt: bytes, t0: float, t1: float):
@@ -589,9 +616,13 @@ def cmd_add(proj: Project, args):
     rec.mkdir(parents=True, exist_ok=True)
     for ext in RECORDING + LOOK:
         shutil.copyfile(run["folder"] / ("Career." + ext), rec / ("Career." + ext))
+    off = level_offset(drops, (run["folder"] / "Career.rpl").read_bytes())
+    start = [round(v + d, 2) for v, d in zip(run["start"], off)]
+    if any(off):
+        print("positions are short by %s m on %s; corrected" % (off, level))
     entry = {
         "id": dev_id, "title": args.title or run["name"], "level": level,
-        "slot": slot, "kind": run["kind"], "start": run["start"],
+        "slot": slot, "kind": run["kind"], "start": start,
         "save": run["save"], "save_name": run["name"]}
     t0, t1 = args.from_, args.to
     if args.marks and t0 is None:
@@ -601,6 +632,7 @@ def cmd_add(proj: Project, args):
         evt = (run["folder"] / "Career.evt").read_bytes()
         t1 = t1 if t1 is not None else rpl_records(rpl)[-1][3]
         pos, d, t_pro = cut_start(rpl, t0)
+        pos = [v + o for v, o in zip(pos, off)]
         _, _, keep = cut_recording(rpl, evt, t_pro, t1)
         tricks = sum(1 for o, n, t in evt_events(evt)
                      if keep[0][3] <= t <= keep[-1][3] and struct.unpack_from("<I", evt, o + 4)[0] == 12)
