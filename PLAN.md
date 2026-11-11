@@ -1812,6 +1812,13 @@ challenges won.
    win detection need a hand test. To check: the win probably also marks
    `DevChal1` completed in the career's level progress, as any challenge
    (and may count toward its totals).
+   **User's retest (2026-11-11):** no crash; both BR2 challenges started
+   on the right map, but not active (no pro/HUD, no rings) - the
+   missing-progress-entry problem below; the photo run-up (40 m) was too
+   short for the lift-wire jump (`--runup`, commit after e9c40bc).
+   `career.sig` = a table of the save's files (name, offset) and a 24-byte
+   signature each: signed per file by the game's XAPI code (not the
+   toolkit), so re-signing needs the game's key derivation.
 5. **Root cause, next to fix (2026-11-11):** a challenge missing from the
    career's existing `<L>_Progress.lua` is read through stale locals in the
    loader (`sub_0005C450`; crash for the user at 0x0005D786 reading its
