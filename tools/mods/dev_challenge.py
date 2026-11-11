@@ -299,6 +299,45 @@ def set_number(block: str, key: str, value) -> str:
     return out
 
 
+def photo_slots(chal: str, drops: str):
+    """{challenge ID: (drop point ID, 'board'/'skate')} for the level's photo
+    shoots (CHAL_MEDIASEQ, Sequence drop points)."""
+    slots = {}
+    for i, j in tables(chal):
+        block = chal[i:j]
+        if 'ChalType = "CHAL_MEDIASEQ"' not in block:
+            continue
+        cid = re.search(r'\bID = "([^"]+)"', block).group(1)
+        dp = re.search(r'DropPoints = \{\s*"([^"]+)"\s*\}', block)
+        if not dp:
+            continue
+        a, b = table_with(drops, dp.group(1))
+        skate = re.search(r"SnowSkate = true", drops[a:b]) is not None
+        slots[cid] = (dp.group(1), "skate" if skate else "board")
+    return slots
+
+
+def dev_slots(chal: str, drops: str, dev: dict):
+    return photo_slots(chal, drops) if dev.get("photo") else pro_slots(chal, drops)
+
+
+RING_STEP = 17.0       # metres between a photo shoot's rings (the disc's: 12-22)
+
+
+def ring_points(rpl: bytes, t0: float, t1: float, off):
+    """Rings along the recorded line from t0 to t1, RING_STEP m apart along
+    the path (positions unwrapped, plus the run's whole 1000 m)."""
+    recs = [r for r in rpl_records(rpl) if t0 <= r[3] <= t1]
+    pts, path, last = [], 0.0, None
+    for r in recs:
+        if last is not None:
+            path += math.dist(last, r[2])
+        last = r[2]
+        if path >= RING_STEP * (len(pts) + 1) - RING_STEP / 2:
+            pts.append([round(v + o, 2) for v, o in zip(r[2], off)])
+    return pts
+
+
 def pro_slots(chal: str, drops: str):
     """{challenge ID: (drop point ID, 'board'/'skate')} for CHAL_PRO challenges."""
     slots = {}
@@ -342,7 +381,8 @@ def append_table(text: str, block: str) -> str:
     return text[:end] + ",\r\n" + block + text[end:]
 
 
-def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro"):
+def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro",
+                    photo_dir: str = "photoshoot"):
     """Add one developer challenge to a level's two scripts.
 
     It gets its own drop point and its own CHAL_PRO challenge (copies of the
@@ -350,9 +390,26 @@ def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro"):
     Pro challenges stay as they are. No rank and no reward: wins are counted
     by the mod, not the career."""
     drop_id, chal_id = dev_ids(dev)
-    slot_drop, _ = pro_slots(chal, drops)[dev["slot"]]
+    slot_drop, _ = dev_slots(chal, drops, dev)[dev["slot"]]
     i, j = table_with(chal, dev["slot"])
     block = chal[i + 1:j + 4]
+    if dev.get("photo"):
+        # A photo shoot: the level's own (CHAL_MEDIASEQ) with its rings along
+        # the developer's line and the developer's score to beat.
+        subs = [(r'\bID = "[^"]*"', 'ID = "%s"' % chal_id),
+                (r'RankIncrease = \d+', "RankIncrease = 0"),
+                (r'RewardType = "[^"]*"', 'RewardType = "REWARD_NONE"'),
+                (r'RewardIndex = \d+', "RewardIndex = 0"),
+                (r'RewardInfo = "[^"]*"', 'RewardInfo = "Empty"'),
+                (r'Value = \d+', "Value = %d" % dev["score"]),
+                (r'RingArrayFile = "[^"]*"', 'RingArrayFile = "Levels\\\\%s\\\\%s\\\\%s.lua"'
+                 % (dev["level"], photo_dir, dev["id"])),
+                (r'DropPoints = \{[^}]*\}', 'DropPoints = {"%s"}' % drop_id)]
+        for pat, rep in subs:
+            block, n = re.subn(pat, lambda m, rep=rep: rep, block, count=1)
+            if n != 1:
+                raise ValueError("%s: %s not found" % (dev["slot"], pat))
+        return _add_drop(append_table(chal, block), drops, dev, slot_drop, drop_id)
     subs = [(r'\bID = "[^"]*"', 'ID = "%s"' % chal_id),
             (r'RankIncrease = \d+', "RankIncrease = 0"),
             (r'RewardType = "[^"]*"', 'RewardType = "REWARD_NONE"'),
@@ -366,8 +423,11 @@ def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro"):
         block, n = re.subn(pat, lambda m, rep=rep: rep, block, count=1)
         if n != 1:
             raise ValueError("%s: %s not found" % (dev["slot"], pat))
-    chal = append_table(chal, block)
+    return _add_drop(append_table(chal, block), drops, dev, slot_drop, drop_id)
 
+
+def _add_drop(chal: str, drops: str, dev: dict, slot_drop: str, drop_id: str):
+    """The challenge's own drop point, a copy of its template's."""
     # Start point: the drop point the recording began at gives the facing
     # and the camera; the new drop point sits HEAD_START m behind it, so the
     # pro starts ahead of the player.
@@ -493,9 +553,13 @@ def challenge_strings(devs, drops_name):
         mountain = MOUNTAINS.get(d["level"], d["level"])
         board = "snowskate" if d["kind"] == "skate" else "snowboard"
         s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
-        s["DevChal_%s_Help" % d["id"]] = ("Career_ChangeGear_Help", (
-            "%s, %s. Beat the run with at most three misses. Press A to start."
-            % (mountain, board)))   # two lines, as Career's
+        if d.get("photo"):
+            text = ("%s, %s. Photo shoot: score %d points through the rings. Press A to start."
+                    % (mountain, board, d["score"]))
+        else:
+            text = ("%s, %s. Beat the run with at most three misses. Press A to start."
+                    % (mountain, board))
+        s["DevChal_%s_Help" % d["id"]] = ("Career_ChangeGear_Help", text)   # two lines
     return s
 
 
@@ -594,7 +658,7 @@ def cmd_add(proj: Project, args):
     level = run["level"]
     chal = read(proj.level_source(level, "Challenges"))
     drops = read(proj.level_source(level, "DropPoints"))
-    slots = pro_slots(chal, drops)
+    slots = photo_slots(chal, drops) if args.photo else pro_slots(chal, drops)
     # The slot is only the template (a Pro challenge of the same board) the
     # challenge and its drop point are copied from; any number of developer
     # challenges can share one.
@@ -608,7 +672,8 @@ def cmd_add(proj: Project, args):
         same = sorted((s for s, (_, k) in slots.items() if k == run["kind"]),
                       key=lambda s: (not s.startswith("ProChal"), s))
         if not same:
-            sys.exit("%s has no %s Pro challenge to copy" % (level, run["kind"]))
+            sys.exit("%s has no %s %s challenge to copy"
+                     % (level, run["kind"], "photo-shoot" if args.photo else "Pro"))
         slot = next((x for x in reversed(same) if x.startswith("ProChal")), same[-1])
     if slots[slot][1] != run["kind"]:
         sys.exit("%s is a %s challenge, the recording is a %s run"
@@ -630,6 +695,25 @@ def cmd_add(proj: Project, args):
     t0, t1 = args.from_, args.to
     if args.marks and t0 is None:
         t0, t1 = marks_for(proj, args, level, (run["folder"] / "Career.rpl").stat().st_mtime)
+    if args.photo:
+        # A photo shoot: rings along the section, the developer's score to
+        # beat; the player starts where the section starts (no pro, no head
+        # start).
+        rpl = (run["folder"] / "Career.rpl").read_bytes()
+        recs = rpl_records(rpl)
+        t0 = t0 if t0 is not None else recs[0][3]
+        t1 = t1 if t1 is not None else recs[-1][3]
+        pos, d, _ = cut_start(rpl, t0)
+        rings = ring_points(rpl, t0, t1, off)
+        if len(rings) < 3:
+            sys.exit("section %.1f-%.1f s gives only %d ring(s)" % (t0, t1, len(rings)))
+        entry.update({"photo": True, "score": args.score, "rings": rings,
+                      "cut": [round(t0, 2), round(t1, 2)],
+                      "cut_start": [round(v + o, 2) for v, o in zip(pos, off)],
+                      "cut_dir": [round(v, 3) for v in d]})
+        print("photo shoot %.1f-%.1f s: %d rings, %d points to beat, starts at (%.1f, %.1f, %.1f)"
+              % (t0, t1, len(rings), args.score, *entry["cut_start"]))
+        t0 = None
     if t0 is not None:
         rpl = (run["folder"] / "Career.rpl").read_bytes()
         evt = (run["folder"] / "Career.evt").read_bytes()
@@ -680,14 +764,22 @@ def cmd_build(proj: Project, args):
         # (user's test: "Ahead of the pro" at once, 2026-11-09).
         names = zipfile.ZipFile(res).namelist()
         pro_dir = next((n.split("/")[0] for n in names if n.lower().startswith("pro/")), "Pro")
-        slots = pro_slots(chal, drops)
+        photo_dir = next((n.split("/")[0] for n in names
+                          if n.lower().startswith("photoshoot/")), "photoshoot")
         for dev in devs:
-            a, b = table_with(drops, slots[dev["slot"]][0])
+            a, b = table_with(drops, dev_slots(chal, drops, dev)[dev["slot"]][0])
             m = re.search(r'DisplayName = L"([^"]*)"', drops[a:b])
             drop_names[dev["id"]] = m.group(1) if m else dev["slot"]
         for dev in devs:
-            chal, drops = apply_challenge(chal, drops, dev, pro_dir)
+            chal, drops = apply_challenge(chal, drops, dev, pro_dir, photo_dir)
             rec = proj.pack / "recordings" / dev["id"]
+            if dev.get("photo"):
+                # No pro: the rings along the line are the challenge.
+                rings = ",\r\n".join("  {\r\n    %s,\r\n    %s,\r\n    %s\r\n  }" % tuple(r)
+                                      for r in dev["rings"])
+                write(loose / "Levels" / level / (level + ".res") / photo_dir / ("%s.lua" % dev["id"]),
+                      "MediaRings = {\r\n" + rings + "\r\n}\r\n")
+                continue
             files = {ext: (rec / ("Career." + ext)).read_bytes() for ext in RECORDING}
             if dev.get("cut"):
                 files["rpl"], files["evt"], _ = cut_recording(files["rpl"], files["evt"], *dev["cut"])
@@ -779,6 +871,10 @@ def main():
     p.add_argument("--from", dest="from_", type=float,
                    help="start of the section, seconds into the run")
     p.add_argument("--to", type=float, help="end of the section, seconds into the run")
+    p.add_argument("--photo", action="store_true",
+                   help="a photo shoot: rings along the section instead of a pro")
+    p.add_argument("--score", type=int, default=10000,
+                   help="photo shoot: points to beat (default 10000)")
     p.add_argument("--marks", action="store_true",
                    help="the section from the last L3+R3 marks (devchal-marks.json)")
     p.add_argument("--ini", help="folder of amped2.ini for --marks (default: test\\runs\\devchal-play)")
