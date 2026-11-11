@@ -1812,6 +1812,14 @@ challenges won.
    win detection need a hand test. To check: the win probably also marks
    `DevChal1` completed in the career's level progress, as any challenge
    (and may count toward its totals).
+5. **Next (user's hand test, 2026-11-11):** BR2 line (Pro) and BR2 photo
+   had no pro/HUD/rings: log "DevChal3 at 00000000" - amped2_find_challenge
+   scans only to 0x04000000 and the challenge objects were above it in the
+   user's run (map is g_xbox_map_size / g_xbox_total_ram); scan the mapped
+   size. And: the player starts 40 m back up the recorded line before the
+   section (Pro: the pro from the section's start, so >= 40 m ahead; photo:
+   rings from the section's start); from the run's first position when the
+   section starts sooner.
 5. **Developer photo shoots: built (2026-11-11, commit a9b9239)**, checked
    in the game with Replay8 BR2: intro, 10 rings along the line, 10,000
    points to beat, a missed ring fails. Not yet: a win by hand, the stat
