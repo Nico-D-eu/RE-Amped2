@@ -1819,6 +1819,20 @@ challenges won.
    `career.sig` = a table of the save's files (name, offset) and a 24-byte
    signature each: signed per file by the game's XAPI code (not the
    toolkit), so re-signing needs the game's key derivation.
+   **Decided (user, 2026-11-11): in-memory entries** (option a below), not
+   re-signing. Approach: inside sub_0005C450 the career progress is loaded
+   by sub_00022CB0 at 0x0005CFAB (path [ebp+0x74], table out [ebp-0x50C]),
+   then "Progress" is fetched (0x0005CFBD) into [ebp-0xD4], then each
+   challenge's entry by ID (sub_000EAE50 at 0x0005D6F8). None of these are
+   reached through a vtable, so: find what sub_00022CB0 runs (a Lua chunk
+   from the file's text?) and a hookable point (ICALL) in it or in the
+   file read where the parsed Progress table can get, for each DevChal<n>
+   of the level, {State = "Available", StateOnComplete = "Improve",
+   Parts = {{State = "Available", StateOnComplete = "Improve"}}} - only in
+   memory; the game then saves them signed. Check that the career's
+   signature is not re-checked on that read (a hand-edited file hung the
+   load). Test on fixtures devchal-now (BR2 dev3/dev4 missing) and
+   devchal-won.
 5. **Root cause, next to fix (2026-11-11):** a challenge missing from the
    career's existing `<L>_Progress.lua` is read through stale locals in the
    loader (`sub_0005C450`; crash for the user at 0x0005D786 reading its
