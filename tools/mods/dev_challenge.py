@@ -733,7 +733,7 @@ def cmd_add(proj: Project, args):
         recs = rpl_records(rpl)
         t0 = t0 if t0 is not None else recs[0][3]
         t1 = t1 if t1 is not None else recs[-1][3]
-        pos, d, _ = runup_start(rpl, t0)
+        pos, d, _ = runup_start(rpl, t0, args.runup)
         rings = ring_points(rpl, t0, t1, off)
         if len(rings) < 3:
             sys.exit("section %.1f-%.1f s gives only %d ring(s)" % (t0, t1, len(rings)))
@@ -748,7 +748,7 @@ def cmd_add(proj: Project, args):
         rpl = (run["folder"] / "Career.rpl").read_bytes()
         evt = (run["folder"] / "Career.evt").read_bytes()
         t1 = t1 if t1 is not None else rpl_records(rpl)[-1][3]
-        pos, d, _ = runup_start(rpl, t0)
+        pos, d, _ = runup_start(rpl, t0, args.runup)
         pos = [v + o for v, o in zip(pos, off)]
         t_pro = t0
         _, _, keep = cut_recording(rpl, evt, t_pro, t1)
@@ -757,7 +757,7 @@ def cmd_add(proj: Project, args):
         entry.update({"cut": [round(t_pro, 3), round(t1, 2)], "cut_start": [round(v, 2) for v in pos],
                       "cut_dir": [round(v, 3) for v in d]})
         print("section %.1f-%.1f s of %.1f s (the player %.0f m back up the line), %d trick(s), starts at"
-              " (%.1f, %.1f, %.1f)" % (t0, t1, rpl_records(rpl)[-1][3], RUNUP, tricks, *pos))
+              " (%.1f, %.1f, %.1f)" % (t0, t1, rpl_records(rpl)[-1][3], args.runup, tricks, *pos))
     data["challenges"].append(entry)
     proj.store(data)
     print("added %s: %s, %s, template %s (%s)" % (dev_id, level, run["kind"], slot, slots[slot][0]))
@@ -902,6 +902,8 @@ def main():
     p.add_argument("--from", dest="from_", type=float,
                    help="start of the section, seconds into the run")
     p.add_argument("--to", type=float, help="end of the section, seconds into the run")
+    p.add_argument("--runup", type=float, default=RUNUP,
+                   help="metres of the line the player rides before the section (default 40)")
     p.add_argument("--photo", action="store_true",
                    help="a photo shoot: rings along the section instead of a pro")
     p.add_argument("--score", type=int, default=10000,
