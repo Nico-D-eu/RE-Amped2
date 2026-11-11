@@ -1582,7 +1582,11 @@ challenges won.
    `devchal-marks.json`; the clock was seen starting at ChooseDropPoint, the
    presses themselves need a hand test (scripted input is not XInput). The
    `.rpl`/`.evt` layouts used are in DEVELOPING.md.
-   **Open (user's test, 2026-11-09): an ML1 developer challenge fails at
+   **Fixed (2026-11-11): replay coordinates are kept modulo 1000 m** (the
+   disc's ML1 pros decode 1000 m short in X of their drop points); the tool
+   now unwraps them and finds each run's offset from its drop point. The
+   user's ML1 run plays with the pro ahead. The note below is the hunt.
+   **Was open (user's test, 2026-11-09): an ML1 developer challenge fails at
    once.** Replay6 ML1 (`151C6100500E`), cut 0.9-82.5 s and also uncut:
    "GO!", "Slow Down", "Ahead of the pro", three misses, "Challenge
    failed", the pro never leads. The HUD reads the recording ("1 OF 9",
