@@ -757,9 +757,25 @@ def cmd_add(proj: Project, args):
         # 2026-11-11: with the pro starting at the section and the player 40
         # m behind, the run began with 2 misses and the pro out of sight);
         # the player starts HEAD_START m behind the pro, as on the disc.
+        # Both starts must lie in the same 1000 m block (positions are kept
+        # modulo 1000 m, see rpl_records): BR2 line with the player at X
+        # 1004.5 and the pro's start at 997.3 had no pro and "Slow Down"
+        # from the start (user, 2026-11-11), as if the pro were 1000 m off.
+        # So the pro starts later along the line until they share it.
         _, _, t_pro = runup_start(rpl, t0, args.runup)
-        pos, d, _ = runup_start(rpl, t0, args.runup + HEAD_START)
-        pos = [v + o for v, o in zip(pos, off)]
+        times = [r[3] for r in rpl_records(rpl)]
+        while True:
+            pro_at, _, _ = runup_start(rpl, t_pro, 0.0)
+            pos, d, _ = runup_start(rpl, t_pro, HEAD_START)
+            pos = [v + o for v, o in zip(pos, off)]
+            pro_at = [v + o for v, o in zip(pro_at, off)]
+            later = [t for t in times if t > t_pro]
+            # 2 m clear of the block's edge.
+            if all(math.floor((a - 2) / 1000) == math.floor((a + 2) / 1000) == math.floor(b / 1000)
+                   for a, b in zip(pos, pro_at)) \
+                    or not later or later[0] >= t0:
+                break
+            t_pro = later[0]
         _, _, keep = cut_recording(rpl, evt, t_pro, t1)
         tricks = sum(1 for o, n, t in evt_events(evt)
                      if keep[0][3] <= t <= keep[-1][3] and struct.unpack_from("<I", evt, o + 4)[0] == 12)
