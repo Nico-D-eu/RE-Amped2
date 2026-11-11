@@ -1850,7 +1850,14 @@ challenges won.
    and the pro far ahead, out of sight: the pro should start where the
    player starts now, the player behind that again. BR2 photo: score to
    beat 75,000, and the player must start further back to have the speed
-   for the first jump.
+   for the first jump. **Built (2026-11-11), to hand-test:** a Pro
+   section's pro now starts `--runup` m (40) back up the line from the
+   section and the player `HEAD_START` (20 m) behind the pro; where the
+   line runs out (the run's start), the run-up goes on straight back
+   against the rider's first direction. BR2 line re-added: the pro from
+   2.44 s, where the player started before, the player 19 m behind it.
+   BR2 photo re-added with `--score 75000 --runup 100`: the player 98 m
+   before the first ring (45 m of line, 55 m straight back).
 5. **Root cause, fixed 2026-11-11 (above):** a challenge missing from the
    career's existing `<L>_Progress.lua` is read through stale locals in the
    loader (`sub_0005C450`; crash for the user at 0x0005D786 reading its

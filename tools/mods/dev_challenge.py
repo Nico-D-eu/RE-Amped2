@@ -248,8 +248,11 @@ RUNUP = 40.0           # metres of the line the player rides before a section
 def runup_start(rpl: bytes, t0: float, metres: float = RUNUP):
     """Where the player starts for a section beginning at t0: `metres` back
     up the recorded line (user, 2026-11-11: a section needs a run-up to be
-    ridden), or where the run started if that is closer. Returns (position,
-    unit direction the rider went from there, time there)."""
+    ridden). Where the run started closer than that, the rest goes straight
+    back from the run's start, against the way the rider set off (user's
+    BR2 photo test: a 45 m run-up gave too little speed for the first
+    jump). Returns (position, unit direction the rider went from there, the
+    run's time at the line's point)."""
     recs = rpl_records(rpl)
     i = next((k for k, r in enumerate(recs) if r[3] >= t0), len(recs) - 1)
     j, path = i, 0.0
@@ -263,7 +266,9 @@ def runup_start(rpl: bytes, t0: float, metres: float = RUNUP):
         k += 1
     d = [q - p for p, q in zip(a[2], recs[k][2])]
     n = math.sqrt(sum(v * v for v in d)) or 1.0
-    return a[2], [v / n for v in d], a[3]
+    d = [v / n for v in d]
+    short = max(0.0, metres - path)
+    return [p - short * v for p, v in zip(a[2], d)], d, a[3]
 
 
 def board_kind(parts_text: str) -> str:
@@ -748,16 +753,21 @@ def cmd_add(proj: Project, args):
         rpl = (run["folder"] / "Career.rpl").read_bytes()
         evt = (run["folder"] / "Career.evt").read_bytes()
         t1 = t1 if t1 is not None else rpl_records(rpl)[-1][3]
-        pos, d, _ = runup_start(rpl, t0, args.runup)
+        # The pro starts `--runup` m back up the line from the section (user,
+        # 2026-11-11: with the pro starting at the section and the player 40
+        # m behind, the run began with 2 misses and the pro out of sight);
+        # the player starts HEAD_START m behind the pro, as on the disc.
+        _, _, t_pro = runup_start(rpl, t0, args.runup)
+        pos, d, _ = runup_start(rpl, t0, args.runup + HEAD_START)
         pos = [v + o for v, o in zip(pos, off)]
-        t_pro = t0
         _, _, keep = cut_recording(rpl, evt, t_pro, t1)
         tricks = sum(1 for o, n, t in evt_events(evt)
                      if keep[0][3] <= t <= keep[-1][3] and struct.unpack_from("<I", evt, o + 4)[0] == 12)
         entry.update({"cut": [round(t_pro, 3), round(t1, 2)], "cut_start": [round(v, 2) for v in pos],
                       "cut_dir": [round(v, 3) for v in d]})
-        print("section %.1f-%.1f s of %.1f s (the player %.0f m back up the line), %d trick(s), starts at"
-              " (%.1f, %.1f, %.1f)" % (t0, t1, rpl_records(rpl)[-1][3], args.runup, tricks, *pos))
+        print("section %.1f-%.1f s of %.1f s (the pro from %.1f s, %.0f m back; the player %.0f m"
+              " behind), %d trick(s), starts at (%.1f, %.1f, %.1f)"
+              % (t0, t1, rpl_records(rpl)[-1][3], t_pro, args.runup, HEAD_START, tricks, *pos))
     data["challenges"].append(entry)
     proj.store(data)
     print("added %s: %s, %s, template %s (%s)" % (dev_id, level, run["kind"], slot, slots[slot][0]))
@@ -903,7 +913,8 @@ def main():
                    help="start of the section, seconds into the run")
     p.add_argument("--to", type=float, help="end of the section, seconds into the run")
     p.add_argument("--runup", type=float, default=RUNUP,
-                   help="metres of the line the player rides before the section (default 40)")
+                   help="metres before the section: the player (photo) or the pro (Pro) starts there,"
+                        " straight back past the run's start if needed (default 40)")
     p.add_argument("--photo", action="store_true",
                    help="a photo shoot: rings along the section instead of a pro")
     p.add_argument("--score", type=int, default=10000,
