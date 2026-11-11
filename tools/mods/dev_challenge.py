@@ -741,7 +741,7 @@ def cmd_add(proj: Project, args):
     if any(off):
         print("positions are short by %s m on %s; corrected" % (off, level))
     entry = {
-        "id": dev_id, "title": args.title or run["name"], "level": level,
+        "id": dev_id, "title": args.title or default_title(data, level, args.photo), "level": level,
         "slot": slot, "kind": run["kind"], "start": start,
         "save": run["save"], "save_name": run["name"]}
     t0, t1 = args.from_, args.to
@@ -804,6 +804,29 @@ def cmd_add(proj: Project, args):
     data["challenges"].append(entry)
     proj.store(data)
     print("added %s: %s, %s, template %s (%s)" % (dev_id, level, run["kind"], slot, slots[slot][0]))
+    cmd_build(proj, args)
+
+
+def default_title(data, level: str, photo: bool) -> str:
+    """"Millicent Line 1", "Bear Mountain Photo 1" (user, 2026-11-11): the
+    mountain's full name without its stage number, the kind, and a number
+    counting that mountain's challenges of that kind."""
+    def mountain(lv):
+        return re.sub(r"\s*\d+$", "", MOUNTAINS.get(lv, lv))
+    kind = "Photo" if photo else "Line"
+    n = 1 + sum(1 for c in data["challenges"]
+                if mountain(c["level"]) == mountain(level) and bool(c.get("photo")) == bool(photo))
+    return "%s %s %d" % (mountain(level), kind, n)
+
+
+def cmd_rename(proj: Project, args):
+    data = proj.load()
+    c = next((c for c in data["challenges"] if c["id"] == args.dev_id), None)
+    if c is None:
+        sys.exit("no %s in %s" % (args.dev_id, proj.manifest))
+    c["title"] = args.title
+    proj.store(data)
+    print("renamed %s: %s" % (args.dev_id, args.title))
     cmd_build(proj, args)
 
 
@@ -958,10 +981,14 @@ def main():
     p.add_argument("--udata")
     p = sub.add_parser("remove", help="take a developer challenge out")
     p.add_argument("dev_id")
+    p = sub.add_parser("rename", help="give a developer challenge a new title")
+    p.add_argument("dev_id")
+    p.add_argument("title")
     sub.add_parser("build", help="rebuild the pack's loose entries")
     args = ap.parse_args()
     proj = Project(Path(args.project), args.pack)
-    {"list": cmd_list, "add": cmd_add, "remove": cmd_remove, "build": cmd_build}[args.cmd](proj, args)
+    {"list": cmd_list, "add": cmd_add, "remove": cmd_remove, "rename": cmd_rename,
+     "build": cmd_build}[args.cmd](proj, args)
 
 
 if __name__ == "__main__":
