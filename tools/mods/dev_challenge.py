@@ -242,6 +242,30 @@ def cut_start(rpl: bytes, t0: float):
     return a[2], [v / n for v in d], b[3]
 
 
+RUNUP = 40.0           # metres of the line the player rides before a section
+
+
+def runup_start(rpl: bytes, t0: float, metres: float = RUNUP):
+    """Where the player starts for a section beginning at t0: `metres` back
+    up the recorded line (user, 2026-11-11: a section needs a run-up to be
+    ridden), or where the run started if that is closer. Returns (position,
+    unit direction the rider went from there, time there)."""
+    recs = rpl_records(rpl)
+    i = next((k for k, r in enumerate(recs) if r[3] >= t0), len(recs) - 1)
+    j, path = i, 0.0
+    while j > 0 and path < metres:
+        path += math.dist(recs[j - 1][2], recs[j][2])
+        j -= 1
+    a = recs[j]
+    k, ahead = j, 0.0
+    while k + 1 < len(recs) and ahead < 20.0:
+        ahead += math.dist(recs[k][2], recs[k + 1][2])
+        k += 1
+    d = [q - p for p, q in zip(a[2], recs[k][2])]
+    n = math.sqrt(sum(v * v for v in d)) or 1.0
+    return a[2], [v / n for v in d], a[3]
+
+
 def board_kind(parts_text: str) -> str:
     m = re.search(r'MeshType\s*=\s*"([^"]+)"', parts_text)
     return "skate" if m and "skate" in m.group(1).lower() else "board"
@@ -381,6 +405,12 @@ def append_table(text: str, block: str) -> str:
     return text[:end] + ",\r\n" + block + text[end:]
 
 
+def prepend_table(text: str, block: str) -> str:
+    """Add a top-level table before the first one."""
+    start = tables(text)[0][0] + 1
+    return text[:start] + block + ",\r\n" + text[start:]
+
+
 def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro",
                     photo_dir: str = "photoshoot"):
     """Add one developer challenge to a level's two scripts.
@@ -409,7 +439,7 @@ def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro",
             block, n = re.subn(pat, lambda m, rep=rep: rep, block, count=1)
             if n != 1:
                 raise ValueError("%s: %s not found" % (dev["slot"], pat))
-        return _add_drop(append_table(chal, block), drops, dev, slot_drop, drop_id)
+        return _add_drop(prepend_table(chal, block), drops, dev, slot_drop, drop_id)
     subs = [(r'\bID = "[^"]*"', 'ID = "%s"' % chal_id),
             (r'RankIncrease = \d+', "RankIncrease = 0"),
             (r'RewardType = "[^"]*"', 'RewardType = "REWARD_NONE"'),
@@ -423,7 +453,7 @@ def apply_challenge(chal: str, drops: str, dev: dict, pro_dir: str = "Pro",
         block, n = re.subn(pat, lambda m, rep=rep: rep, block, count=1)
         if n != 1:
             raise ValueError("%s: %s not found" % (dev["slot"], pat))
-    return _add_drop(append_table(chal, block), drops, dev, slot_drop, drop_id)
+    return _add_drop(prepend_table(chal, block), drops, dev, slot_drop, drop_id)
 
 
 def _add_drop(chal: str, drops: str, dev: dict, slot_drop: str, drop_id: str):
@@ -703,7 +733,7 @@ def cmd_add(proj: Project, args):
         recs = rpl_records(rpl)
         t0 = t0 if t0 is not None else recs[0][3]
         t1 = t1 if t1 is not None else recs[-1][3]
-        pos, d, _ = cut_start(rpl, t0)
+        pos, d, _ = runup_start(rpl, t0)
         rings = ring_points(rpl, t0, t1, off)
         if len(rings) < 3:
             sys.exit("section %.1f-%.1f s gives only %d ring(s)" % (t0, t1, len(rings)))
@@ -718,15 +748,16 @@ def cmd_add(proj: Project, args):
         rpl = (run["folder"] / "Career.rpl").read_bytes()
         evt = (run["folder"] / "Career.evt").read_bytes()
         t1 = t1 if t1 is not None else rpl_records(rpl)[-1][3]
-        pos, d, t_pro = cut_start(rpl, t0)
+        pos, d, _ = runup_start(rpl, t0)
         pos = [v + o for v, o in zip(pos, off)]
+        t_pro = t0
         _, _, keep = cut_recording(rpl, evt, t_pro, t1)
         tricks = sum(1 for o, n, t in evt_events(evt)
                      if keep[0][3] <= t <= keep[-1][3] and struct.unpack_from("<I", evt, o + 4)[0] == 12)
         entry.update({"cut": [round(t_pro, 3), round(t1, 2)], "cut_start": [round(v, 2) for v in pos],
                       "cut_dir": [round(v, 3) for v in d]})
-        print("section %.1f-%.1f s of %.1f s (the pro from %.1f s), %d trick(s), starts at"
-              " (%.1f, %.1f, %.1f)" % (t0, t1, rpl_records(rpl)[-1][3], t_pro, tricks, *pos))
+        print("section %.1f-%.1f s of %.1f s (the player %.0f m back up the line), %d trick(s), starts at"
+              " (%.1f, %.1f, %.1f)" % (t0, t1, rpl_records(rpl)[-1][3], RUNUP, tricks, *pos))
     data["challenges"].append(entry)
     proj.store(data)
     print("added %s: %s, %s, template %s (%s)" % (dev_id, level, run["kind"], slot, slots[slot][0]))

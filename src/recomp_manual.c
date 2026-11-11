@@ -1336,25 +1336,36 @@ static uint32_t amped2_find_drop(const char *id)
 /* A level's challenge by ID: an object whose +0x1C is its ID (a String's
  * char *) and whose progress record (+0x38) points back at it (+0), as the
  * challenge loader (sub_0005C450, 0x0005D89C) links them. Found by a scan of
- * the guest heap, once per level; 0 if none. */
+ * the guest heap, once per level; 0 if none. The whole mapped guest memory:
+ * this build maps more than the Xbox's 64 MB (toolkit g_xbox_map_size), and
+ * in the user's BR2 runs the challenges lay above 0x04000000, so a scan that
+ * stopped there found nothing and the challenge stayed switched off. */
+extern size_t g_xbox_map_size, g_xbox_total_ram;    /* toolkit memory layout */
 static uint32_t amped2_find_challenge(const char *id)
 {
-    const uint32_t lo = 0x00400000u, hi = 0x04000000u;
+    const uint32_t lo = 0x00400000u;
+    const uint32_t hi = (uint32_t)(g_xbox_map_size ? g_xbox_map_size : g_xbox_total_ram);
     size_t n = strlen(id);
     uint32_t a, b;
-    for (a = lo; a + n + 1 < hi; a += 4) {
+    int copies = 0, refs = 0;
+    /* Every byte: a String's text need not be 4-byte aligned. */
+    for (a = lo; a + n + 1 < hi; a++) {
         if (MEM8(a) != (uint8_t)id[0] || memcmp((const void *)XBOX_PTR(a), id, n + 1))
             continue;
+        copies++;
         for (b = lo; b + 0x40 < hi; b += 4) {
             uint32_t obj, rec;
             if (MEM32(b) != a)
                 continue;
+            refs++;
             obj = b - 0x1C;
             rec = MEM32(obj + 0x38);
             if (rec >= lo && rec < hi && MEM32(rec) == obj)
                 return obj;
         }
     }
+    fprintf(stderr, "  [DEVCHAL] %s not found: %d copies of the ID, %d references, scanned %08X-%08X\n",
+            id, copies, refs, lo, hi);
     return 0;
 }
 
