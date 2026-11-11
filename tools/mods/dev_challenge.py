@@ -603,10 +603,13 @@ def cmd_add(proj: Project, args):
             sys.exit("%s has no Pro challenge %s (has %s)" % (level, args.slot, ", ".join(slots)))
         slot = args.slot
     else:
-        same = [s for s, (_, k) in slots.items() if k == run["kind"]]
+        # The level's own Pro challenges first: a Legend challenge is CHAL_PRO
+        # too, but its drop point is Type "Legend" and starts no Pro run.
+        same = sorted((s for s, (_, k) in slots.items() if k == run["kind"]),
+                      key=lambda s: (not s.startswith("ProChal"), s))
         if not same:
             sys.exit("%s has no %s Pro challenge to copy" % (level, run["kind"]))
-        slot = same[-1]
+        slot = next((x for x in reversed(same) if x.startswith("ProChal")), same[-1])
     if slots[slot][1] != run["kind"]:
         sys.exit("%s is a %s challenge, the recording is a %s run"
                  % (slot, slots[slot][1], run["kind"]))
