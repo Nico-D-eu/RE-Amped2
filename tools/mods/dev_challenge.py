@@ -197,16 +197,33 @@ def level_offset(drops: str, rpl: bytes):
     return best[1] if best and best[0] < 50.0 else (0.0, 0.0, 0.0)
 
 
+HOLD = 2.35            # seconds a run stands still at its start (the countdown)
+
+
 def cut_recording(rpl: bytes, evt: bytes, t0: float, t1: float):
     """The section t0..t1 (seconds of the run) of a replay and its events,
-    with times moved so the section starts where the run did."""
+    with times moved so the section starts where the run did.
+
+    A run stands still for its first HOLD s while the countdown runs (the
+    disc's pros and LX2's dev1 move at 2.35 s); a section starts at speed.
+    So its first record is held that long first: otherwise the pro rides
+    off during the countdown (user's BR2 line test, 2026-11-11: the pro far
+    ahead, 2 of 3 misses from the start, with the player 20 m behind)."""
     recs = rpl_records(rpl)
     keep = [r for r in recs if t0 <= r[3] <= t1]
     if len(keep) < 60:
         raise ValueError("cut %.1f-%.1f s keeps %d records (run is %.1f s)"
                          % (t0, t1, len(keep), recs[-1][3]))
-    shift = keep[0][3] - recs[0][3]
+    shift = keep[0][3] - recs[0][3] - HOLD
     out = bytearray(rpl[:5])
+    o, n, _, t = keep[0]
+    step = (keep[-1][3] - keep[0][3]) / (len(keep) - 1)
+    k = 0
+    while recs[0][3] + k * step < keep[0][3] - shift - step / 2:
+        rec = bytearray(rpl[o:o + n])
+        struct.pack_into("<f", rec, n - 4, recs[0][3] + k * step)
+        out += rec
+        k += 1
     for o, n, _, t in keep:
         rec = bytearray(rpl[o:o + n])
         struct.pack_into("<f", rec, n - 4, t - shift)
