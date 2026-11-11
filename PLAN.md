@@ -1921,6 +1921,15 @@ developer's look and name; three misses fail the challenge; a win is
 remembered; after three wins the player has one more stat point to spend,
 and the career save differs only by it; one developer photo shoot.
 
+**Release target (user, 2026-11-11):** the next release ships 6 or 9
+developer challenges, so players can earn up to 3 extra stat points.
+Kept so far (user's hand tests): dev2 ML1 line (Pro section) and dev4 BR2
+photo (75,000). Removed: dev1 (LX2 Photo2 line, the first test run) and
+dev3 (BR2 line, the pro still far ahead after the countdown hold; to be
+recorded anew). Note: `add` reuses the first free ID, so a new dev1/dev3
+would count as already won in a test save whose `devchallenges.json` lists
+the old one.
+
 #### Phase 26: Online high scores (opt-in)
 
 **Behaviour (user's design):** shared "live" high scores per level, with
