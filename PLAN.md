@@ -1921,6 +1921,35 @@ developer's look and name; three misses fail the challenge; a win is
 remembered; after three wins the player has one more stat point to spend,
 and the career save differs only by it; one developer photo shoot.
 
+**The intro/end card and the list (user, 2026-11-11), to do:**
+- The card says "DEV CHALLENGE" / "DEV PHOTOSHOOT" (not "PRO CHALLENGE" /
+  "PHOTO SHOOT"), the developer's name (Nico-D, the `.boarder` Name) and
+  portrait (`mods\packs\dev-challenges\art\nico-d.png`, the user's photo,
+  512x512; the pros' pictures are 128x128 `Pict_Pro_<name>.xpr` in
+  `Gui/Textures/Textures.gfx`). A photo card shows no "Sponsor:" / "Likes:",
+  only Nico-D, and a short, precise, humorous snowboard line where "Big
+  Air" is now.
+- The list: a green checkmark after a won challenge's title.
+- **Found (2026-11-11):** the card is the PreRun screen, filled natively
+  (around `0x0004C435`-`0x0004D876`) from Base.rui string keys:
+  `PreRun_Pro_Title` (ref `0x0004CAB3`), `PreRun_PhotoShoot_Title`
+  (`0x0004C435`, `0x0004D0F4`), `PreRun_Sponsor_Name` / `_Likes`
+  (`0x0004C561`, `0x0004D876`), the likes as `SponsorLikes<kind>` (Big Air
+  = `SponsorLikesBigAir`), the pro's name `ProName%d` (`0x0004CD54`; index
+  probably from "ProChal" + digit, `0x0004CC3F`, which a DevChal ID lacks),
+  the picture `<L>_<ChallengeID>` = texture name (e.g. `BR2_ProChal3 =
+  Pict_Pro_Bobby`; a `BR2_DevChal4` string can name our own texture, tool
+  only). Each key goes through `sub_00012290`/`sub_000122B0` (String) and
+  the lookup `sub_000B1E20` (key String in eax, push table `[0x0038CDF4]`,
+  push out; "Package.Key" splits at '.', packages at table `+0x1434`,
+  `sub_000B2990`, then `sub_000B4A90`). All direct calls: wrapping the
+  lookup needs it in `config/manual_functions.json` and a regeneration
+  (callers then go through the manual lookup); the alternative is
+  swapping the loaded table's entries in memory while a developer challenge
+  runs. Next: decide that, then the portrait texture (format of the
+  pros' 128x128 xpr) and the list's won marks (the list is built by the
+  tool, so a native swap of the item text when the list opens).
+
 **Release target (user, 2026-11-11):** the next release ships 6 or 9
 developer challenges, so players can earn up to 3 extra stat points.
 Kept so far (user's hand tests): dev2 ML1 line (Pro section) and dev4 BR2
