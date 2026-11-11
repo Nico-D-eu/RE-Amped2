@@ -1962,6 +1962,21 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   `+0x4C`), or, with no progress file, the default at `0x0005D855`
   (Available, Improve, 1, 2, `+0x34 = 0xFA`). The career is signed
   (`career.sig`): a hand-edited progress file hangs the load.
+- **Progress entries in memory** (2026-11-11). The loader `sub_0005C450`
+  runs `<L>_Challenges.lua` (`sub_00022CB0` at `0x0005C571`) and then the
+  career's `<L>_Progress.lua` (`0x0005CFAB`), and looks up each challenge's
+  entry by ID (`sub_000EAE50` at `0x0005D6F8`). A challenge the career
+  doesn't list is read through the previous entry's leftovers (it loads, is
+  left out, or crashes at `0x0005D786` on its "Parts"). Both files go
+  through `sub_0014ED70` -> lua_load `0x000F3660` with luaL_loadbuffer's
+  reader getS `0x000F3640` (cdecl `(L, ud, size *)`, `ud` = {text, size},
+  handed out once), called through a pointer from luaZ_fill. The wrapper
+  `amped2_lua_getS` adds, only while the challenges load, a second piece
+  of text after a `Progress` file's own: an entry (Available, on complete
+  Improve, one Available part) for each `DevChal<n>` of the challenges
+  file that `Progress` lacks. The text goes to the header page at
+  `0x00010C00` (XBE headers end at `0x00010B60`). The files on disk are
+  not touched, and the game saves the entries itself, signed.
 - The career drop-point menu lists only plain drop points (type `+0x54`
   0, 4 or 9; `0x0010C205`) and the fixed IDs Sponsor1-3, PhotoShoot1-3,
   Pro1-3 (`0x0010C416` on). Challenge code also knows Pro challenges as

@@ -1369,6 +1369,99 @@ static uint32_t amped2_find_challenge(const char *id)
     return 0;
 }
 
+/* In-memory progress entries for the developer challenges. The loader
+ * sub_0005C450 runs the level's <L>_Challenges.lua (sub_00022CB0 at
+ * 0x0005C571), then the career's <L>_Progress.lua (0x0005CFAB) into a table,
+ * and looks up each challenge's entry by ID (sub_000EAE50 at 0x0005D6F8). A
+ * challenge the career does not list (a developer challenge added after the
+ * career was saved) is read through the previous entry's leftovers: it
+ * loads, is left out or crashes (0x0005D786, its "Parts"). Both files reach
+ * Lua through luaL_loadbuffer, whose reader getS (0x000F3640, cdecl
+ * (L, ud, size *); ud = {text, size}, handed out once) is called through a
+ * pointer from luaZ_fill. While the challenges load, this wrapper notes the
+ * IDs DevChal<n> the level's challenges file names, and gives a progress
+ * file (text starting "Progress") a second piece of text after its own: for
+ * each of those IDs it has no entry for, the default entry the loader makes
+ * without a progress file (Available, on complete Improve, one Available
+ * part). Only the Lua text in memory changes, after the file was read (and
+ * any signature check of the bytes); the career's files are not written,
+ * and the game saves the entries itself, signed, as for any challenge.
+ * The text goes into the header-page scratch at 0x00010C00 (below the
+ * strings at 0x00010F00; the XBE headers end at 0x00010B60). */
+#define AMPED2_PROGRESS_ADD_VA  0x00010C00u
+#define AMPED2_PROGRESS_ADD_MAX 0x300u
+extern void sub_000F3640(void);
+static int g_devchal_loading;               /* inside amped2_challenges_load */
+static char g_devchal_ids[16][16];          /* the level's DevChal<n> IDs */
+static int g_devchal_nids;
+static uint32_t g_progress_ud, g_progress_added;
+
+static const char *amped2_gmemmem(uint32_t p, uint32_t n, const char *s, uint32_t *at)
+{
+    uint32_t k = (uint32_t)strlen(s), i;
+    for (i = 0; i + k <= n; i++)
+        if (!memcmp((const void *)XBOX_PTR(p + i), s, k)) {
+            *at = p + i;
+            return s;
+        }
+    return NULL;
+}
+
+static void amped2_lua_getS(void)
+{
+    uint32_t ud = MEM32(g_esp + 8), sizep = MEM32(g_esp + 0xC);
+    uint32_t text = ud ? MEM32(ud) : 0, size = ud ? MEM32(ud + 4) : 0;
+    if (g_devchal_loading && text && size) {
+        uint32_t i = 0, at;
+        while (i < size && (MEM8(text + i) == ' ' || MEM8(text + i) == '\t'
+                            || MEM8(text + i) == '\r' || MEM8(text + i) == '\n'))
+            i++;
+        if (size - i >= 8 && !memcmp((const void *)XBOX_PTR(text + i), "Progress", 8)) {
+            g_progress_ud = ud;             /* the career's progress: add after it */
+            g_progress_added = 0;
+        } else {                            /* the challenges file: its DevChal IDs */
+            uint32_t p = text, n = size;
+            while (g_devchal_nids < 16 && amped2_gmemmem(p, n, "\"DevChal", &at)) {
+                char id[16];
+                int k = 0, j;
+                at++;
+                while (k < 15 && at + k < text + size && MEM8(at + k) != '"') {
+                    id[k] = (char)MEM8(at + k);
+                    k++;
+                }
+                id[k] = 0;
+                for (j = 0; j < g_devchal_nids && strcmp(g_devchal_ids[j], id); j++)
+                    ;
+                if (j == g_devchal_nids && k > 7)
+                    strcpy(g_devchal_ids[g_devchal_nids++], id);
+                n -= at + k - p;
+                p = at + k;
+            }
+        }
+    }
+    sub_000F3640();
+    if (g_eax == 0 && ud && ud == g_progress_ud && !g_progress_added) {
+        char buf[AMPED2_PROGRESS_ADD_MAX];
+        int len = snprintf(buf, sizeof buf,
+            "\nlocal function DevChalEntry(id) if Progress and Progress[id] == nil then"
+            " Progress[id] = {State = \"Available\", StateOnComplete = \"Improve\","
+            " Parts = {{State = \"Available\", StateOnComplete = \"Improve\"}}} end end\n");
+        int i;
+        g_progress_added = 1;
+        for (i = 0; i < g_devchal_nids && len > 0 && len + 40 < (int)sizeof buf; i++)
+            len += snprintf(buf + len, sizeof buf - len, "DevChalEntry(\"%s\")\n", g_devchal_ids[i]);
+        if (g_devchal_nids && len > 0) {
+            for (i = 0; i < len; i++)
+                MEM8(AMPED2_PROGRESS_ADD_VA + i) = (uint8_t)buf[i];
+            MEM32(sizep) = (uint32_t)len;
+            g_eax = AMPED2_PROGRESS_ADD_VA;
+            fprintf(stderr, "  [DEVCHAL] progress: entries for %d developer challenge(s) if missing\n",
+                    g_devchal_nids);
+            fflush(stderr);
+        }
+    }
+}
+
 /* The level's challenges are built when the run starts (vtable 0x00347814,
  * sub_0004A700, thiscall, `ret`; it calls the loader sub_0005C450 on the
  * level's <L>_Challenges.lua). The loader takes each challenge's state from
@@ -1384,7 +1477,12 @@ extern void sub_0004A700(void);
 static void amped2_challenges_load(void)
 {
     uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp;
+    g_devchal_nids = 0;
+    g_progress_ud = 0;
+    g_devchal_loading = 1;
     sub_0004A700();
+    g_devchal_loading = 0;
+    g_progress_ud = 0;
     if (g_devchal_playing[0]) {
         char id[32];
         uint32_t c, rec;
@@ -2319,6 +2417,7 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     if (xbox_va == 0x002194B0) return amped2_pushmenu;        /* GUI PushMenu */
     if (xbox_va == 0x00018B40) return amped2_session_update;  /* level session update */
     if (xbox_va == 0x0004A700) return amped2_challenges_load; /* level challenges: load */
+    if (xbox_va == 0x000F3640) return amped2_lua_getS;        /* luaL_loadbuffer's reader */
     if (xbox_va == 0x00066890) return amped2_trace_reward;    /* challenge reward text */
     if (xbox_va == 0x0010DA50) return amped2_rec_choose;      /* ChooseDropPoint() */
     if (xbox_va == 0x0010F150) return amped2_rec_restart;     /* RestartChallenge() */

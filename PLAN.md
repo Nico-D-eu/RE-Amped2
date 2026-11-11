@@ -1833,7 +1833,25 @@ challenges won.
    signature is not re-checked on that read (a hand-edited file hung the
    load). Test on fixtures devchal-now (BR2 dev3/dev4 missing) and
    devchal-won.
-5. **Root cause, next to fix (2026-11-11):** a challenge missing from the
+   **Done (2026-11-11), user's hand test on the devchal-play save:** both
+   files reach Lua through luaL_loadbuffer, whose reader getS (`0x000F3640`)
+   is called through a pointer, so `amped2_lua_getS` wraps it: while the
+   challenges load it notes the `DevChal<n>` IDs of `<L>_Challenges.lua` and
+   hands Lua a second piece after the career's `Progress` text that adds the
+   default entry for each ID the career lacks (DEVELOPING.md, "Starting a
+   level and a drop point natively"). BR2 line and BR2 photo now load
+   active (log: "progress: entries for 2", "DevChal3 ... state 1, active
+   1"): a pro, HUD, miss markers and target score; rings and the score.
+   No hang, so no signature check sees the change. Not rechecked: LX2/ML1
+   (their careers already list their entries; the `== nil` test leaves
+   those alone). The scripted title probe stopped launching levels today,
+   with or without this change (diag devchal-pe3a); not looked into.
+   **Next (user's hand test, 2026-11-11):** BR2 line starts with 2 misses
+   and the pro far ahead, out of sight: the pro should start where the
+   player starts now, the player behind that again. BR2 photo: score to
+   beat 75,000, and the player must start further back to have the speed
+   for the first jump.
+5. **Root cause, fixed 2026-11-11 (above):** a challenge missing from the
    career's existing `<L>_Progress.lua` is read through stale locals in the
    loader (`sub_0005C450`; crash for the user at 0x0005D786 reading its
    "Parts", crash report 20261111-145855), so it loads, is left out or
