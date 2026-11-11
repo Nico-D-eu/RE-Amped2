@@ -1812,7 +1812,20 @@ challenges won.
    win detection need a hand test. To check: the win probably also marks
    `DevChal1` completed in the career's level progress, as any challenge
    (and may count toward its totals).
-5. **Developer photo shoots: possible.** A photo shoot is a
+5. **Developer photo shoots: next (user, 2026-11-11).** First recording:
+   Replay8 BR2 (`2F6DDEB4737B`, marks 6.66-19.42 s, in the devchal-play
+   test save). Plan: `add --photo` writes a `CHAL_MEDIASEQ` challenge
+   DevChal<n> (copy of the level's PhotoShoot challenge: its parts,
+   evaluator, `RingArrayFile`), a `Type = "Sequence"` drop point Dev<n> at
+   the section's start (as for Pro sections), and a ring file
+   `Levels\<L>\photoshoot\dev<n>.lua` (`MediaRings` points) placed
+   along the recorded line, unwrapped as for Pro runs (positions are kept
+   modulo 1000 m); target `Value` = the run's photo score if the `.evt`
+   carries it, else `--score`. The native side should need nothing new
+   (start, win, stat point already per challenge); check that a
+   `Sequence` drop point starts through the same push and that the win
+   shows on its part. Then the list item says "photo".
+   **Was: Developer photo shoots: possible.** A photo shoot is a
    `CHAL_MEDIASEQ` challenge whose `RingArrayFile` (e.g.
    `Levels\LX2\photoshoot\ps_1.lua`) is a plain list of `MediaRings`
    points, with the score to beat as `Value`. A developer photo shoot puts
