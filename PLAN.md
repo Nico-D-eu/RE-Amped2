@@ -1812,6 +1812,19 @@ challenges won.
    win detection need a hand test. To check: the win probably also marks
    `DevChal1` completed in the career's level progress, as any challenge
    (and may count toward its totals).
+5. **Root cause, next to fix (2026-11-11):** a challenge missing from the
+   career's existing `<L>_Progress.lua` is read through stale locals in the
+   loader (`sub_0005C450`; crash for the user at 0x0005D786 reading its
+   "Parts", crash report 20261111-145855), so it loads, is left out or
+   crashes depending on what memory held. The career file is signed
+   (`career.sig`; a hand edit hung the load), but the game re-signs when it
+   saves (it saved DevChal1 after the LX2 win). Fix options: (a) give the
+   loader real entries: wrap the progress-file load so the parsed Lua table
+   gets DevChal<n> entries before the loop (find where sub_0005C450 loads
+   it, `0x0005CFAB` sub_00022CB0, and a hookable point before); (b) let the
+   port re-sign the career after adding the entries (the toolkit's
+   XCalculateSignature). Until then BR2 line may crash; dev challenges are
+   back at the end of the list (no crash seen there).
 5. **Next (user's hand test, 2026-11-11):** BR2 line (Pro) and BR2 photo
    had no pro/HUD/rings: log "DevChal3 at 00000000" - amped2_find_challenge
    scans only to 0x04000000 and the challenge objects were above it in the
