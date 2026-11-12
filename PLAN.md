@@ -1921,7 +1921,7 @@ developer's look and name; three misses fail the challenge; a win is
 remembered; after three wins the player has one more stat point to spend,
 and the career save differs only by it; one developer photo shoot.
 
-**The intro/end card and the list (user, 2026-11-11), to do:**
+**The intro/end card and the list (user, 2026-11-11). Built 2026-11-12 (7440a21, 48e5728): title, Nico-D and banter verified in game; the picture, the text box's stat-point note and the list's green check wait for the user's test. See DEVELOPING "The intro/results card".**
 - The card says "DEV CHALLENGE" / "DEV PHOTOSHOOT" (not "PRO CHALLENGE" /
   "PHOTO SHOOT"), the developer's name (Nico-D, the `.boarder` Name) and
   portrait (`mods\packs\dev-challenges\art\nico-d.png`, the user's photo,

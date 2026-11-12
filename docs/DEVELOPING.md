@@ -1977,6 +1977,30 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   file that `Progress` lacks. The text goes to the header page at
   `0x00010C00` (XBE headers end at `0x00010B60`). The files on disk are
   not touched, and the game saves the entries itself, signed.
+- **The intro/results card and the list's check** (2026-11-12). The
+  PreRun card is a record of Strings at `[screen +0x184] + 0x94`, filled by
+  `sub_0004C6F0` (Pro, kind 0xF at +0x48) and `sub_0004CF30` (photo shoot,
+  kind 5), called from `0x00047C07` / `0x00047C47`: +0x00 title, +0x20 the
+  player's name, +0x24 / +0x2C the labels, +0x28 / +0x30 the two boxes,
+  +0x34 the text box (left empty natively, so the layout's placeholder
+  shows), +0x38 the player's status, +0x40 the challenge ID (the picture is
+  the texture named by the string `<L>_<ID>`). Labels, boxes and ID are
+  filled only in a loop over the level's `ProChal<n>` / `Sequence<n>`
+  challenges. Every text key goes through the string-table lookup
+  `sub_000B1E20` (eax = &key String, stack table `[0x0038CDF4]`, out;
+  `ret 8`; `sub_000B2020` wraps it, stdcall table, &key, flag, edi = out).
+  Its callers are direct calls, so it is a hand copy in `src/lua_probe.c`
+  listed in `config/manual_functions.json`, with a probe
+  (`amped2_devchal_key`) that gets the key and the stack pointer. During a
+  developer challenge it swaps the title keys and, at the card's status
+  lookup (return `0x0004CBCB` / `0x0004D1CB`, card at `[sp+0xB8]` /
+  `[sp+0xBC]`), writes the record's fields itself (String helpers:
+  `sub_00017830` empty, esi; `sub_0001EE70` assign, eax = &from, ebx = &to;
+  `sub_0001A490` release, ecx). In the shell it swaps a won challenge's
+  list item key to `DevChal_dev<n>_Won`. The GUI fonts (`Base.rui
+  Fonts/*.abc` metrics, 28-byte glyph records with an icon flag in the last
+  dword; `Base.ruirr Fonts/*.xpr` atlases) have no check glyph:
+  `dev_challenge.py` draws one, green, into the unused icon cell 0x1E.
 - The career drop-point menu lists only plain drop points (type `+0x54`
   0, 4 or 9; `0x0010C205`) and the fixed IDs Sponsor1-3, PhotoShoot1-3,
   Pro1-3 (`0x0010C416` on). Challenge code also knows Pro challenges as
