@@ -1165,12 +1165,14 @@ static void amped2_devchal_save(void)
     rename(tmp, path);
 }
 
+static void amped2_devchal_card_note(int fresh);
+
 /* A win of the run in progress: count the challenge (once) and work out
  * whether a stat point is due. */
 static void amped2_devchal_win(void)
 {
     char id[24];
-    int i, due;
+    int i, due, fresh = 0;
     amped2_devchal_load();
     for (i = 0; g_devchal_playing[i] && i < 23; i++)
         id[i] = (char)(g_devchal_playing[i] >= 'A' && g_devchal_playing[i] <= 'Z'
@@ -1182,12 +1184,14 @@ static void amped2_devchal_win(void)
     if (i == g_devchal_nwon && g_devchal_nwon < AMPED2_DEVCHAL_MAX) {
         snprintf(g_devchal_won[g_devchal_nwon++], 24, "%s", id);
         amped2_devchal_save();
+        fresh = 1;
     }
     due = g_devchal_nwon / 3 - g_devchal_points;
     g_devchal_award = due > 0 ? due : 0;
     fprintf(stderr, "  [DEVCHAL] won %s: %d challenge(s) won, %d point(s) given, %d due\n",
             id, g_devchal_nwon, g_devchal_points, g_devchal_award);
     fflush(stderr);
+    amped2_devchal_card_note(fresh);
 }
 
 /* The i-th argument of a GUI command call as text ("" if none). Arguments
@@ -1465,21 +1469,33 @@ static void amped2_lua_getS(void)
 }
 
 /* The intro and end card of a developer challenge (user, 2026-11-11): the
- * PreRun card is filled natively (around 0x0004C435-0x0004D876) from Base.rui
- * string keys, each looked up through sub_000B1E20 (hand copy in
+ * PreRun card is a record of Strings, filled natively by sub_0004C6F0 (Pro
+ * card) and sub_0004CF30 (photo shoot) into [screen +0x184] + 0x94, from
+ * Base.rui string keys, each looked up through sub_000B1E20 (hand copy in
  * lua_probe.c, config/manual_functions.json: its callers are direct calls).
- * While a developer challenge runs, its probe hands the lookup another key:
- * the title says DEV CHALLENGE / DEV PHOTOSHOOT, the photo card's Sponsor:
- * and Likes: labels are empty, the pro's name (ProName<n>) and the photo
- * sponsor's box say the developer's name, and the likes box (SponsorLikes*)
- * one of the banter lines, a different one each run. dev_challenge.py
- * writes those keys (DevChal_Card_*, DevChal_Name_<drop point>,
- * DevChal_Banter1..AMPED2_DEVCHAL_BANTERS). The keys' Strings are made once
- * (sub_000122B0) and kept, in the header-page scratch at 0x00010E00. */
+ * The card's fields: +0x00 title, +0x20 the player's name, +0x24 / +0x2C
+ * the two labels, +0x28 / +0x30 the two boxes (Pro: "Ride with <pro>." and
+ * "Try to beat the pro's run.", photo: the director and the score),
+ * +0x38 the player's status, +0x40 the challenge ID (the picture is the
+ * texture named by the string <L>_<ID>), +0x48 the kind (0xF Pro, 5 photo).
+ * The boxes, labels and ID are filled only by a loop over the level's
+ * ProChal<n> / Sequence<n> challenges, so a developer challenge's card kept
+ * stale text (user's test, 2026-11-12: "Sponsor:", "Likes:", "Big Air").
+ * While a developer challenge runs, the probe hands the lookup the title
+ * DEV CHALLENGE / DEV PHOTOSHOOT, and at the card's last lookup before that
+ * loop (the player's status: return address 0x0004CBCB Pro, 0x0004D1CB
+ * photo) fills the labels empty, the boxes with the developer's name and a
+ * banter line (a different one each run) and the ID with DevChal<n>.
+ * dev_challenge.py writes those keys (DevChal_Card_*, DevChal_Name_<drop
+ * point>, DevChal_Banter1..AMPED2_DEVCHAL_BANTERS). The keys' Strings are
+ * made once (sub_000122B0) and kept, in the header-page scratch at
+ * 0x00010E00. */
 #define AMPED2_DEVCHAL_BANTERS 10
 #define AMPED2_KEYSTR_VA  0x00010E00u       /* 4-byte String slots */
 #define AMPED2_KEYSTR_MAX 40
+#define AMPED2_CARDTXT_VA 0x00010EA0u       /* a looked-up text while it is copied */
 #define AMPED2_KEYTXT_VA  0x00010EC0u       /* a key's text while its String is made */
+extern void sub_00017830(void), sub_0001EE70(void), sub_000B2020(void);
 static char g_keystr_name[AMPED2_KEYSTR_MAX][32];
 static int g_keystr_n;
 static unsigned g_devchal_runs;             /* picks the banter line */
@@ -1508,7 +1524,119 @@ static uint32_t amped2_key_string(const char *name)
     return slot;
 }
 
-uint32_t amped2_devchal_key(uint32_t key)
+/* Field `field` of the card = `how` CARD_TEXT: the text of string key
+ * `key`, looked up through sub_000B2020 (stdcall table, &key, 0; edi = out
+ * String); CARD_EMPTY: an empty String (sub_00017830, esi = String);
+ * CARD_KEY: `key` itself. Assigned (sub_0001EE70: eax = &from, ebx = &to),
+ * the scratch String released. The registers are the caller's again
+ * afterwards. */
+enum { CARD_KEY, CARD_TEXT, CARD_EMPTY };
+static void amped2_card_set(uint32_t field, const char *key, int how)
+{
+    uint32_t sa = g_eax, sb = g_ebx, sc = g_ecx, sd = g_edx, ss = g_esi, si = g_edi, sp = g_ebp;
+    uint32_t sesp = g_esp, sseh = g_seh_ebp, ks = how == CARD_EMPTY ? 0 : amped2_key_string(key);
+    if (how != CARD_EMPTY && !ks)
+        return;
+    if (how != CARD_KEY) {
+        g_esi = AMPED2_CARDTXT_VA;
+        AMPED2_GCALL(sub_00017830);              /* an empty String */
+        g_esp = sesp;
+    }
+    if (how == CARD_TEXT) {
+        g_esp -= 4; MEM32(g_esp) = 0;
+        g_esp -= 4; MEM32(g_esp) = ks;
+        g_esp -= 4; MEM32(g_esp) = MEM32(0x0038CDF4u);
+        g_edi = AMPED2_CARDTXT_VA;
+        AMPED2_GCALL(sub_000B2020);
+        g_esp = sesp;
+    }
+    g_eax = how == CARD_KEY ? ks : AMPED2_CARDTXT_VA;
+    g_ebx = field;
+    AMPED2_GCALL(sub_0001EE70);
+    g_esp = sesp;
+    if (how != CARD_KEY) {
+        g_ecx = AMPED2_CARDTXT_VA;
+        AMPED2_GCALL(sub_0001A490);
+        g_esp = sesp;
+    }
+    g_eax = sa; g_ebx = sb; g_ecx = sc; g_edx = sd; g_esi = ss; g_edi = si; g_ebp = sp;
+    g_seh_ebp = sseh;
+}
+
+static uint32_t g_devchal_card;            /* the card record of the run */
+
+/* The card's text box (+0x34, otherwise the layout's placeholder "The text
+ * that will be used to tell trick number..."; user, 2026-11-12): how many
+ * more wins the next stat point takes (one per 3 developer challenges won),
+ * or, right after the win that earned one, that it did. */
+static void amped2_devchal_card_note(int fresh)
+{
+    char k[40];
+    uint32_t card = g_devchal_card;
+    if (!card || !g_devchal_playing[0] || (MEM32(card + 0x48) != 0xF && MEM32(card + 0x48) != 5))
+        return;
+    amped2_devchal_load();
+    if (fresh && g_devchal_nwon % 3 == 0)
+        snprintf(k, sizeof k, "DevChal_Card_Point");
+    else
+        snprintf(k, sizeof k, "DevChal_Card_Win%d", 3 - g_devchal_nwon % 3);
+    amped2_card_set(card + 0x34, k, CARD_TEXT);
+}
+
+static void amped2_card_fill(uint32_t card)
+{
+    char k[40];
+    g_devchal_card = card;
+    amped2_devchal_card_note(0);
+    amped2_card_set(card + 0x24, NULL, CARD_EMPTY);     /* the labels */
+    amped2_card_set(card + 0x2C, NULL, CARD_EMPTY);
+    snprintf(k, sizeof k, "DevChal_Name_%s", g_devchal_playing);
+    amped2_card_set(card + 0x28, k, CARD_TEXT);
+    snprintf(k, sizeof k, "DevChal_Banter%u", g_devchal_runs % AMPED2_DEVCHAL_BANTERS + 1);
+    amped2_card_set(card + 0x30, k, CARD_TEXT);
+    if (!strncmp(g_devchal_playing, "Dev", 3)) {
+        snprintf(k, sizeof k, "DevChal%s", g_devchal_playing + 3);
+        amped2_card_set(card + 0x40, k, CARD_KEY);  /* the picture: string <L>_DevChal<n> */
+    }
+    fprintf(stderr, "  [DEVCHAL] card %08X (kind %u): %s, banter %u\n", card, MEM32(card + 0x48),
+            g_devchal_playing, g_devchal_runs % AMPED2_DEVCHAL_BANTERS + 1);
+    fflush(stderr);
+}
+
+/* The DEVELOPER CHALLENGES list (user, 2026-11-12): a won challenge's item
+ * says its title with a green check after it. The item's text key is
+ * DevChal_dev<n> (dev_challenge.py); for a challenge in devchallenges.json's
+ * won list the lookup gets DevChal_dev<n>_Won instead, the title followed
+ * by glyph 0x1E, which the tool turns into a green check in the GUI fonts
+ * (an unused icon cell; icons keep their own colours). */
+static uint32_t amped2_devchal_list_key(uint32_t key)
+{
+    const char *k = amped2_gstr(MEM32(key)), *dot, *n;
+    char to[40];
+    uint32_t s;
+    int i;
+    if (!k)
+        return key;
+    dot = strrchr(k, '.');
+    if (dot)
+        k = dot + 1;
+    if (strncmp(k, "DevChal_dev", 11) || !k[11] || strlen(k) > 24)
+        return key;
+    for (n = k + 11; *n; n++)
+        if (*n < '0' || *n > '9')
+            return key;                     /* DevChal_dev<n>_Help and the like */
+    amped2_devchal_load();
+    for (i = 0; i < g_devchal_nwon; i++)
+        if (!strcmp(g_devchal_won[i], k + 8))
+            break;
+    if (i == g_devchal_nwon)
+        return key;
+    snprintf(to, sizeof to, "%s_Won", k);
+    s = amped2_key_string(to);
+    return s ? s : key;
+}
+
+uint32_t amped2_devchal_key(uint32_t key, uint32_t sp)
 {
     static int trace = -1;
     static char seen[64][40];
@@ -1516,10 +1644,19 @@ uint32_t amped2_devchal_key(uint32_t key)
     static unsigned seen_run;
     const char *k, *dot;
     char to[40];
-    uint32_t s;
+    uint32_t s, ret, card = 0;
     int i;
-    if (!g_devchal_playing[0] || !key || !MEM32(key))
+    if (!key || !MEM32(key))
         return key;
+    if (!g_devchal_playing[0])
+        return amped2_devchal_list_key(key);
+    ret = MEM32(sp);
+    if (ret == 0x0004CBCBu)                     /* Pro card, the player's status */
+        card = MEM32(sp + 0xB8);
+    else if (ret == 0x0004D1CBu)                /* photo-shoot card, the same */
+        card = MEM32(sp + 0xBC);
+    if (card && (MEM32(card + 0x48) == 0xF || MEM32(card + 0x48) == 5))
+        amped2_card_fill(card);
     k = amped2_gstr(MEM32(key));
     if (!k)
         return key;
@@ -1531,12 +1668,6 @@ uint32_t amped2_devchal_key(uint32_t key)
         strcpy(to, "DevChal_Card_Pro");
     else if (!strcmp(k, "PreRun_PhotoShoot_Title"))
         strcpy(to, "DevChal_Card_Photo");
-    else if (!strcmp(k, "PreRun_Sponsor_Name") || !strcmp(k, "PreRun_Sponsor_Likes"))
-        strcpy(to, "DevChal_Card_Empty");
-    else if (!strncmp(k, "ProName", 7))
-        snprintf(to, sizeof to, "DevChal_Name_%s", g_devchal_playing);
-    else if (!strncmp(k, "SponsorLikes", 12))
-        snprintf(to, sizeof to, "DevChal_Banter%u", g_devchal_runs % AMPED2_DEVCHAL_BANTERS + 1);
     if (trace < 0)
         trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
     if (trace) {                            /* each key once a run, for finding the card's */

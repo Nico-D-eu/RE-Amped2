@@ -623,6 +623,88 @@ def boarder_name(proj, dev: dict) -> str:
     return m.group(1) if m else "RE-Amped2"
 
 
+# ---- the card's picture and the list's check mark ----------------------------
+
+CHECK = ""         # glyph code of the list's green check (an unused icon cell)
+PORTRAIT = 128         # the pros' pictures: 128x128 Pict_Pro_<name>.xpr in Textures.gfx
+TEXTURES = "Gui/Textures/Textures.gfx"
+
+
+def portrait_name(boarder: str) -> str:
+    """The developer's picture's texture name (and art file stem)."""
+    return "Pict_Dev_" + re.sub(r"[^A-Za-z0-9]", "", boarder)
+
+
+def portrait_xpr(game: Path, png: Path) -> bytes:
+    """The developer's picture as a texture like the pros': a pro's xpr
+    (DXT3) rebuilt with the picture, as swizzled A8R8G8B8, which needs no
+    DXT compressor on the player's PC."""
+    import numpy as np
+    import xboxtex
+    from PIL import Image
+    with zipfile.ZipFile(game / TEXTURES) as z:
+        name = next(n for n in z.namelist() if n.lower().startswith("pict_pro_"))
+        c = xboxtex.open_container(name, z.read(name))
+    t = c.textures[0]
+    img = Image.open(png).convert("RGBA")
+    side = min(img.size)
+    img = img.crop(((img.width - side) // 2, (img.height - side) // 2,
+                    (img.width + side) // 2, (img.height + side) // 2))
+    px = np.asarray(img.resize((PORTRAIT, PORTRAIT), Image.LANCZOS))
+    data = xboxtex.swizzle(px[..., [2, 1, 0, 3]]).tobytes()
+    log2 = PORTRAIT.bit_length() - 1
+    fmt = (t.format & ~(0xFFFF << 8)) | (0x06 << 8) | (1 << 16) | (log2 << 20) | (log2 << 24)
+    return c.rebuild({0: (fmt, data)})
+
+
+def check_glyph(game: Path):
+    """The GUI fonts with glyph CHECK drawn as a green check: {Base.rui entry:
+    metrics} (the glyph's icon flag set, so it keeps its colour) and {texture
+    key: DDS} for the texture pack (the atlas the way tools/mods/font_pack.py
+    makes it, 4x, which this replaces for these atlases)."""
+    import numpy as np
+    import xboxtex
+    from PIL import Image, ImageDraw
+    sys.path.insert(0, str(ROOT / "tools" / "mods"))
+    import font_pack
+    abcs, dds = {}, {}
+    with zipfile.ZipFile(game / BASE) as zr, zipfile.ZipFile(game / (BASE + "rr")) as zx:
+        rr = {n.lower(): n for n in zx.namelist()}
+        for name in zr.namelist():
+            if not (name.startswith("Fonts/") and name.endswith(".abc")):
+                continue
+            atlas = rr.get(name[:-4].lower() + ".xpr")
+            if not atlas:
+                continue
+            abc = bytearray(zr.read(name))
+            nr = struct.unpack_from("<I", abc, 20)[0]
+            codes = [c for i in range(nr) for c in range(
+                struct.unpack_from("<H", abc, 24 + 4 * i)[0], struct.unpack_from("<H", abc, 26 + 4 * i)[0] + 1)]
+            if ord(CHECK) not in codes:
+                continue
+            base = 24 + 4 * nr + 4
+            rs = (len(abc) - base) // struct.unpack_from("<I", abc, base - 4)[0]
+            rec = base + rs * codes.index(ord(CHECK))
+            u0, v0, u1, v1 = struct.unpack_from("<4f", abc, rec)
+            struct.pack_into("<I", abc, rec + rs - 4, 1)      # an icon: drawn in its own colours
+            c = xboxtex.open_container(atlas, zx.read(atlas))
+            t = c.textures[0]
+            level0 = c.level0(t)
+            rgba = xboxtex.decode_rgba(t, level0).copy()
+            x0, y0 = round(u0 * t.width), round(v0 * t.height)
+            x1, y1 = round(u1 * t.width), round(v1 * t.height)
+            w, h, k = x1 - x0, y1 - y0, 8
+            cell = Image.new("RGBA", (w * k, h * k), (40, 200, 60, 0))
+            d = ImageDraw.Draw(cell)
+            pts = [(0.12 * w * k, 0.52 * h * k), (0.40 * w * k, 0.78 * h * k), (0.90 * w * k, 0.22 * h * k)]
+            d.line(pts, fill=(10, 40, 10, 255), width=int(0.30 * w * k), joint="curve")
+            d.line(pts, fill=(40, 200, 60, 255), width=int(0.18 * w * k), joint="curve")
+            rgba[y0:y1, x0:x1] = np.asarray(cell.resize((w, h), Image.LANCZOS))
+            abcs["Fonts/" + name.split("/", 1)[1]] = bytes(abc)
+            dds[t.key(level0)] = font_pack.dds_bgra(font_pack.sharpen_up(rgba, 4))
+    return abcs, dds
+
+
 def challenge_strings(devs, drops_name, names=None):
     """{key: (like, text)} for the list's items, and the list's header when
     the shell comes back to it after a run (DevChal_Title, short enough for
@@ -633,7 +715,11 @@ def challenge_strings(devs, drops_name, names=None):
     s = {"DevChal_Title": ("Career_ChangeGear", "DEVELOPER CHALLENGES"),
          "DevChal_Card_Pro": ("PreRun_Pro_Title", "DEV CHALLENGE"),
          "DevChal_Card_Photo": ("PreRun_PhotoShoot_Title", "DEV PHOTOSHOOT"),
-         "DevChal_Card_Empty": ("PreRun_Sponsor_Name", "")}
+         "DevChal_Card_Empty": ("PreRun_Sponsor_Name", ""),
+         "DevChal_Card_Point": ("PreRun_Pro_TextBox", "Stat point earned! One for every 3 developer challenges won."),
+         "DevChal_Card_Win1": ("PreRun_Pro_TextBox", "Win 1 more developer challenge to earn a stat point."),
+         "DevChal_Card_Win2": ("PreRun_Pro_TextBox", "Win 2 more developer challenges to earn a stat point."),
+         "DevChal_Card_Win3": ("PreRun_Pro_TextBox", "Win 3 more developer challenges to earn a stat point.")}
     for i, line in enumerate(BANTER, 1):
         s["DevChal_Banter%d" % i] = ("SponsorLikesBigAir", line)
     for d in devs:
@@ -641,6 +727,9 @@ def challenge_strings(devs, drops_name, names=None):
         mountain = MOUNTAINS.get(d["level"], d["level"])
         board = "snowskate" if d["kind"] == "skate" else "snowboard"
         s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
+        s["DevChal_%s_Won" % d["id"]] = ("Career_ChangeGear", d["title"].upper() + "  " + CHECK)
+        s["%s_%s" % (d["level"], dev_ids(d)[1])] = (     # the card's picture
+            "BR2_ProChal1", portrait_name((names or {}).get(d["id"], "RE-Amped2")))
         if d.get("photo"):
             text = ("%s, %s. Photo shoot: score %d points through the rings. Press A to start."
                     % (mountain, board, d["score"]))
@@ -978,6 +1067,28 @@ def menu(proj: Project, devs, drop_names, loose: Path):
         p.write_bytes(data)
     print("built the DEVELOPER CHALLENGES list: %d item(s), strings from %s"
           % (len(items), base.relative_to(proj.root)))
+    # The card's picture: art\<name>.png per developer (Nico-D -> nico-d.png).
+    for boarder in sorted({boarder_name(proj, d) for d in devs}):
+        png = proj.pack / "art" / (re.sub(r"[^a-z0-9-]", "", boarder.lower()) + ".png")
+        if png.exists():
+            p = loose / TEXTURES / (portrait_name(boarder) + ".xpr")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(portrait_xpr(proj.game, png))
+            print("built the card picture %s from %s" % (p.name, png.name))
+        else:
+            print("no %s: the card shows no picture for %s" % (png, boarder))
+    # The won items' green check.
+    abcs, dds = check_glyph(proj.game)
+    for entry, data in abcs.items():
+        p = loose / BASE / entry
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+    tex = proj.pack / "textures"
+    shutil.rmtree(tex, ignore_errors=True)
+    tex.mkdir(parents=True)
+    for key, data in dds.items():
+        (tex / (key + ".dds")).write_bytes(data)
+    print("built the check mark in %d font(s)" % len(abcs))
 
 
 def enable(proj: Project, on: bool):

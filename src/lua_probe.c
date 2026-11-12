@@ -177,9 +177,11 @@ loc_000F3824: ;
  * the Pro and photo-shoot intro cards (PreRun, filled natively around
  * 0x0004C435-0x0004D876) included. Probe: while a developer challenge runs,
  * amped2_devchal_key may hand it another key's String instead (the card's
- * title, the developer's name, the banter line; see recomp_manual.c). The
- * body copies the key into its own slot (sub_00012290) and releases that. */
-extern uint32_t amped2_devchal_key(uint32_t key);
+ * title) and, at the card's last lookup (told by the return address on the
+ * stack), fill the card's name, banter and picture fields; see
+ * recomp_manual.c. The body copies the key into its own slot (sub_00012290)
+ * and releases that. */
+extern uint32_t amped2_devchal_key(uint32_t key, uint32_t sp);
 
 void sub_000B1E20(void)
 {
@@ -191,7 +193,7 @@ void sub_000B1E20(void)
     (void)_fa; (void)_fb; (void)_fas; (void)_fbs;
     ebp = g_seh_ebp; /* fpo_leaf: inherit caller's frame */
 
-    eax = amped2_devchal_key(eax);                /* probe: not in the original */
+    eax = amped2_devchal_key(eax, esp);           /* probe: not in the original */
 
 loc_000B1E20: ;
     _fb = (uint32_t)(0x10) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* sub source, before the write */
