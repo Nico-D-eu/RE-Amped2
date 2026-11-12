@@ -596,12 +596,48 @@ def string_tables(base_rui: Path, strings):
     return out
 
 
-def challenge_strings(devs, drops_name):
+# The intro/end card's lines (user, 2026-11-11): one per run, in turn, in the
+# box a photo shoot's sponsor "likes" (src/recomp_manual.c,
+# AMPED2_DEVCHAL_BANTERS must match the count). Short: the box fits "Big Air".
+BANTER = [
+    "Sends it. Always.",
+    "Tree magnet",
+    "Waxed, not stirred",
+    "Brakes? Never heard",
+    "Lands it. Mostly.",
+    "Snow in every pocket",
+    "Bails count as style",
+    "Powder or nothing",
+    "Rides for cocoa",
+    "Edge? What edge?",
+]
+
+
+def boarder_name(proj, dev: dict) -> str:
+    """The developer's name: the recording rider's Name in Career.boarder."""
+    try:
+        text = (proj.pack / "recordings" / dev["id"] / "Career.boarder").read_text("latin-1")
+    except OSError:
+        return "RE-Amped2"
+    m = re.search(r'(?m)^\s*Name\s*=\s*L?"([^"]*)"', text)
+    return m.group(1) if m else "RE-Amped2"
+
+
+def challenge_strings(devs, drops_name, names=None):
     """{key: (like, text)} for the list's items, and the list's header when
     the shell comes back to it after a run (DevChal_Title, short enough for
-    the native code to put in place of FreeRide_PlayLevel)."""
-    s = {"DevChal_Title": ("Career_ChangeGear", "DEVELOPER CHALLENGES")}
+    the native code to put in place of FreeRide_PlayLevel). Also the card's
+    keys the native lookup swaps in during a developer challenge: its title,
+    the empty Sponsor:/Likes: labels, the developer's name per drop point
+    (DevChal_Name_Dev<n>) and the banter lines."""
+    s = {"DevChal_Title": ("Career_ChangeGear", "DEVELOPER CHALLENGES"),
+         "DevChal_Card_Pro": ("PreRun_Pro_Title", "DEV CHALLENGE"),
+         "DevChal_Card_Photo": ("PreRun_PhotoShoot_Title", "DEV PHOTOSHOOT"),
+         "DevChal_Card_Empty": ("PreRun_Sponsor_Name", "")}
+    for i, line in enumerate(BANTER, 1):
+        s["DevChal_Banter%d" % i] = ("SponsorLikesBigAir", line)
     for d in devs:
+        s["DevChal_Name_" + dev_ids(d)[0]] = ("ProName1", (names or {}).get(d["id"], "RE-Amped2"))
         mountain = MOUNTAINS.get(d["level"], d["level"])
         board = "snowskate" if d["kind"] == "skate" else "snowboard"
         s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
@@ -935,7 +971,8 @@ def menu(proj: Project, devs, drop_names, loose: Path):
         p.write_bytes(data)
     built = proj.root / "mods" / "build" / "game" / BASE
     base = built if built.exists() else proj.game / BASE
-    for entry, data in string_tables(base, challenge_strings(devs, drop_names)).items():
+    for entry, data in string_tables(base, challenge_strings(devs, drop_names,
+            {d["id"]: boarder_name(proj, d) for d in devs})).items():
         p = loose / BASE / entry
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(data)

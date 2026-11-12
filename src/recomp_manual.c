@@ -378,6 +378,7 @@ extern void sub_0002B6C0_gen(void);
 extern void sub_000F37E0(void);   /* src/lua_probe.c */
 extern void sub_000F24C0(void);   /* src/lua_probe.c */
 extern void sub_00150E80(void);   /* src/lua_probe.c */
+extern void sub_000B1E20(void);   /* src/lua_probe.c */
 
 /* Skip FMV (see sub_00150E80 in lua_probe.c). main.c sets it from
  * AMPED2_PLAY_MOVIES: movies play unless that is 0. */
@@ -1386,10 +1387,11 @@ static uint32_t amped2_find_challenge(const char *id)
  * part). Only the Lua text in memory changes, after the file was read (and
  * any signature check of the bytes); the career's files are not written,
  * and the game saves the entries itself, signed, as for any challenge.
- * The text goes into the header-page scratch at 0x00010C00 (below the
- * strings at 0x00010F00; the XBE headers end at 0x00010B60). */
+ * The text goes into the header-page scratch at 0x00010C00 (the XBE
+ * headers end at 0x00010B60; 0x00010E00 holds the card's Strings below, the
+ * strings at 0x00010F00). */
 #define AMPED2_PROGRESS_ADD_VA  0x00010C00u
-#define AMPED2_PROGRESS_ADD_MAX 0x300u
+#define AMPED2_PROGRESS_ADD_MAX 0x200u
 extern void sub_000F3640(void);
 static int g_devchal_loading;               /* inside amped2_challenges_load */
 static char g_devchal_ids[16][16];          /* the level's DevChal<n> IDs */
@@ -1462,6 +1464,99 @@ static void amped2_lua_getS(void)
     }
 }
 
+/* The intro and end card of a developer challenge (user, 2026-11-11): the
+ * PreRun card is filled natively (around 0x0004C435-0x0004D876) from Base.rui
+ * string keys, each looked up through sub_000B1E20 (hand copy in
+ * lua_probe.c, config/manual_functions.json: its callers are direct calls).
+ * While a developer challenge runs, its probe hands the lookup another key:
+ * the title says DEV CHALLENGE / DEV PHOTOSHOOT, the photo card's Sponsor:
+ * and Likes: labels are empty, the pro's name (ProName<n>) and the photo
+ * sponsor's box say the developer's name, and the likes box (SponsorLikes*)
+ * one of the banter lines, a different one each run. dev_challenge.py
+ * writes those keys (DevChal_Card_*, DevChal_Name_<drop point>,
+ * DevChal_Banter1..AMPED2_DEVCHAL_BANTERS). The keys' Strings are made once
+ * (sub_000122B0) and kept, in the header-page scratch at 0x00010E00. */
+#define AMPED2_DEVCHAL_BANTERS 10
+#define AMPED2_KEYSTR_VA  0x00010E00u       /* 4-byte String slots */
+#define AMPED2_KEYSTR_MAX 40
+#define AMPED2_KEYTXT_VA  0x00010EC0u       /* a key's text while its String is made */
+static char g_keystr_name[AMPED2_KEYSTR_MAX][32];
+static int g_keystr_n;
+static unsigned g_devchal_runs;             /* picks the banter line */
+
+static uint32_t amped2_key_string(const char *name)
+{
+    uint32_t sa = g_eax, sb = g_ebx, sc = g_ecx, sd = g_edx, ss = g_esi, si = g_edi, sp = g_ebp;
+    uint32_t sesp = g_esp, slot;
+    int i;
+    for (i = 0; i < g_keystr_n; i++)
+        if (!strcmp(g_keystr_name[i], name))
+            return AMPED2_KEYSTR_VA + 4 * i;
+    if (g_keystr_n == AMPED2_KEYSTR_MAX || strlen(name) >= 32)
+        return 0;
+    slot = AMPED2_KEYSTR_VA + 4 * g_keystr_n;
+    amped2_put_cstr(AMPED2_KEYTXT_VA, name);
+    MEM32(slot) = 0;
+    g_esp -= 4; MEM32(g_esp) = slot;        /* String(name) into the slot */
+    g_eax = AMPED2_KEYTXT_VA;
+    AMPED2_GCALL(sub_000122B0);
+    g_esp = sesp;
+    g_eax = sa; g_ebx = sb; g_ecx = sc; g_edx = sd; g_esi = ss; g_edi = si; g_ebp = sp;
+    if (!MEM32(slot))
+        return 0;
+    strcpy(g_keystr_name[g_keystr_n++], name);
+    return slot;
+}
+
+uint32_t amped2_devchal_key(uint32_t key)
+{
+    static int trace = -1;
+    static char seen[64][40];
+    static int nseen;
+    static unsigned seen_run;
+    const char *k, *dot;
+    char to[40];
+    uint32_t s;
+    int i;
+    if (!g_devchal_playing[0] || !key || !MEM32(key))
+        return key;
+    k = amped2_gstr(MEM32(key));
+    if (!k)
+        return key;
+    dot = strrchr(k, '.');
+    if (dot)
+        k = dot + 1;
+    to[0] = 0;
+    if (!strcmp(k, "PreRun_Pro_Title"))
+        strcpy(to, "DevChal_Card_Pro");
+    else if (!strcmp(k, "PreRun_PhotoShoot_Title"))
+        strcpy(to, "DevChal_Card_Photo");
+    else if (!strcmp(k, "PreRun_Sponsor_Name") || !strcmp(k, "PreRun_Sponsor_Likes"))
+        strcpy(to, "DevChal_Card_Empty");
+    else if (!strncmp(k, "ProName", 7))
+        snprintf(to, sizeof to, "DevChal_Name_%s", g_devchal_playing);
+    else if (!strncmp(k, "SponsorLikes", 12))
+        snprintf(to, sizeof to, "DevChal_Banter%u", g_devchal_runs % AMPED2_DEVCHAL_BANTERS + 1);
+    if (trace < 0)
+        trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
+    if (trace) {                            /* each key once a run, for finding the card's */
+        if (seen_run != g_devchal_runs) {
+            seen_run = g_devchal_runs;
+            nseen = 0;
+        }
+        for (i = 0; i < nseen && strcmp(seen[i], k); i++)
+            ;
+        if (i == nseen && nseen < 64) {
+            snprintf(seen[nseen++], sizeof seen[0], "%s", k);
+            fprintf(stderr, "  [DEVCHAL] text %s%s%s\n", k, to[0] ? " -> " : "", to);
+            fflush(stderr);
+        }
+    }
+    if (!to[0] || !(s = amped2_key_string(to)))
+        return key;
+    return s;
+}
+
 /* The level's challenges are built when the run starts (vtable 0x00347814,
  * sub_0004A700, thiscall, `ret`; it calls the loader sub_0005C450 on the
  * level's <L>_Challenges.lua). The loader takes each challenge's state from
@@ -1480,6 +1575,8 @@ static void amped2_challenges_load(void)
     g_devchal_nids = 0;
     g_progress_ud = 0;
     g_devchal_loading = 1;
+    if (g_devchal_playing[0])
+        g_devchal_runs++;           /* the next banter line */
     sub_0004A700();
     g_devchal_loading = 0;
     g_progress_ud = 0;
@@ -2451,7 +2548,8 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     /* Hand copies in src/lua_probe.c (config/manual_functions.json). */
     if (xbox_va == 0x000F37E0) return sub_000F37E0;  /* lua_pcall-shaped */
     if (xbox_va == 0x000F24C0) return sub_000F24C0;  /* luaD_throw */
-    if (xbox_va == 0x00150E80) return sub_00150E80;  /* movie next-frame */
+    if (xbox_va == 0x00150E80) return sub_00150E80;
+    if (xbox_va == 0x000B1E20) return sub_000B1E20;  /* string-table lookup */  /* movie next-frame */
 
     return (recomp_func_t)0;
 }
