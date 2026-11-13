@@ -5,7 +5,9 @@ r"""Developer challenges: a saved run of yours, raced as a Pro challenge.
                                               (--slot: the Pro challenge to copy, same board)
     python tools/mods/dev_challenge.py remove DEV_ID
     python tools/mods/dev_challenge.py build
-    (all take --project DIR and --pack NAME, default dev-challenges)
+    (all take --project DIR and --pack NAME, default dev-challenges, and
+    --content DIR: where the list, recordings\ and art\ are, default the
+    pack itself; the project's own are in content\dev-challenges)
 
 Record a run in the game and keep it with the replay VCR's Save Replay. The
 game stores each saved replay as a save of its own in UDATA\4d530041\<id>\
@@ -46,6 +48,7 @@ import math
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -616,7 +619,7 @@ BANTER = [
 def boarder_name(proj, dev: dict) -> str:
     """The developer's name: the recording rider's Name in Career.boarder."""
     try:
-        text = (proj.pack / "recordings" / dev["id"] / "Career.boarder").read_text("latin-1")
+        text = (proj.content / "recordings" / dev["id"] / "Career.boarder").read_text("latin-1")
     except OSError:
         return "RE-Amped2"
     m = re.search(r'(?m)^\s*Name\s*=\s*L?"([^"]*)"', text)
@@ -783,13 +786,17 @@ def challenge_strings(devs, drops_name, names=None):
 # ---- the pack ---------------------------------------------------------------
 
 class Project:
-    def __init__(self, root: Path, pack: str):
+    def __init__(self, root: Path, pack: str, content: Path = None):
         self.root = root
         self.game = root / "game"
         self.source = root / "mods" / "source"
         self.pack = root / "mods" / "packs" / pack
         self.pack_name = pack
-        self.manifest = self.pack / "devchallenges.json"
+        # The challenges' list, recordings\ and art\: in the pack while
+        # they are made, in the repo's content\dev-challenges for players
+        # (the installers build from there).
+        self.content = content or self.pack
+        self.manifest = self.content / "devchallenges.json"
 
     def levels(self):
         return {p.name.upper() for p in (self.game / "Levels").iterdir()
@@ -801,7 +808,7 @@ class Project:
         return {"challenges": []}
 
     def store(self, data):
-        self.pack.mkdir(parents=True, exist_ok=True)
+        self.content.mkdir(parents=True, exist_ok=True)
         self.manifest.write_text(json.dumps(data, indent=2) + "\n", "utf-8")
 
     def entry(self, archive: Path, wanted: str) -> str:
@@ -813,10 +820,13 @@ class Project:
         raise KeyError("%s has no %s" % (archive, wanted))
 
     def level_source(self, level: str, kind: str) -> Path:
-        p = self.source / "Levels" / level / (level + ".res") / ("%s_%s.lua" % (level, kind))
+        entry = "Levels/%s/%s.res/%s_%s.lua" % (level, level, level, kind)
+        p = self.source / entry
+        if not p.exists():      # decompiled on demand, as menus.py does
+            subprocess.run([sys.executable, str(ROOT / "tools" / "assets" / "amped_assets.py"),
+                            "decompile", "--filter", entry])
         if not p.exists():
-            sys.exit("missing %s: decompile the game's scripts first "
-                     "(tools/assets/amped_assets.py)" % p)
+            sys.exit("could not decompile %s (tools/assets/amped_assets.py)" % entry)
         return p
 
 
@@ -899,7 +909,7 @@ def cmd_add(proj: Project, args):
     # won IDs, so a reused one would show the new challenge as won.
     used = {c["id"] for c in data["challenges"]} | set(data.get("retired", []))
     dev_id = next("dev%d" % n for n in range(1, 1000) if "dev%d" % n not in used)
-    rec = proj.pack / "recordings" / dev_id
+    rec = proj.content / "recordings" / dev_id
     rec.mkdir(parents=True, exist_ok=True)
     for ext in RECORDING + LOOK:
         shutil.copyfile(run["folder"] / ("Career." + ext), rec / ("Career." + ext))
@@ -1005,7 +1015,7 @@ def cmd_remove(proj: Project, args):
     data["challenges"] = keep
     data["retired"] = sorted(set(data.get("retired", [])) | {args.dev_id})
     proj.store(data)
-    shutil.rmtree(proj.pack / "recordings" / args.dev_id, ignore_errors=True)
+    shutil.rmtree(proj.content / "recordings" / args.dev_id, ignore_errors=True)
     print("removed", args.dev_id)
     cmd_build(proj, args)
 
@@ -1037,7 +1047,7 @@ def cmd_build(proj: Project, args):
             drop_names[dev["id"]] = m.group(1) if m else dev["slot"]
         for dev in devs:
             chal, drops = apply_challenge(chal, drops, dev, pro_dir, photo_dir)
-            rec = proj.pack / "recordings" / dev["id"]
+            rec = proj.content / "recordings" / dev["id"]
             if dev.get("photo"):
                 # No pro: the rings along the line are the challenge.
                 rings = ",\r\n".join("  {\r\n    %s,\r\n    %s,\r\n    %s\r\n  }" % tuple(r)
@@ -1112,7 +1122,7 @@ def menu(proj: Project, devs, drop_names, loose: Path):
           % (len(items), base.relative_to(proj.root)))
     # The card's picture: art\<name>.png per developer (Nico-D -> nico-d.png).
     for boarder in sorted({boarder_name(proj, d) for d in devs}):
-        png = proj.pack / "art" / (re.sub(r"[^a-z0-9-]", "", boarder.lower()) + ".png")
+        png = proj.content / "art" / (re.sub(r"[^a-z0-9-]", "", boarder.lower()) + ".png")
         if png.exists():
             p = loose / TEXTURES / (portrait_name(boarder) + ".xpr")
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -1149,6 +1159,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--project", default=str(ROOT), help="RE-Amped2 folder (game\\, mods\\)")
     ap.add_argument("--pack", default="dev-challenges")
+    ap.add_argument("--content", help="the challenges' list, recordings and art (default: the pack)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("list", help="saved replays in UDATA")
     p.add_argument("--udata")
@@ -1177,7 +1188,7 @@ def main():
     p.add_argument("title")
     sub.add_parser("build", help="rebuild the pack's loose entries")
     args = ap.parse_args()
-    proj = Project(Path(args.project), args.pack)
+    proj = Project(Path(args.project), args.pack, Path(args.content) if args.content else None)
     {"list": cmd_list, "add": cmd_add, "remove": cmd_remove, "rename": cmd_rename,
      "build": cmd_build}[args.cmd](proj, args)
 
