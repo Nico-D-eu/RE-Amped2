@@ -12,11 +12,13 @@ namespace Amped2Installer
         public uint TitleId;
         public string Title;
         public uint Region;
+        public uint EntryPoint;     // decoded with the retail key
         public long GameBytes;      // sum of the files on the disc
         public int FileCount;
         public Dictionary<string, long> FileSizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         public bool IsAmped2 => TitleId == DiscImage.Amped2TitleId;
+        public bool IsRetailBuild => EntryPoint == DiscImage.Amped2EntryPoint;
 
         public string RegionName
         {
@@ -35,6 +37,11 @@ namespace Amped2Installer
     static class DiscImage
     {
         public const uint Amped2TitleId = 0x4D530041;   // "MS-065", both releases
+        // The recompiled code is tied to the retail build, which the USA and
+        // European/Australian discs share. Pre-release and dev-kit builds have
+        // the same title ID but other code; their entry point tells them apart.
+        public const uint Amped2EntryPoint = 0x00254899;
+        const uint RetailEntryKey = 0xA8FC57AB;
 
         /// <summary>Throws with a player-facing message when the image is unusable.</summary>
         public static DiscInfo Inspect(string isoPath)
@@ -80,6 +87,10 @@ namespace Amped2Installer
                         ? "This is a disc image of a different game, not Amped 2."
                         : $"This is a disc image of “{info.Title}”, not Amped 2.",
                     "Choose an image of Amped 2 (USA or Europe).");
+            if (!info.IsRetailBuild)
+                throw new UserFacingException(
+                    "This is a different build of Amped 2, such as a pre-release or dev-kit disc.",
+                    "RE-Amped2 works only with the retail game. Choose an image of the USA or European disc.");
             return info;
         }
 
@@ -89,6 +100,7 @@ namespace Amped2Installer
             if (x.Length < 0x200 || Encoding.ASCII.GetString(x, 0, 4) != "XBEH")
                 throw new UserFacingException("The game program on this disc image isn't valid.",
                                               "The image may be damaged. Make a fresh image of your disc.");
+            info.EntryPoint = BitConverter.ToUInt32(x, 0x128) ^ RetailEntryKey;
             uint baseAddr = BitConverter.ToUInt32(x, 0x104);
             uint certAddr = BitConverter.ToUInt32(x, 0x118);
             long cert = (long)certAddr - baseAddr;

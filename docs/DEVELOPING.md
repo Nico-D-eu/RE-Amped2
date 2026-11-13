@@ -759,7 +759,8 @@ code or data in it.
 - `./install.sh DISC.iso [DIR]` (`tools/linux/install.sh`; default
   `~/Games/RE-Amped2`) runs the installer's stages: checks the build tools
   (offers the apt, pacman or dnf command for what is missing, and runs it
-  only on a yes), unpacks the disc with xdvdfs and checks the title ID,
+  only on a yes), unpacks the disc with xdvdfs and checks the title ID and the retail
+  entry point,
   copies the sources to `DIR/_install_temp` with `game` linked to
   `DIR/game`, makes a venv with capstone, runs `tools/linux/regen.sh`
   (`regen.ps1`'s steps 2-5 in bash, without Ghidra or `no_optimize.txt`),

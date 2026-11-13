@@ -16,7 +16,9 @@ opens the licence texts (see below).
 
 1. **Disc.** Pick the `.iso`/`.xiso` (or drop it on the window or on the
    `.exe`). The image is checked with `xdvdfs`: it must list, and its
-   `default.xbe` must carry title ID `0x4D530041`. USA and Europe both pass.
+   `default.xbe` must carry title ID `0x4D530041` and the retail entry point
+   `0x00254899` (pre-release and dev-kit builds share the title ID but not
+   the code). USA and Europe both pass.
 2. **Location.** Install folder (default `C:\Games\RE-Amped2`, or the last
    one used), and four checkboxes: desktop shortcut, the RE-Amped2 menus
    (the menu mod), the RE-Amped2 look (the branding pack and sharp fonts) and, unticked by
