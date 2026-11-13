@@ -895,7 +895,9 @@ def cmd_add(proj: Project, args):
     if slots[slot][1] != run["kind"]:
         sys.exit("%s is a %s challenge, the recording is a %s run"
                  % (slot, slots[slot][1], run["kind"]))
-    used = {c["id"] for c in data["challenges"]}
+    # Never an ID a removed challenge had: players' devchallenges.json keep
+    # won IDs, so a reused one would show the new challenge as won.
+    used = {c["id"] for c in data["challenges"]} | set(data.get("retired", []))
     dev_id = next("dev%d" % n for n in range(1, 1000) if "dev%d" % n not in used)
     rec = proj.pack / "recordings" / dev_id
     rec.mkdir(parents=True, exist_ok=True)
@@ -1001,6 +1003,7 @@ def cmd_remove(proj: Project, args):
     if len(keep) == len(data["challenges"]):
         sys.exit("no %s in %s" % (args.dev_id, proj.manifest))
     data["challenges"] = keep
+    data["retired"] = sorted(set(data.get("retired", [])) | {args.dev_id})
     proj.store(data)
     shutil.rmtree(proj.pack / "recordings" / args.dev_id, ignore_errors=True)
     print("removed", args.dev_id)
