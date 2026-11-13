@@ -212,7 +212,16 @@ loc_000B1E36: ;
     esi = MEM32(esp + 0x28);
     PUSH32(esp, 0x2E);
     PUSH32(esp, esi);
-    PUSH32(esp, 0x000B1E42u); RECOMP_ABI_CALL(0x002594C0u, strrchr_002594C0); /* call 0x002594C0 */
+    /* call 0x002594C0 (the CRT's strrchr). Through the lookup, not by name:
+     * the generated name is strrchr_002594C0 only where Ghidra's names were
+     * merged in (a developer's regen) and sub_002594C0 in an install, which
+     * did not link (0.4.0's Linux test install). */
+    {
+        static recomp_func_t strrchr_fn;
+        if (!strrchr_fn)
+            strrchr_fn = recomp_lookup(0x002594C0u);
+        PUSH32(esp, 0x000B1E42u); RECOMP_ABI_CALL(0x002594C0u, strrchr_fn);
+    }
 
 loc_000B1E42: ;
     _fb = (uint32_t)(8) & 0xFFFFFFFFu; _fbs = (int32_t)(int32_t)(_fb); /* add source, before the write */
