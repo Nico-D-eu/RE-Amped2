@@ -1982,8 +1982,7 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   `sub_0004C6F0` (Pro, kind 0xF at +0x48) and `sub_0004CF30` (photo shoot,
   kind 5), called from `0x00047C07` / `0x00047C47`: +0x00 title, +0x20 the
   player's name, +0x24 / +0x2C the labels, +0x28 / +0x30 the two boxes,
-  +0x34 the text box (left empty natively, so the layout's placeholder
-  shows), +0x38 the player's status, +0x40 the challenge ID (the picture is
+  +0x34 the yellow line under the header, +0x38 the player's status, +0x40 the challenge ID (the picture is
   the texture named by the string `<L>_<ID>`). Labels, boxes and ID are
   filled only in a loop over the level's `ProChal<n>` / `Sequence<n>`
   challenges. Every text key goes through the string-table lookup
@@ -1996,8 +1995,14 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   lookup (return `0x0004CBCB` / `0x0004D1CB`, card at `[sp+0xB8]` /
   `[sp+0xBC]`), writes the record's fields itself (String helpers:
   `sub_00017830` empty, esi; `sub_0001EE70` assign, eax = &from, ebx = &to;
-  `sub_0001A490` release, ecx). In the shell it swaps a won challenge's
-  list item key to `DevChal_dev<n>_Won`. The GUI fonts (`Base.rui
+  `sub_0001A490` release, ecx). It swaps a won challenge's list item key
+  to `DevChal_dev<n>_Won`, also while a run is still "playing": leaving the
+  mountain rebuilds the shell's screens, items included, before the shell
+  pushes LevelSelect. The end card sets the stat-point note in the screen's
+  text widget `[screen +0x64]` (screen = card - 0x94; text String +0x2C,
+  shown when +0x50 is set; the game's setter is `sub_001202A0`) at its
+  status lookup (return `0x0004C766` / `0x0004CFA6`); +0x34 is the yellow
+  line under the header, not the box. The GUI fonts (`Base.rui
   Fonts/*.abc` metrics, 28-byte glyph records with an icon flag in the last
   dword; `Base.ruirr Fonts/*.xpr` atlases) have no check glyph:
   `dev_challenge.py` draws one, green, into the unused icon cell 0x1E.
