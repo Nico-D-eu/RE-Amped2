@@ -29,7 +29,7 @@ namespace Amped2Installer
         public string FailedStage, Error, Advice;
         public TimeSpan Duration;
         public string InstallDir, ExePath, LogPath;
-        public bool ShortcutCreated, MenuModInstalled, LookInstalled;
+        public bool ShortcutCreated, MenuModInstalled, LookInstalled, DevChallengesInstalled;
         public string MenuModNote;                       // why the menu improvements were skipped
         public bool HdMoviesReady, HdMoviesStarted;      // tools in place; conversion running
         public string HdMoviesNote;                      // why the HD movies were skipped
@@ -446,7 +446,38 @@ namespace Amped2Installer
                 Directory.Delete(target, true);
             CopyDirectory(built, target);
             r.MenuModInstalled = true;
+            BuildDevChallenges(r);
             SetFraction(1);
+        }
+
+        /// <summary>
+        /// The developer challenges (Career › DEVELOPER CHALLENGES): the project's
+        /// recorded runs in content\dev-challenges, built on the player's own game
+        /// files by tools\mods\dev_challenge.py into the pack mods\packs\dev-challenges
+        /// (listed in mods\mods.json by InstallLook). They need the menu mod.
+        /// </summary>
+        void BuildDevChallenges(InstallResult r)
+        {
+            var pack = Path.Combine(Dest, @"mods\packs\dev-challenges");
+            if (Directory.Exists(pack))
+                Directory.Delete(pack, true);
+            Detail = "Adding the developer challenges";
+            var env = PythonEnv();
+            env["PATH"] = Path.GetDirectoryName(_tools.JavaExe) + ";" + Environment.GetEnvironmentVariable("PATH");
+            int code = ProcessRunner.Run(VenvPython,
+                ProcessRunner.Quote(Path.Combine(Amped2, @"tools\mods\dev_challenge.py")) +
+                " --content " + ProcessRunner.Quote(Path.Combine(Amped2, @"content\dev-challenges")) + " build",
+                Amped2, Log, Ct, env);
+            var built = Path.Combine(Amped2, @"mods\packs\dev-challenges");
+            if (code != 0 || !Directory.Exists(Path.Combine(built, "loose")))
+            {
+                r.Warnings.Add("The developer challenges couldn't be added (the install log has the details).");
+                return;
+            }
+            CopyDirectory(Path.Combine(built, "loose"), Path.Combine(pack, "loose"));
+            if (Directory.Exists(Path.Combine(built, "textures")))
+                CopyDirectory(Path.Combine(built, "textures"), Path.Combine(pack, "textures"));
+            r.DevChallengesInstalled = true;
         }
 
         /// <summary>
@@ -561,14 +592,15 @@ namespace Amped2Installer
         /// </summary>
         void InstallLook(InstallResult r)
         {
-            const string name = "re-amped2", fonts = "fonts";
+            const string name = "re-amped2", fonts = "fonts", devchal = "dev-challenges";
             var packDir = Path.Combine(Dest, @"mods\packs", name);
             var fontDir = Path.Combine(Dest, @"mods\packs", fonts);
             var json = Path.Combine(Dest, @"mods\mods.json");
             var packs = new List<string>();
             if (File.Exists(json))
                 foreach (Match m in Regex.Matches(File.ReadAllText(json), "\"([^\"]+)\""))
-                    if (m.Groups[1].Value != "packs" && m.Groups[1].Value != name && m.Groups[1].Value != fonts)
+                    if (m.Groups[1].Value != "packs" && m.Groups[1].Value != name && m.Groups[1].Value != fonts
+                        && m.Groups[1].Value != devchal)
                         packs.Add(m.Groups[1].Value);
             if (Directory.Exists(packDir))
                 Directory.Delete(packDir, true);
@@ -589,6 +621,12 @@ namespace Amped2Installer
                     else
                         r.Warnings.Add("The sharp fonts couldn't be made (the install log has the details); " +
                                        "the game uses its original fonts.");
+                }
+                // Before fonts: its font atlases carry the check mark of a won challenge.
+                if (r.DevChallengesInstalled)
+                    packs.Insert(0, devchal);
+                if (_o.Look)
+                {
                     packs.Insert(0, name);
                     r.LookInstalled = true;
                 }
@@ -654,6 +692,11 @@ namespace Amped2Installer
                 .AppendLine("  menus), and Options and Mods > Mods turns the mod packs and textures on or off.")
                 .AppendLine("  The RE-Amped2 look (logo, splash, loading screen) is the mod pack in")
                 .AppendLine("  mods\\packs\\re-amped2, listed in mods\\mods.json.")
+                .AppendLine()
+                .AppendLine("Developer challenges")
+                .AppendLine("  Career > Developer Challenges (with the RE-Amped2 menus) has races and photo")
+                .AppendLine("  shoots against the developer's own runs. Every 3 wins give a stat point; wins")
+                .AppendLine("  are kept in devchallenges.json in this folder.")
                 .AppendLine("  amped2.ini in this folder holds every setting; it is created the first time")
                 .AppendLine("  the game starts. Remove the ; in front of a line to use it.")
                 .AppendLine()

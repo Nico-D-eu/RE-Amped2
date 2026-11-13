@@ -276,7 +276,8 @@ logged cmake --build "$WORK/build" --parallel "$jobs" || fail "the compile stopp
 # mods/build/game, which the game reads over game/. A failure here only
 # leaves the menus out, as on Windows.
 MENUS_OK=0
-rm -rf "$DEST/mods/build/game"
+DEVCHAL_OK=0
+rm -rf "$DEST/mods/build/game" "$DEST/mods/packs/dev-challenges"
 if [ "$MENUS" = 1 ]; then
     stage "RE-Amped2 menus"
     if logged "$WORK/venv/bin/pip" install --disable-pip-version-check numpy pillow &&
@@ -288,6 +289,21 @@ if [ "$MENUS" = 1 ]; then
         say "Added the RE-Amped2 menus (mods/build/game)."
     else
         say "The RE-Amped2 menus could not be built and are left out (details in $LOG)."
+    fi
+fi
+# The developer challenges (Career > DEVELOPER CHALLENGES): the project's
+# recorded runs in content/dev-challenges, built by tools/mods/dev_challenge.py
+# into the pack mods/packs/dev-challenges. They need the menus.
+if [ "$MENUS_OK" = 1 ]; then
+    stage "Developer challenges"
+    if (cd "$WORK/src/amped2" && logged "$WORK/venv/bin/python" tools/mods/dev_challenge.py                 --content content/dev-challenges build) &&
+            [ -d "$WORK/src/amped2/mods/packs/dev-challenges/loose" ]; then
+        mkdir -p "$DEST/mods/packs/dev-challenges"
+        cp -r "$WORK/src/amped2/mods/packs/dev-challenges/loose"               "$WORK/src/amped2/mods/packs/dev-challenges/textures" "$DEST/mods/packs/dev-challenges/"
+        DEVCHAL_OK=1
+        say "Added the developer challenges (mods/packs/dev-challenges)."
+    else
+        say "The developer challenges could not be built and are left out (details in $LOG)."
     fi
 fi
 
@@ -335,13 +351,17 @@ if [ "$LOOK" = 1 ]; then
     fi
 fi
 mkdir -p "$DEST/mods"
-python3 - "$DEST/mods/mods.json" "$LOOK" "$FONTS_OK" <<'EOF' || say "Could not update mods/mods.json; the look may not show."
+python3 - "$DEST/mods/mods.json" "$LOOK" "$FONTS_OK" "$DEVCHAL_OK" <<'EOF' || say "Could not update mods/mods.json; the look may not show."
 import os, re, sys
-path, look, fonts = sys.argv[1], sys.argv[2] == '1', sys.argv[3] == '1'
+path, look, fonts, devchal = sys.argv[1], sys.argv[2] == '1', sys.argv[3] == '1', sys.argv[4] == '1'
 old = open(path).read() if os.path.exists(path) else ''
-packs = [p for p in re.findall(r'"([^"]+)"', old) if p not in ('packs', 're-amped2', 'fonts')]
+packs = [p for p in re.findall(r'"([^"]+)"', old)
+         if p not in ('packs', 're-amped2', 'fonts', 'dev-challenges')]
 if look and fonts:
     packs.insert(0, 'fonts')
+# Before fonts: its font atlases carry the check mark of a won challenge.
+if devchal:
+    packs.insert(0, 'dev-challenges')
 if look:
     packs.insert(0, 're-amped2')
 open(path, 'w').write('{ "packs": [' + ', '.join('"%s"' % p for p in packs) + '] }\n')

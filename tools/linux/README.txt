@@ -41,6 +41,11 @@ Settings
   mods/packs/re-amped2, listed in mods/mods.json. Install with --no-look
   to leave it out.
 
+Developer challenges
+  Career > Developer Challenges (with the RE-Amped2 menus) has races and
+  photo shoots against the developer's own runs. Every 3 wins give a stat
+  point; wins are kept in devchallenges.json in this folder.
+
 Your saves
   Career progress is saved in game/UDATA in this folder. Back it up before
   deleting the folder. Running the installer again keeps it.

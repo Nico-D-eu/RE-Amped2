@@ -874,6 +874,9 @@ namespace Amped2Installer
                     "Your career progress is saved in the game\\UDATA folder inside the install folder. Running this installer again keeps it.",
                     "README.txt in the install folder has all of this to look up later.",
                 };
+                if (r.DevChallengesInstalled)
+                    tips.Add("Career › Developer Challenges has races and photo shoots against the developer's own runs. " +
+                             "Every 3 wins give you a stat point.");
                 if (r.MenuModNote != null)
                     tips.Add(r.MenuModNote + " The game plays fine without them.");
                 if (r.HdMoviesStarted)
