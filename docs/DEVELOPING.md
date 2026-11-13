@@ -393,6 +393,17 @@ command closes the window. New labels go into the game's string table
 (`tools/assets/string_table.py`). `Mods=0` turns all of it off. The recipe
 needs the toolkit's Python packages: `py -3.10 tools/mods/menus.py` here.
 
+**Developer challenges (in progress, PLAN Phase 25).** `python
+tools/mods/dev_challenge.py list` shows the replays saved with the game's
+Save Replay (each is its own save in `UDATA\4d530041\<id>\`, in the Pro
+replay format, with the rider's look); `add --save <id>` turns one into a
+Pro challenge in `mods\packs\dev-challenges` (loose entries: the
+recording, the look, and the level's challenge and drop-point scripts from
+`mods\source`). For now it stands in for one of the level's Pro
+challenges, so try it on a copy of the saves. `build` also lists the
+challenges under Career > DEVELOPER CHALLENGES (Base.rui
+`Scenes/PlayerFeedback.*`, see "GUI screens are registered natively").
+
 **Mod packs.** `mods\mods.json` lists the packs to use, highest priority
 first: `{ "packs": ["hd-snow", "menus"] }`. A pack is a folder
 `mods\packs\<name>\` with `game\` (files that stand in for the same paths in
@@ -1859,6 +1870,191 @@ old fold.
   64–128 MB physical, so it never shares a page number with the window.
 - **Pad-handle race.** `diag/xinput_page0.bin`: the device pointer was
   written at 0x80000322 while the handle 0x80000289 expects it at +0xA3.
+
+### GUI screens are registered natively (2026-11-07)
+
+`PushMenu("<name>")` opens a screen only if default.xbe registers that name.
+Static initialisers build one object per screen (for example MainCareer at
+`0x003E378C`, vtable `0x00366688`, made by `sub_00289C60` through the base
+constructor `sub_00212770(id, name, default control)`), and the GUI code
+calls them by address (`sub_000FF040`, `sub_000FF9E0`). A scene whose three
+files (`.scene`, `.sceneData`, `.actions`) exist but whose name has no object
+is ignored: a new `Scenes/DevChallenges.*` in Shell.rui, and even an exact
+copy of Options as `Options2`, never opened, wherever they sat in the
+archive. The screen stayed on the old one, its list flown away, so A ran the
+same item again. Found with title-screen probes (Start rewired to
+`PushMenu`, `RECOMP_PAD_SCRIPT`, `RECOMP_GPU_SHOT_PRESENT`); the Options
+control opened at once.
+
+A mod that needs a screen of its own therefore reuses a registered one the
+port never shows. The Xbox Live screens in Base.rui (always loaded) are the
+candidates: the menu mod's MODS AND GRAPHICS is `Options_Online`, the
+developer-challenge list is `PlayerFeedback`. Both classes override only
+slots 6, 7, 28 and 29 of the base vtable `0x00356068`. A screen's class
+can do its own work in those slots, so check a reused one on screen.
+
+Note for tests: the game reads the pad whether or not its window has focus,
+so a test run beside a game someone is playing gets their presses too.
+
+### Starting a level and a drop point natively (2026-11-07)
+
+What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
+
+- **GUI command arguments.** A command is thiscall with one stack argument,
+  the call: `[arg+0x88]` arguments, 12 bytes each from `[arg+0x84]`. A quoted
+  one (`"LX2"`) has type 2 at +0 and its text as a String (`char *`) at +8;
+  a bare number has type 1. Commands registered in `sub_00218140` (the shell)
+  and in the game's own table (`LaunchGame` and the other `0x0010xxxx`
+  handlers, registered around `0x00100235`) are all callable from any scene,
+  shell or Base.rui.
+- **The level.** Level Select's entries (`0x003E3600 +0x74`, `+0x78` of them,
+  filled when the screen is pushed) hold the level's path at `+0x28`
+  (`D:\LEVELS\LX2\`), its file at `+0x2C` (`LX2.LVL`), its code at `+0x3C`
+  and the unlocked flag at `+0x1C`. `SelectLevel()` (`sub_001E0F50`) copies
+  the file into the session `0x003AD748` with `sub_00020C30` (thiscall, the
+  String pushed; also derives +0x10), sets the path (`+0x10`, `0x003AD758`)
+  with `sub_00013800` (eax = source String, ebx = target), writes the
+  session to Lua (`sub_000200B0`, ecx = session), sets
+  `[[0x003ACD14]+0x94] = -1` and calls `[[0x003AD0DC]]` vtable `+0x58`.
+  Its remaining work (marking the level's state "Available" in the career's
+  `.levels`) is not needed to play. `LaunchGame()` (`sub_00102630`) only
+  writes the session again and calls `sub_00023700([0x003ACD0C])`. The
+  session's other fields (`+0x14` AniInfoFilename, `+0x18` CareerName ...)
+  are already set by then, so a locked level loads like any other; checked
+  from the title screen with a save where Laax 2 is locked.
+- **The drop point.** The level's drop-point screen (Game.rui `DropPoint`,
+  object `0x003CDF90`, vtable `0x003573D8`) fills its menu when pushed (slot
+  6, `sub_0010BCB0`, `ret 4`). The level's drop points are in
+  `[[[0x003ACDC8]+0x24]+0x58]`: `+8` array, `+0xC` count, `+0` current;
+  each has its ID at `+0x4C` (char *) and its challenge at `+0x10`.
+  `IsDebugOnly` ones are there but not in the menu. `ChooseDropPoint()`
+  (`sub_0010DA50`) needs the screen's `+0x7C` (a float delay) at or below
+  zero, takes the list's (`+0x3C`) selected item (`+0x24`), refuses a
+  "Locked" item (`+8`), selects its drop point (`+0x20`) with
+  `sub_000A2590` (ecx = the drop points, edi = the drop point), runs
+  `$EndMenuForward` and hides the legends (`sub_00103E60` ... on
+  `0x003CDA08`). Run right after the push, with the drop point lent to the
+  selected item, it goes straight to the challenge's intro screen.
+- **Leaving a run.** The pause menu is Resume, Restart Run
+  (`RestartChallenge`), Choose New Run (`QuitChallenge`, `sub_0010F0F0`:
+  back to the drop-point screen), Challenge Checklist, Recent Players,
+  Options, Leave Mountain (`LaunchShellToMainMenu`, `sub_001022A0`). The
+  end-of-run menu (`EndOfRunOptions`) has `EORQuitChallenge`
+  (`sub_0010FE80`, drop points), `EORChangeMountain` (`sub_0010FEA0`),
+  `EORLeaveMountain` (`sub_0010FED0`). `LaunchShellToCareerLevelSelect`
+  (`sub_00102360`) sets `[[0x003ACD0C]+0x54] = 5`; when the shell starts it
+  switches on that value (`0x00100B9B`, table `0x001013E4`): 5 pushes Main,
+  MainCareer, LevelSelect, 8 Main, MainCareer, Portfolio, 6 Main,
+  MainFreeRide. The pushes go through the GUI object's PushMenu, vtable
+  `0x0036C868 +0x50` = `sub_002194B0` (thiscall, the name String pushed).
+  A developer challenge leaves through `sub_00102360` from all of these
+  (and from the drop-point screen when it comes back), and the PushMenu
+  wrapper turns the LevelSelect push into `PlayerFeedback`, the list.
+- **Progress states** (`sub_00031960`, table `0x00031AE0`): 0 Locked,
+  1 Available, 2 Complete, 3 Improve, 6 New. A drop point's `+0x10` is the
+  drop point's own progress record (state at `+4`), not a challenge.
+- **Challenges.** Loaded when a run starts, not with the level:
+  `sub_0004A700` (vtable `0x00347814`, thiscall, `ret`) calls
+  `sub_0005C450` on `<L>_Challenges.lua`. A challenge object has its ID
+  (String `char *`) at `+0x1C`, its progress record at `+0x38` (record
+  `+0` points back; `+4` state, `+8` on complete), and `+0x4C` set when
+  it can run. The record comes from the career's own `<L>_Progress.lua`
+  (`sub_00031020` per entry; a missing entry parses as Locked and clears
+  `+0x4C`), or, with no progress file, the default at `0x0005D855`
+  (Available, Improve, 1, 2, `+0x34 = 0xFA`). The career is signed
+  (`career.sig`): a hand-edited progress file hangs the load.
+- **Progress entries in memory** (2026-11-11). The loader `sub_0005C450`
+  runs `<L>_Challenges.lua` (`sub_00022CB0` at `0x0005C571`) and then the
+  career's `<L>_Progress.lua` (`0x0005CFAB`), and looks up each challenge's
+  entry by ID (`sub_000EAE50` at `0x0005D6F8`). A challenge the career
+  doesn't list is read through the previous entry's leftovers (it loads, is
+  left out, or crashes at `0x0005D786` on its "Parts"). Both files go
+  through `sub_0014ED70` -> lua_load `0x000F3660` with luaL_loadbuffer's
+  reader getS `0x000F3640` (cdecl `(L, ud, size *)`, `ud` = {text, size},
+  handed out once), called through a pointer from luaZ_fill. The wrapper
+  `amped2_lua_getS` adds, only while the challenges load, a second piece
+  of text after a `Progress` file's own: an entry (Available, on complete
+  Improve, one Available part) for each `DevChal<n>` of the challenges
+  file that `Progress` lacks. The text goes to the header page at
+  `0x00010C00` (XBE headers end at `0x00010B60`). The files on disk are
+  not touched, and the game saves the entries itself, signed.
+- **The intro/results card and the list's check** (2026-11-12). The
+  PreRun card is a record of Strings at `[screen +0x184] + 0x94`, filled by
+  `sub_0004C6F0` (Pro, kind 0xF at +0x48) and `sub_0004CF30` (photo shoot,
+  kind 5), called from `0x00047C07` / `0x00047C47`: +0x00 title, +0x20 the
+  player's name, +0x24 / +0x2C the labels, +0x28 / +0x30 the two boxes,
+  +0x34 the yellow line under the header, +0x38 the player's status, +0x40 the challenge ID (the picture is
+  the texture named by the string `<L>_<ID>`). Labels, boxes and ID are
+  filled only in a loop over the level's `ProChal<n>` / `Sequence<n>`
+  challenges. Every text key goes through the string-table lookup
+  `sub_000B1E20` (eax = &key String, stack table `[0x0038CDF4]`, out;
+  `ret 8`; `sub_000B2020` wraps it, stdcall table, &key, flag, edi = out).
+  Its callers are direct calls, so it is a hand copy in `src/lua_probe.c`
+  listed in `config/manual_functions.json`, with a probe
+  (`amped2_devchal_key`) that gets the key and the stack pointer. During a
+  developer challenge it swaps the title keys and, at the card's status
+  lookup (return `0x0004CBCB` / `0x0004D1CB`, card at `[sp+0xB8]` /
+  `[sp+0xBC]`), writes the record's fields itself (String helpers:
+  `sub_00017830` empty, esi; `sub_0001EE70` assign, eax = &from, ebx = &to;
+  `sub_0001A490` release, ecx). In the shell it swaps a won challenge's
+  list item key to `DevChal_dev<n>_Won`. The list (PlayerFeedback,
+  `Base.rui`) stays loaded; leaving the mountain reloads only
+  `SharedShell.rui` and `Shell.rui`. So a fresh win retargets the item's
+  text String: it finds the buffers holding the title by text and header,
+  then the Strings holding them, and assigns the _Won text to each. The
+  string table's texts are UTF-16 (`String` +0 points at the 16-bit text). The end card sets the stat-point note in the screen's
+  text widget `[screen +0x64]` (screen = card - 0x94; text String +0x2C,
+  shown when +0x50 is set; the game's setter is `sub_001202A0`) at its
+  status lookup (return `0x0004C766` / `0x0004CFA6`); +0x34 is the yellow
+  line under the header, not the box. The GUI fonts (`Base.rui
+  Fonts/*.abc` metrics, 28-byte glyph records with an icon flag in the last
+  dword; `Base.ruirr Fonts/*.xpr` atlases) have no check glyph:
+  `dev_challenge.py` draws one, green, into the unused icon cell 0x1E.
+- The career drop-point menu lists only plain drop points (type `+0x54`
+  0, 4 or 9; `0x0010C205`) and the fixed IDs Sponsor1-3, PhotoShoot1-3,
+  Pro1-3 (`0x0010C416` on). Challenge code also knows Pro challenges as
+  "ProChal" + 1-3 (`0x0004CC3F`).
+- **Skill points.** The end-of-run flow object `0x003AD688` (vtable
+  `0x0034480C`; update `+0x54` = `sub_00018B40`, `ret 8`; flow `+0x20`,
+  sub-state `+0x1C`, end-of-run state `+0x28`, the player at `+0x10`) runs
+  the rewards in `sub_00017840` (state 2: skill points, 0: unlock
+  messages). `sub_000469E0(ecx = player)` gives a point for each even value
+  as the player's `+0x2DD` climbs to `+0x2DE`; `+0x2DE` is
+  `NumScoreChalDone` from the career's `Progress` file (`0x0004A8B7`), and
+  the career load sets `+0x2DD` to it (`0x0004AFBF`), so two score
+  challenges make one point (REWARD_SCORESKILLPOINTS). The point shows as
+  the "EarnedSkillPoints" message (`0x003E32D0`, points in `0x003E32C4`)
+  and the SkillsPoints_InGame screen (`0x003E3208`, `sub_001D2A70`, ecx =
+  `[player+0x170]`). The message callbacks `0x000166A0/B0/C0` set the
+  state `0x003AD6B0` (= `0x003AD688+0x28`). The update runs only after a
+  run really ends (flow 0, 1, 3, 4 ... 23 through the results; traced by
+  hand, 2026-11-09): scripted probes that never finished a run never saw
+  it. The sub-state `+0x1C` is the drop point's type: 0 runs
+  `sub_00017840` (skill points), 1 (Pro) `sub_00017D60` (Pro rewards, no
+  skill-point check). Rewards per challenge are data: a reward object at
+  challenge `+0x18` (word type: 1 SCORESKILLPOINTS, 2 PHOTOSHOOTREPLAY,
+  3 SPONSORSTUFF, 4 PROTAUGHTTRICK, 5 PROSKILLPOINTS, 6 PROBIOVIDEO ...;
+  word RewardIndex; String RewardInfo), described by `sub_00066890`
+  (challenge vtable `0x0034A424` slot 3).
+- **Replay files** (as far as tools/mods/dev_challenge.py needs them).
+  `.rpl`: 5-byte header `02 00 00 00 00`, then 20-22-byte records: position
+  (three int16, 1/20 m; Y up, the drop points' coordinates), orientation
+  (three int16), state sized by a flags byte, and the run's time as a
+  float32 at the end (about 1/60 s apart); an 18-byte trailer. `.evt`:
+  0x53-byte header, then events: float32 time, uint32 kind, and for kind
+  10 (the pad) a uint16 length and that many bytes, kind 22 (a jump, with
+  positions in m) 20 bytes, kinds 0, 2, 7, 11, 12 (tricks and states; 12
+  per trick) 4 bytes. Cutting both to a time window and moving the times
+  back to the run's start plays as a run of its own.
+- **A challenge's win** shows on its part: the part's record (part at
+  challenge `+0x24` vector, record at part `+0x18`) turns its
+  StateOnComplete during the run, while the challenge's own record keeps
+  its state until later.
+- Calls into the game's own bodies from C push a dummy return address (the
+  bodies pop it), and the generated function names (`sub_X`) link from
+  `recomp_manual.c` without regenerating. Vtable slots and commands are
+  reached through `recomp_lookup_manual`, so they can be wrapped there
+  without a `sub_X_gen` regeneration.
 
 ### Known toolkit issue (for upstream)
 

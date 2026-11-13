@@ -825,6 +825,7 @@ net, the toolkit sync, and the player-facing polish for v0.3.0.
 | 20 | Content tooling (Phase 8 prerequisites) | Offline format work | No |
 | 21 | Linux build (then macOS and arm64), **next (user, 2026-10-31)** | Upstream v0.16 already has a POSIX runtime; the GPU back end is what's missing | Yes, under Linux |
 | 22 | Vulkan back end (proposed 2026-11-05) | Replaces GL off Windows and the D3D12 step of the upscaler plan; not a Windows speed fix | Yes, Windows first, then native Linux |
+| 23–26 | Gameplay features (proposed 2026-11-07): state map, practice save state, developer challenges, online high scores | Player-facing; the game's replay and Pro-challenge systems do most of the work | Yes, isolated runs |
 
 - **Standing lane:** bugs from the user's testing come before any phase.
   For each one: reproduce it, fix it, add a suite case, and ship the fix in
@@ -1371,6 +1372,665 @@ back ends.
 - [ ] The suite passes with each back end
 - [ ] The Windows default (D3D11) is unchanged
 
+### Phases 23–26: gameplay features (proposed by the user, 2026-11-07)
+
+**Status: proposed, not started.** Three player-facing ideas: a save state
+for practice, recorded "developer challenges", and shared online high
+scores. All three are possible within reason, because the game already
+has most of the machinery. Phase 23 is the groundwork that all three need.
+
+**What the game already has** (strings in `default.xbe` and the level
+scripts; checked 2026-11-07):
+- **A replay system.** Every Pro challenge (`CHAL_PRO`) plays a recorded
+  run: `ProReplay = "Pro\\Pro1"` names `Pro/Pro1.rpl` (motion), `.evt`
+  (trick events) and `.ActionMap` in the level's `.res`. The ambient
+  riders use the same format (`AmbientRuns/*`). The player's own run is
+  recorded too (`Career.rpl`, `Career.evt`, `Career.ActionMap`), for the
+  Replay Theater and the replay VCR's Save Replay (`SaveReplay`,
+  `Replay_VCR_Record`, `BOARDER_REPLAY_IO`).
+- **Three strikes.** `CHAL_PRO` parts carry `Value = 3` (tries),
+  `TrickRadius`, `PointThreshold` and a `ProParts` look file; the HUD has
+  `$ProScore_ResetStrikes`. This is the "max 3 failed" rule, ready-made.
+- **Data-driven sessions.** `Multiplayer_Session_Race.lua` takes its
+  `ProReplay` from `MultiplayerGameDescr.GameData`, so a session can be
+  described by data rather than by the career list.
+- **Drop points.** `<Level>_DropPoints.lua` spawns the rider at
+  `DropLoc`/`DropDir`; some are `IsDebugOnly` recording spots
+  (`ambrec0`, ID `Replay0`), so the developers recorded runs in game.
+- **Records.** `<Level>_Records.lua` (`HighScore`), `RecordHS`,
+  `RecordMS` (media/photo score), `StatsTrickScore`, a `.records` save
+  file, and Xbox Live stats (`/xstats/...`), which are stubbed.
+
+**What it does not have:** a mid-run save state. A whole-machine snapshot
+(as emulators do) is **not feasible** here: the recompiled game runs on
+host threads and host stacks, with live D3D11, XAudio2 and kernel objects
+that guest RAM doesn't describe. Phase 24 is therefore a gameplay
+checkpoint: the rider and the score, not the machine.
+
+| # | Phase | Size | Depends on |
+|---|---|---|---|
+| 23 | Gameplay state map (RE groundwork) | Medium | — |
+| 24 | Practice save state (checkpoint; undoes gaps and snowmen too) | Medium–large | 23 |
+| 25 | Developer challenges (Career menu item, stat-point reward, photo shoots); the challenge tool is done | Medium–large | 23; the replay format |
+| 26 | Online high scores with replays (opt-in, honor system) | Medium client, plus a service to run | 23; 24's "assisted" flag; 25's replay playback for watching in game |
+
+Suggested order: 23, 24, then 26's upload and web page (steps 1-3, 5,
+6), then 25, then 26's in-game watching (step 4), which plays replays the
+way 25 does. Each phase is a separate branch and PR.
+
+#### Phase 23: Gameplay state map
+
+Find, by address, what the other three phases read and write. Record the
+findings in `docs/DEVELOPING.md` "Bring-up notes"; no player-facing change.
+
+1. **Session lifecycle.** The functions for run start, Restart Run, Leave
+   Mountain, level load and unload, and challenge start, success and fail.
+   A native hook on each, with an opt-in log line (`AMPED2_GAMEPLAY_TRACE`).
+2. **The rider object.** Position, orientation, linear and angular
+   velocity, grounded or airborne, stance, trick and animation state.
+   Start from the drop-point spawn (it writes `DropLoc` into the rider)
+   and use `RECOMP_WATCH` / `RECOMP_FIND_FLOAT` to confirm.
+3. **Score state.** Run score, combo, style meter and multipliers, the
+   session counters the HUD draws (`$TrickScore`, `$HighScore`,
+   `$MediaScore`), and where the challenge scripts keep their progress
+   (Lua tables in the guest heap, or native counters).
+   **Challenge progress in full** (Phase 24 undoes it): for gaps
+   (`JumpGap.scr`, the gap sparkles at 0x001A2460) and snowmen
+   (`ExplorationItem.scr`, 0x001B1BC0), where "found" is stored, what a
+   find changes on the object (hidden, script state, sound, HUD count),
+   and whether the find is written to `Career.progress` at once or only
+   at the end of the run.
+4. **Records.** Where best score, best photo (media) score and best trick
+   live in memory and in the `.records` file, and when the game updates
+   them. **Read-only;** saves are never written by our code.
+5. **Replay files.** Where `Career.rpl/.evt/.ActionMap` are written
+   (cache partition or `UDATA`), when, and how Save Replay stores them in
+   the Replay Theater. Enough of the `.rpl`/`.evt` layout to find the
+   start position, length and frame rate (needed to trim a run in 25).
+   **Partly answered (2026-11-07):** Save Replay makes a save of its own
+   in `UDATA\4d530041\<id>\` named like `Replay5 LX2 Brd <rider>`
+   (`SaveMeta.xbx`; photo-shoot replays are `Photo<n> <level>`), holding
+   `Career.rpl`, `.evt`, `.ActionMap` (the same 9300-byte table as the
+   disc's runs), `Career.parts` (the rider's look), `Career.boarder` and
+   `career.sig`. Same format as the Pro replays (`.rpl` starts
+   `02000000`, then bit-packed records of about 19 bytes; not decoded).
+6. **Pad input.** Which buttons the game uses in a run: Back, L3 and R3
+   (stick clicks), and the triggers. The chord in 24 must not collide.
+
+**Exit:** every item above has an address and a one-line description, and
+the trace shows a full run (start, tricks, a challenge, Leave Mountain)
+in the right order.
+
+#### Phase 24: Practice save state
+
+**Behaviour (user's design):** a button chord stores a checkpoint; Back
+restores the rider **and the score** to that moment. The checkpoint is
+cleared when the level is completed or left.
+
+1. **Input.** Detect the chord on the host, in the toolkit's pad layer
+   (before the emulated USB report), so it works the same with every pad
+   and keyboard. Default **L3+R3** (both stick clicks; the triggers are
+   trick buttons). Configurable in `amped2.ini` `[Game] SaveStateChord`
+   and `SaveStateRestore`. While a checkpoint exists, Back is swallowed so
+   the game doesn't also act on it.
+2. **Save** (only when allowed): rider on the ground, not mid-trick, not in
+   a cut scene, menu or challenge transition. Otherwise a short "can't save
+   now" notice. The copy is taken on the game's main thread at the top of
+   a frame, never from the input thread.
+3. **Restore** at the same safe point: rider state (position, orientation,
+   velocity, so a gap can still be cleared), score, combo and meters, and
+   **challenge progress: gaps and snowmen found after the checkpoint are
+   undone** (user, 2026-11-07). The save copies the progress state Phase
+   23 found; the restore puts it back and brings the found objects back
+   (visible again, their scripts back in the waiting state, the CHALLENGES
+   panel counts back). If the game writes a find to `Career.progress` at
+   once, our code still writes no save: it restores memory only, and the
+   game's next save writes the restored state. Then one frame of settling (camera snap, trail reset). A HUD notice
+   ("Checkpoint saved" / "Back to checkpoint") through the game's own
+   `$EventNotification` or the debug overlay.
+4. **Cleared on** run end, Restart Run, Choose New Run, Leave Mountain,
+   level change and challenge completion. Never stored to disk.
+5. **Fairness.** A run that used a restore is marked **assisted**: no
+   online submission (Phase 26). Whether career challenges still count is
+   a setting (default: they count, since easing gaps and snowmen is the
+   point).
+6. A MODS AND GRAPHICS row "PRACTICE CHECKPOINTS: OFF/ON" (default OFF).
+
+**Decided (user, 2026-11-07):** a restore undoes everything since the
+checkpoint, gaps and snowmen included, so a checkpoint can't be used to
+bank finds. This is the larger half of the phase: the score is a few
+counters, the challenge state is spread over script tables and objects.
+If a full undo proves unsafe for one challenge type, that type falls back
+to "found stays found" and the plan notes it; the rider and score restore
+ship either way.
+
+**Risks:** restoring mid-air or mid-grind leaves the physics or animation
+inconsistent (hence the "on the ground" rule); challenge scripts may hold
+their own timers; an undone find may not reappear if the object was
+freed rather than hidden, or the HUD count may drift from the script's.
+Try ML1's gaps and snowmen first.
+
+**Exit:** save before an ML1 gap, miss it, restore, clear it, with the
+score back at the saved value each time; save, find a snowman and clear a
+gap, restore: both are unfound again, visible, counted as before, and can
+be found again; Leave Mountain after that saves the restored progress; the
+checkpoint is gone after Leave Mountain; 30 minutes of use with no crash;
+the default (off) changes nothing.
+
+#### Phase 25: Developer challenges
+
+**Behaviour (user's design):** a recorded run, or part of one, with its
+tricks and score, that the player tries to beat, with at most three failed
+tries, like the Pro challenges. **Menu (user, 2026-11-07):** Career ->
+"DEVELOPER CHALLENGES", the second item, under "Ride!", with a description
+that ends "For every 3 challenges won, you will be awarded a stat point to
+add to your board stats." **Reward:** one stat point per three developer
+challenges won.
+
+1. **Recording. Done (2026-11-07): `tools/mods/dev_challenge.py`.** A
+   developer saves a run with the game's own Save Replay; `list` shows the
+   saved replays (level, board or skate, start position), `add --save ID`
+   copies one (read-only) into `mods\packs\dev-challenges\recordings\` and
+   its list `devchallenges.json`, `remove` and `build` keep the pack's
+   loose entries in step, and the pack is listed first in `mods.json`.
+   It does everything the proof of concept below did by hand, and its
+   output is byte-identical to the play-tested pack. Until the menu
+   exists, a developer challenge stands in for one of the level's Pro
+   challenges of the same board type (`--slot`), so a win there is
+   recorded as that Pro challenge's in the career save: test on a copy of
+   the saves.
+   **Proof of concept works (user's play test, 2026-11-07):** a local
+   loose-entry pack made Laax 2's "Pro 3" replay the user's saved
+   `Photo2 LX2` run (`Pro\dev1.*` in `LX2.res`, `ProReplay =
+   "Pro\\dev1"`). The pro rode the recorded run, there were tricks to beat
+   (3, as many as the run had) and the three strikes counted. What it
+   took, and what the tool must do:
+   - **Start position.** A `.rpl` starts with `02000000 00` and the first
+     position as three int16 X, Y, Z in 1/20 m. Recordings start within
+     3 m of the drop point they were ridden from.
+   - **Drop point type.** The session follows the drop point's `Type`;
+     only a `"Pro"` drop point starts a Pro challenge. So the tool moves
+     (or adds) a `Type = "Pro"` drop point, rather than pointing the
+     challenge at the recording's own (photo-shoot) drop point. The
+     drop points exist twice, identical: `<Level>.res`
+     `<Level>_DropPoints.lua` and `Levels.res` `<Level>/<Level>_droppoints.lua`.
+   - **Head start.** The disc's pros start 21-40 m ahead of the player
+     along `DropDir`; with the player on the recording's own start, the
+     pro spawned inside them. Moving the drop point (and its camera) 20 m
+     back along `-DropDir`, plus 1 m up, works ("like a charm").
+   - **The pro's look.** `ProParts` names a look file; a saved replay
+     carries the rider's own (`Career.parts` / `Career.boarder`, plain
+     Lua `BoarderParts` / `BoarderDefinition` tables, as the pros'
+     `.parts`/`.boarder`). Added as `Characters\pro\pro.res\ProParts\
+     Dev1.parts`: the pro rides in the recording rider's look.
+   - **Not yet: the pro's name and picture.** The challenge intro and
+     the avatar still show the disc pro (Mitch Nelson). The names are a
+     fixed UTF-16 table in `default.xbe` (around 0x33FA04, `ProName%d`
+     at 0x335D9C), the pictures GUI textures (`Pict_Pro_Mitch.xpr` in
+     `Textures.gfx`). Needs a native hook that substitutes the
+     developer's name (from the `.boarder` `Name`) and a picture.
+   - **Win and fail both work** (user, 2026-11-07): beating the run, and
+     failing by a lower score, a missed jump or bails.
+   - **Board or skate:** a board run in a snowskate challenge fails at
+     once (tricks go through the wrong `.ActionMap` table).
+2. **Trimming** ("a section of a run") needs the `.rpl`/`.evt` layout from
+   Phase 23.
+   **Built (2026-11-09):** `add --from/--to` (seconds) or `--marks` cuts a
+   run to a section (checked in the game: a 2-trick challenge from 10-30 s
+   of the Photo2 run); L3+R3 marks in `test\devchal-play.cmd`
+   (`AMPED2_DEVCHAL_RECORD=1`, XInput thread, src/main.c) go to
+   `devchal-marks.json`; the clock was seen starting at ChooseDropPoint, the
+   presses themselves need a hand test (scripted input is not XInput). The
+   `.rpl`/`.evt` layouts used are in DEVELOPING.md.
+   **Fixed (2026-11-11): replay coordinates are kept modulo 1000 m** (the
+   disc's ML1 pros decode 1000 m short in X of their drop points); the tool
+   now unwraps them and finds each run's offset from its drop point. The
+   user's ML1 run plays with the pro ahead. The note below is the hunt.
+   **Was open (user's test, 2026-11-09): an ML1 developer challenge fails at
+   once.** Replay6 ML1 (`151C6100500E`), cut 0.9-82.5 s and also uncut:
+   "GO!", "Slow Down", "Ahead of the pro", three misses, "Challenge
+   failed", the pro never leads. The HUD reads the recording ("1 OF 9",
+   pro score 42,677), the drop point sits at the section's start, the
+   challenge and drop-point templates match LX2's, and the recorded rider
+   starts moving at 2.5 s as dev1 does. Ruled out: the cut's first record,
+   the pro folder's case (ML1 has "pro/", fixed anyway). Leads: this run
+   crosses X = 0 (a coordinate that jumps 1 -> 19994 there, so near the
+   origin the encoding differs; whether the game's own reader copes, and
+   whether the start of this run is affected); whether the pro waits for
+   the player on ML1 (compare a disc ML1 pro started the same way:
+   StartDevChallenge("ML1", "Pro3")); a run recorded on LX2 or another
+   level away from X = 0.
+   **Marking the section by pad (user, 2026-11-09):** in developer
+   recording sessions (`test\devchal-play.cmd`), L3+R3 during a run marks
+   the challenge's start, pressed again its end, so a challenge can be a
+   short, doable mid-run section instead of a whole run with three misses.
+   Plan: (a) a native check of the pad each frame (only with a recording
+   switch set, e.g. `AMPED2_DEVCHAL_RECORD=1`): on L3+R3 note the player's
+   position and the time since the run started, show a short confirmation
+   (sound or HUD text), and write the marks to `devchal-marks.json` beside
+   amped2.ini, tagged with the level and the run; (b) `dev_challenge.py add
+   --save ID` picks the marks for that saved replay and cuts `.rpl`/`.evt`
+   to the section, starting the drop point (and the 20 m head start) at the
+   start mark. (b) needs the `.rpl` frame layout and the `.evt` event
+   times decoded (Phase 23 item 5): first finding is that a `.rpl` starts
+   `02 00 00 00 00` then int16 X, Y, Z in 1/20 m. Until then a challenge is a whole run started from a drop
+   point; the tool adds that drop point (`DropLoc` = the run's first
+   frame).
+3. **Playing it: the menu.** Don't add to the career list: new entries
+   would shift the challenge indices in `Career.progress`.
+   - **Menu item:** the Career screen (`Shell.rui`, found and edited by
+     `tools/mods/menus.py` the way it already edits the main menu) gets
+     "DEVELOPER CHALLENGES" as its second item, under "Ride!", with a new
+     action name caught by the native GUI-action hook (as QUIT GAME) and a
+     help line in the string table: "Race runs recorded by the RE-Amped2
+     developers: beat their tricks and score with no more than three
+     misses. For every 3 challenges won, you will be awarded a stat point
+     to add to your board stats."
+   - **List screen:** a reused list scene (the Replay Theater's or the
+     challenge checklist's) showing each challenge's title, level, board
+     or skate, and won or not. A screen of its own, pushed with
+     `$FlyButton` + `PushMenu`, with its own description per challenge:
+     Career's help card must not show there (user, 2026-11-07). **Done
+     (2026-11-07):** the Career item (menus.py edit 10) opens
+     the list screen, a scene with Career's list layout and its own
+     items. The game opens only screen names default.xbe registers, so it
+     takes the place of an unused Xbox Live screen, `Base.rui`
+     `Scenes/PlayerFeedback.*` (a new `DevChallenges` scene never opened;
+     DEVELOPING.md, "GUI screens are registered natively"). It shows
+     "NO CHALLENGES YET" from the menu mod, or
+     the pack's challenges (`dev_challenge.py build` writes the scene and
+     its strings as loose entries; the strings start from the menu mod's
+     `Base.rui` tables, so rerun `build` after `menus.py`). For now an
+     item's help says which mountain and Pro challenge it stands in for,
+     and A goes to the mountain list (`PushMenu("LevelSelect")`). The pro
+     pictures are strings too: `<Level>_<ChallengeID>` = `Pict_Pro_<name>`
+     (e.g. `LX2_ProChal3`), names `ProName<n>`.
+   - **Starting one (user, 2026-11-07, after checking the list):** A on a
+     challenge loads it straight away. No mountain list, no drop-point
+     menu, no Pro challenge taken over, and the mountain need not be
+     unlocked. The item's help names the mountain and says A starts it;
+     nothing else for the player to do. Plan:
+     The challenges are reachable only from Career > DEVELOPER CHALLENGES,
+     never from a stage's drop-point menu under RIDE! (user, 2026-11-07).
+     1. *Its own challenge, not Pro N.* **Done (2026-11-07):** the pack
+        appends drop point `Dev<n>` and `CHAL_PRO` challenge `DevChal<n>`
+        (no rank, REWARD_NONE) to the level's scripts; the Pro challenges
+        stay as on the disc. The drop point has `IsDebugOnly = true`, as
+        the disc's own debug drop points, so the stage's menu does not list
+        it (the flag lands in byte +0xA of the parsed drop point,
+        `0x000A5EA0`). Still to check on screen: hidden from the menu, and
+        the checklist and "Own the mountain" counts unchanged.
+     **Steps 2-4 done (2026-11-07), checked from the title screen** (a
+     scratch pack's Start calls the command, save copy with Laax 2
+     locked): Laax 2 loads and opens on the Pro challenge intro of the
+     developer run, no drop-point menu. `StartDevChallenge("LX2", "Dev1")`
+     takes the level and drop point as arguments (the tool writes them
+     into the item's action), so there is no table file to keep in step.
+     Details in DEVELOPING.md, "Starting a level and a drop point
+     natively". Not yet checked from the Career list itself.
+     2. *A native command* beside QuitGame (`recomp_manual.c`, the
+        `sub_00218140` wrapper): `StartDevChallenge(n)` reads challenge n's
+        level and drop point from a small table the tool writes, sets the
+        level the way `SelectLevel()` does without the unlock check, and
+        runs what `LaunchGame()` runs (handler `sub_00102630`).
+        `SelectLevel()` (handler `sub_001E0F50`, `this` = the LevelSelect
+        scene) takes the selected entry from the list (`this+0x3C` ->
+        `+0x24` index, `+0x4C` array). An entry has the locked flag at
+        `+0x1C` (zero: locked sound and return), strings at `+0x08`,
+        `+0x28` and `+0x3C`, and `+0x2C`. It copies `+0x2C` into the
+        next-level object `0x003AD748` (`sub_00020C30`) and `+0x28` into
+        `0x003AD758`, then calls `sub_000200B0` on `0x003AD748`. The
+        native command needs Laax 2's entry (find the table the list is
+        filled from) and must do the same without the `+0x1C` check.
+        Because the drop point is debug-only, the in-level part (step 3)
+        must start it by ID, not through the menu's list. Leads for the
+        level entries: LevelSelect's class (object `0x003E3600`, vtable
+        `0x003661E8`) fills its list when pushed, slot 6 `sub_001DEBF0` ->
+        `sub_001DF370` (reads `0x003ACD24`, `0x003ACD0C`, `0x003AD748`;
+        calls `sub_001DF680`, `sub_001DFBA0`). A test harness that needs no
+        menu walk: rewire the title's Start (Shell.rui
+        `IntroMovie.actions`) to `StartDevChallenge(1)` in a scratch pack,
+        `RECOMP_PAD_SCRIPT=15000:start`, shots every 3 s (DEVELOPING.md,
+        "GUI screens are registered natively").
+     3. *In the level,* where the drop-point menu would open, a pending
+        dev challenge picks its drop point and starts it as
+        `ChooseDropPoint()` does (handler `sub_0010DA50`, Game.rui
+        `DropPoint.actions`). Leaving the run (pause menu, end of run) goes
+        back to the DEVELOPER CHALLENGES list, not the level select
+        (`LaunchShellToCareerLevelSelect`, handler `sub_00102360`, is
+        the existing way back).
+     4. The list's A action becomes `$FlyButton` + `StartDevChallenge(n)`;
+        the tool writes the table with each challenge's level and drop
+        point.
+     The handlers were found from their names' registrations
+     (`ecx = <handler>` after `eax = <name>`).
+     **Checked from the list (2026-11-07, fresh save, menu walk: Career >
+     DEVELOPER CHALLENGES > A):** Laax 2 loads, the drop-point menu is
+     skipped, the PRO CHALLENGE intro shows and the run starts. Pause >
+     Choose New Run comes back to the DEVELOPER CHALLENGES list. Leave
+     Mountain and the end-of-run menu's Change/Leave Mountain take the same
+     way back (`sub_00102360`, then the shell's LevelSelect push becomes
+     the list); not seen on screen, nor the end of a won or failed run:
+     scripted input never finished a run.
+     **Fixed (2026-11-09): the challenge runs as a Pro challenge.** The
+     level's challenges are loaded when the run starts (`sub_0004A700`,
+     vtable `0x00347814`, calls the loader `sub_0005C450`), each with its
+     state from the career's own `<L>_Progress.lua`; a challenge missing
+     from it parses as Locked and is switched off (`+0x4C`). After that
+     load, a Locked developer challenge of the run is set Available in
+     memory (the loader's own defaults); the career's file is not touched.
+     Checked on a copy of the user's save: "1 OF 3", the misses, "Pro
+     Trick Score", launch circles. (The career is signed, `career.sig`:
+     editing its progress file hangs the load.) Leave Mountain and the
+     list's header after a run were fixed too. The note below is how it
+     was found.
+     **User's hand test after that (2026-11-09):** runs as a full challenge,
+     won, the ways out work. Two open problems:
+     - *Replays fail at once after a win.* A challenge missing from the
+       career's progress inherits the previous entry's leftovers in the
+       loader (here `RecordHSlegend`: LockedByChallenge LegendChal, part
+       State/StateOnComplete Complete), and the game saved that into the
+       test career after the win. Fix to make after the load, in memory:
+       challenge record (`+0x38`) state Locked -> Available and Complete ->
+       Improve, on complete Improve, LockedByChallenge count (record
+       `+0x28`, vector at `+0x24`) 0; the part (challenge `+4` vector,
+       element 0; Pro part vtable `0x0034A268`) record at part `+0x18`, the
+       same states. Layout read from dumps, not yet tried.
+     - *No stat point.* The win was counted only on the way out
+       (`devchallenges.json` got dev1), after the end of the run; the
+       end-of-run update `sub_00018B40` was never seen running in career,
+       so the skill-point trick there never fires. Needs the career's own
+       end-of-run reward path (EarnedSkillPoints message 0x003E32D0,
+       SkillsPoints_InGame 0x003E3208) found and driven, or a frame hook
+       during the run.
+     **Was open: `DevChal<n>` never runs as a Pro challenge (user's hand test,
+     2026-11-07).** The player starts at `Dev1`, but there is no pro, no
+     markers and no score (with a "New" challenge only its intro card
+     shows); with no input the player's own rider rides and does tricks.
+     Started the same way on the same save, `Pro1` (ProChal1) runs fully:
+     "1 OF 10", the miss markers, the target score, launch circles. So the
+     start path is right and the challenge itself is the problem. Ruled
+     out: the lent menu item (the drop point now stays in it); a
+     `<L>_Progress.lua` entry for `Dev1`/`DevChal1` (Available, no locks;
+     no change). Leads: the game knows Pro challenges by ID. The career
+     drop-point menu adds only the fixed names Sponsor1-3, PhotoShoot1-3
+     and Pro1-3 (`0x0010C416` on, `sub_000A1E70` by name), plain drop
+     points only of type 0, 4 or 9 (`0x0010C205`); challenge code finds
+     "ProChal" in the ID and reads its number 1-3 (`0x0004CC3F`,
+     `strstr` + `atoi`); the end of a run builds "ProChal%d" from a pro
+     index (`0x00016F7B`, `[obj+0x40]`). Next: find where a run starts a
+     CHAL_PRO challenge's pro and HUD, and whether an ID like
+     `ProChal4`/`ProChalDev1` or a temporary in-memory stand-in for a
+     ProChal slot gets it running without touching the career's records.
+   - **The pro's name and picture** in the intro and the avatar: a native
+     hook on the fixed pro-name table (see above) gives the developer's
+     name and a generic picture.
+4. **Results and the reward.** Wins, best score and tries go to our own
+   `devchallenges.json` beside `amped2.ini`, not to the career save. On
+   every third win, the player gets one stat point through the game's own
+   reward path (the one a `REWARD_PROSKILLPOINTS` or
+   `REWARD_SCORESKILLPOINTS` challenge takes, "EarnedSkillPoints"), so the
+   career save changes only the way the game itself changes it. Each
+   point is awarded once (the count of points given is kept too), and a
+   challenge counts once, however often it is won.
+   **User, 2026-11-09:** best score and tries are not needed. The intro
+   must show the developer: per challenge a display name and a 128x128
+   portrait (the pros' `Pict_Pro_<name>.xpr` in `Gui/Textures/Textures.gfx`
+   are 128x128, one byte per pixel, no mips; loose entries can add to a
+   .gfx). The picture is data (`<L>_<ChallengeID>` = texture name in Base.rui's
+   strings, e.g. `LX2_ProChal3 = Pict_Pro_Mitch`); the name needs a look at
+   where the intro takes it (the fixed `ProName%d` table, PLAN above). The
+   current dev1 (3 jumps) is a test run, not for release.
+   **Works (user's hand test, 2026-11-09):** a won developer challenge is
+   added to `devchallenges.json`, and the third win gave one stat point
+   through the game's own "new skill point" screen; the career's
+   NumScoreChalDone stayed at its value (60). What it took, beyond the
+   design below: the win shows on the challenge's *part* (its record
+   goes 1 -> 3; the challenge's own record stays 1 during the run), the
+   challenge and part load as Available every time so the change shows,
+   and the end of a developer run takes the normal rewards (end-of-run
+   sub-state 0, `sub_00017840`) instead of the Pro ones (1,
+   `sub_00017D60`, no skill-point check) when a point is due. The
+   end-of-run update `sub_00018B40` runs only after a run really ends,
+   which no scripted probe reached. Still open: best score and tries are
+   not recorded; the career's progress keeps a `DevChal1` entry the game
+   saves (Improve), as for any challenge.
+   **Built (2026-11-07), then fixed as above:** `devchallenges.json`
+   beside `amped2.ini` holds `"won"` (pack IDs) and `"points"` (given). A
+   win is the challenge's state turning 2 or 3 ("Completed"), looked for
+   every frame of the end-of-run update (`sub_00018B40`, flow object
+   `0x003AD688`) and on every way out of the level. When wins / 3 is more
+   than the points given, the next skill-point check of the end of a run
+   (end-of-run state 2, `sub_00017840`) sees `NumScoreChalDone` two higher
+   per point for that one frame, so the game shows its own
+   "EarnedSkillPoints" message and stat screen, and the count goes back
+   down at once (the career keeps only the spent point). Best score and
+   tries are not recorded yet. A test switch, `AMPED2_DEVCHAL_FAKEWIN=1`,
+   counts a dev challenge as won as soon as it is checked; with two other
+   IDs already in `"won"` the third gives the point. The probes never
+   reached the end-of-run update (no run finished), so the award and real
+   win detection need a hand test. To check: the win probably also marks
+   `DevChal1` completed in the career's level progress, as any challenge
+   (and may count toward its totals).
+   **User's retest (2026-11-11):** no crash; both BR2 challenges started
+   on the right map, but not active (no pro/HUD, no rings) - the
+   missing-progress-entry problem below; the photo run-up (40 m) was too
+   short for the lift-wire jump (`--runup`, commit after e9c40bc).
+   `career.sig` = a table of the save's files (name, offset) and a 24-byte
+   signature each: signed per file by the game's XAPI code (not the
+   toolkit), so re-signing needs the game's key derivation.
+   **Decided (user, 2026-11-11): in-memory entries** (option a below), not
+   re-signing. Approach: inside sub_0005C450 the career progress is loaded
+   by sub_00022CB0 at 0x0005CFAB (path [ebp+0x74], table out [ebp-0x50C]),
+   then "Progress" is fetched (0x0005CFBD) into [ebp-0xD4], then each
+   challenge's entry by ID (sub_000EAE50 at 0x0005D6F8). None of these are
+   reached through a vtable, so: find what sub_00022CB0 runs (a Lua chunk
+   from the file's text?) and a hookable point (ICALL) in it or in the
+   file read where the parsed Progress table can get, for each DevChal<n>
+   of the level, {State = "Available", StateOnComplete = "Improve",
+   Parts = {{State = "Available", StateOnComplete = "Improve"}}} - only in
+   memory; the game then saves them signed. Check that the career's
+   signature is not re-checked on that read (a hand-edited file hung the
+   load). Test on fixtures devchal-now (BR2 dev3/dev4 missing) and
+   devchal-won.
+   **Done (2026-11-11), user's hand test on the devchal-play save:** both
+   files reach Lua through luaL_loadbuffer, whose reader getS (`0x000F3640`)
+   is called through a pointer, so `amped2_lua_getS` wraps it: while the
+   challenges load it notes the `DevChal<n>` IDs of `<L>_Challenges.lua` and
+   hands Lua a second piece after the career's `Progress` text that adds the
+   default entry for each ID the career lacks (DEVELOPING.md, "Starting a
+   level and a drop point natively"). BR2 line and BR2 photo now load
+   active (log: "progress: entries for 2", "DevChal3 ... state 1, active
+   1"): a pro, HUD, miss markers and target score; rings and the score.
+   No hang, so no signature check sees the change. Not rechecked: LX2/ML1
+   (their careers already list their entries; the `== nil` test leaves
+   those alone). The scripted title probe stopped launching levels today,
+   with or without this change (diag devchal-pe3a); not looked into.
+   **Next (user's hand test, 2026-11-11):** BR2 line starts with 2 misses
+   and the pro far ahead, out of sight: the pro should start where the
+   player starts now, the player behind that again. BR2 photo: score to
+   beat 75,000, and the player must start further back to have the speed
+   for the first jump. **Built (2026-11-11), to hand-test:** a Pro
+   section's pro now starts `--runup` m (40) back up the line from the
+   section and the player `HEAD_START` (20 m) behind the pro; where the
+   line runs out (the run's start), the run-up goes on straight back
+   against the rider's first direction. BR2 line re-added: the pro from
+   2.44 s, where the player started before, the player 19 m behind it.
+   BR2 photo re-added with `--score 75000 --runup 100`: the player 98 m
+   before the first ring (45 m of line, 55 m straight back).
+5. **Root cause, fixed 2026-11-11 (above):** a challenge missing from the
+   career's existing `<L>_Progress.lua` is read through stale locals in the
+   loader (`sub_0005C450`; crash for the user at 0x0005D786 reading its
+   "Parts", crash report 20261111-145855), so it loads, is left out or
+   crashes depending on what memory held. The career file is signed
+   (`career.sig`; a hand edit hung the load), but the game re-signs when it
+   saves (it saved DevChal1 after the LX2 win). Fix options: (a) give the
+   loader real entries: wrap the progress-file load so the parsed Lua table
+   gets DevChal<n> entries before the loop (find where sub_0005C450 loads
+   it, `0x0005CFAB` sub_00022CB0, and a hookable point before); (b) let the
+   port re-sign the career after adding the entries (the toolkit's
+   XCalculateSignature). Until then BR2 line may crash; dev challenges are
+   back at the end of the list (no crash seen there).
+5. **Next (user's hand test, 2026-11-11):** BR2 line (Pro) and BR2 photo
+   had no pro/HUD/rings: log "DevChal3 at 00000000" - amped2_find_challenge
+   scans only to 0x04000000 and the challenge objects were above it in the
+   user's run (map is g_xbox_map_size / g_xbox_total_ram); scan the mapped
+   size. And: the player starts 40 m back up the recorded line before the
+   section (Pro: the pro from the section's start, so >= 40 m ahead; photo:
+   rings from the section's start); from the run's first position when the
+   section starts sooner.
+5. **Developer photo shoots: built (2026-11-11, commit a9b9239)**, checked
+   in the game with Replay8 BR2: intro, 10 rings along the line, 10,000
+   points to beat, a missed ring fails. Not yet: a win by hand, the stat
+   point after a photo win (its drop point type is Sequence, not Pro: the
+   end-of-run switch to the normal rewards only handles sub-state 1), the
+   run's own photo score as the default target.
+   **Planned as:** First recording:
+   Replay8 BR2 (`2F6DDEB4737B`, marks 6.66-19.42 s, in the devchal-play
+   test save). Plan: `add --photo` writes a `CHAL_MEDIASEQ` challenge
+   DevChal<n> (copy of the level's PhotoShoot challenge: its parts,
+   evaluator, `RingArrayFile`), a `Type = "Sequence"` drop point Dev<n> at
+   the section's start (as for Pro sections), and a ring file
+   `Levels\<L>\photoshoot\dev<n>.lua` (`MediaRings` points) placed
+   along the recorded line, unwrapped as for Pro runs (positions are kept
+   modulo 1000 m); target `Value` = the run's photo score if the `.evt`
+   carries it, else `--score`. The native side should need nothing new
+   (start, win, stat point already per challenge); check that a
+   `Sequence` drop point starts through the same push and that the win
+   shows on its part. Then the list item says "photo".
+   **Was: Developer photo shoots: possible.** A photo shoot is a
+   `CHAL_MEDIASEQ` challenge whose `RingArrayFile` (e.g.
+   `Levels\LX2\photoshoot\ps_1.lua`) is a plain list of `MediaRings`
+   points, with the score to beat as `Value`. A developer photo shoot puts
+   rings along the developer's own line and sets their photo score as the
+   target; it starts from a `Type = "Sequence"` drop point (the photo
+   shoots' type). Needs the `.rpl` positions over the whole run (Phase 23,
+   item 5), not just the start; the target score comes from the
+   recording's `.evt` or is typed in. Shown in the same menu, marked
+   "photo".
+6. **Distribution.** The `.rpl` and `.evt` files are made by a player and
+   hold no game data, so the project may ship them. The `.ActionMap` is a
+   snapshot of a game table (8 versions across 441 disc files): the
+   recipe copies the matching one from the player's own disc at install
+   time. The look files (`Career.parts`/`.boarder`) name the game's
+   meshes and textures only; check them before shipping a recording.
+
+**Exit:** three developer challenges on two levels, played from Career ->
+DEVELOPER CHALLENGES; the pro rider follows the recording, in the
+developer's look and name; three misses fail the challenge; a win is
+remembered; after three wins the player has one more stat point to spend,
+and the career save differs only by it; one developer photo shoot.
+
+**The intro/end card and the list (user, 2026-11-11). Built 2026-11-12 (7440a21, 48e5728): title, Nico-D and banter verified in game; the picture, the text box's stat-point note and the list's green check wait for the user's test. See DEVELOPING "The intro/results card".**
+- The card says "DEV CHALLENGE" / "DEV PHOTOSHOOT" (not "PRO CHALLENGE" /
+  "PHOTO SHOOT"), the developer's name (Nico-D, the `.boarder` Name) and
+  portrait (`mods\packs\dev-challenges\art\nico-d.png`, the user's photo,
+  512x512; the pros' pictures are 128x128 `Pict_Pro_<name>.xpr` in
+  `Gui/Textures/Textures.gfx`). A photo card shows no "Sponsor:" / "Likes:",
+  only Nico-D, and a short, precise, humorous snowboard line where "Big
+  Air" is now.
+- The list: a green checkmark after a won challenge's title.
+- **Found (2026-11-11):** the card is the PreRun screen, filled natively
+  (around `0x0004C435`-`0x0004D876`) from Base.rui string keys:
+  `PreRun_Pro_Title` (ref `0x0004CAB3`), `PreRun_PhotoShoot_Title`
+  (`0x0004C435`, `0x0004D0F4`), `PreRun_Sponsor_Name` / `_Likes`
+  (`0x0004C561`, `0x0004D876`), the likes as `SponsorLikes<kind>` (Big Air
+  = `SponsorLikesBigAir`), the pro's name `ProName%d` (`0x0004CD54`; index
+  probably from "ProChal" + digit, `0x0004CC3F`, which a DevChal ID lacks),
+  the picture `<L>_<ChallengeID>` = texture name (e.g. `BR2_ProChal3 =
+  Pict_Pro_Bobby`; a `BR2_DevChal4` string can name our own texture, tool
+  only). Each key goes through `sub_00012290`/`sub_000122B0` (String) and
+  the lookup `sub_000B1E20` (key String in eax, push table `[0x0038CDF4]`,
+  push out; "Package.Key" splits at '.', packages at table `+0x1434`,
+  `sub_000B2990`, then `sub_000B4A90`). All direct calls: wrapping the
+  lookup needs it in `config/manual_functions.json` and a regeneration
+  (callers then go through the manual lookup); the alternative is
+  swapping the loaded table's entries in memory while a developer challenge
+  runs. Next: decide that, then the portrait texture (format of the
+  pros' 128x128 xpr) and the list's won marks (the list is built by the
+  tool, so a native swap of the item text when the list opens).
+
+**Release target (user, 2026-11-11):** the next release ships 6 or 9
+developer challenges, so players can earn up to 3 extra stat points.
+Kept so far (user's hand tests): dev2 ML1 line (Pro section) and dev4 BR2
+photo (75,000). Removed: dev1 (LX2 Photo2 line, the first test run) and
+dev3 (BR2 line, the pro still far ahead after the countdown hold; to be
+recorded anew). Note: `add` reuses the first free ID, so a new dev1/dev3
+would count as already won in a test save whose `devchallenges.json` lists
+the old one.
+
+#### Phase 26: Online high scores (opt-in)
+
+**Behaviour (user's design):** shared "live" high scores per level, with
+the rider name: best score, best photo score, best trick. **Every entry
+carries the run's replay**, for verification and bragging rights, and
+the board is an **honor system** (user, 2026-11-07): no anti-cheat, the
+replay is the proof, and anyone can watch it.
+
+**Before any code, three decisions:**
+- **Privacy.** Today "the game makes no network connections" (checked
+  2026-10-31) and the installer links a privacy policy that says so. This
+  phase makes it opt-in (off by default, asked once), updates the policy
+  and the README, and sends only the rider name, level, category, score,
+  game version, a random install ID, the list of active gameplay mods and
+  the replay. A replay holds the rider's motion and trick events, nothing
+  personal. No account, no e-mail.
+- **Honor system.** An open-source client can't be trusted, and this
+  phase doesn't try: no score checks against the replay, no signing. What
+  keeps the board honest is that every record can be watched. The server
+  only guards against abuse, not cheating: a size cap per upload, rate
+  limits per install ID, a "report" link and a moderator delete. Runs
+  that used a checkpoint restore (24) are not sent (the replay would show
+  the jumps anyway); runs with gameplay-changing mods (e.g. an edited
+  `TrickInfo.lua`) are sent with a visible "modded" tag.
+- **Hosting and cost.** Recommended: a small HTTP API on Cloudflare
+  Workers, with D1 (SQLite) for the entries and R2 for the replay files,
+  owned by the maintainer's account. A replay is about 50-150 KB (the
+  pro and ambient runs are 40-100 KB of `.rpl` plus `.evt`; a full career
+  run may be longer, measured in Phase 23), so the free tiers cover
+  thousands of records. Only replays still on a board are kept; a beaten
+  entry's replay is deleted. Supabase (Postgres plus storage) is the
+  alternative. Not dreamlo-style services (plain HTTP, no file storage,
+  no moderation).
+
+1. **Capturing the replay.** The game overwrites `Career.rpl`/`.evt` on
+   every run, so the client copies them the moment Phase 23's records
+   hook sees a new personal best, before the next run starts, into a
+   local `replays/` folder beside `amped2.ini` (never into the save). One
+   whole-run replay serves all three categories; for best trick and best
+   photo the entry also stores the time of that trick or photo (from
+   `.evt`), so viewers jump straight to it. Only `.rpl` and `.evt` are
+   uploaded: if `.ActionMap` turns out to be game data (see Phase 25), the
+   viewer supplies it from the player's own disc.
+2. **Service:** `POST /scores` (entry plus replay, one multipart upload),
+   `GET /scores?level=&category=` (top 100, best per rider name),
+   `GET /replays/<id>` (the files), `POST /report/<id>`. Source in its
+   own repository (MIT), not in the game's.
+3. **Client upload:** from a background thread (WinHTTP on Windows,
+   libcurl on Linux; credit it in `NOTICE.md`), never from a game thread,
+   with retries and an offline queue (the entry and its replay copy stay
+   in `replays/` until sent).
+4. **Watching records in game.** An "ONLINE RECORDS" screen (a stubbed
+   Xbox Live scene reused) lists the boards; choosing an entry downloads
+   its replay and plays it in the level, the way the game plays a Pro
+   rider's run: through the loose-file overlay, as a data-described
+   session (the Phase 25 route), never by writing into the Replay
+   Theater's save slots. "Race this run" turns the same replay into a
+   Phase 25 challenge, three tries included.
+5. **Web page** served by the same Worker: the boards, rider names, tags
+   and a download link per replay. A 3D web viewer is out of scope.
+6. **Settings:** `[Online] Enabled`, `RiderName` (defaults to the
+   profile's name), a MODS AND GRAPHICS row, and the installer's opt-in.
+
+**Exit:** two machines submit records and see each other's on the web
+page and in game; each entry's replay downloads and plays back in the
+right level, matching the run that was recorded, and the best-trick and
+best-photo entries start at the right moment; a checkpoint-assisted run
+is not sent and a modded one shows its tag; a beaten entry's replay is
+deleted from storage; with the setting off, no network connection is made
+(checked with a packet capture); a game started offline queues and sends
+later; no frame-time change while uploading.
+
 ---
 
 ## Risks
@@ -1386,6 +2046,11 @@ back ends.
 | Microsoft changes the Dev Mode policy | The Xbox port (Phase 13) stops working | Keep the Xbox layer thin over Phase 12; the Windows build is unaffected |
 | PS5 homebrew: firmware churn, toolchain changes, Sony's attention | Phase 14 breaks or draws a takedown | Exploratory only, separate target, open toolchain only, no exploit code, no Sony code |
 | Vulkan: too many pipelines, compile hitches, driver differences | Phase 22 stutters or looks different per vendor | Dynamic state, async compile with a disk pipeline cache, D3D11 screenshots as the reference, validation layers in debug builds |
+| A restored checkpoint leaves physics or scripts inconsistent | Phase 24 crashes or breaks a challenge | Save only on the ground and outside tricks and transitions; restore at the top of a frame; ML1 first |
+| Undone gaps and snowmen don't come back cleanly (freed objects, HUD drift) | A challenge can't be finished after a restore | Map the progress state fully in Phase 23; per-type fallback to "found stays found" |
+| Recorded runs contain game data (`.ActionMap`) | Can't ship developer challenges | Check the format; copy game-derived parts from the player's disc at install time |
+| Online scores: cheating, privacy, a service to keep running | Fake records, broken "no network" promise, cost | Honor system with the replay as proof on every entry, report and moderator delete; opt-in and off by default, minimal data; free-tier hosting the maintainer owns, replays kept only while on a board |
+| A downloaded replay doesn't play back as recorded (version or mod differences) | Records can't be verified | Store the game version and mod list with each entry; play back only with a matching version; Phase 23 maps the replay format first |
 
 ## Working agreements
 

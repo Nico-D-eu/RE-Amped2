@@ -55,6 +55,14 @@ Edits:
      icons are glyphs in the same strings) lose their navigation, Xbox Live
      and Xbox demos items, in every language. Items for other actions
      (Delete, page turns, skill points, save replay ...) stay.
+ 10. Career gains DEVELOPER CHALLENGES as its second item, under RIDE!
+     (Shell.rui Scenes/MainCareer.scene; PLAN Phase 25). Its action,
+     DevChallenges in Scenes/MainCareer.actions, opens the list screen
+     (Career's list layout with its own items). The game opens only screen
+     names it registers natively, so the list takes the place of an unused
+     Xbox Live screen, Base.rui Scenes/PlayerFeedback.* (see
+     dev_challenge.SCENE_NAME). It says NO CHALLENGES YET until
+     tools/mods/dev_challenge.py's pack lists its challenges there.
 
 Run it with the Python that has the asset toolkit's packages (numpy,
 pillow): `py -3.10 tools/mods/menus.py` here.
@@ -89,6 +97,27 @@ STRINGS = {
     "MainMenu_Quit_Help": ("MainMenu_ChangeBoarder_Help", {
         "eng": "Close RE-Amped2.", "fre": "Fermer RE-Amped2.",
         "ger": "RE-Amped2 beenden."}),
+    # Career -> DEVELOPER CHALLENGES (edit 10).
+    "Career_DevChallenges": ("Career_ChangeGear", {
+        "eng": "DEVELOPER CHALLENGES", "fre": "DÉFIS DES DÉVELOPPEURS",
+        "ger": "ENTWICKLER-CHALLENGES"}),
+    "Career_DevChallenges_Help": ("Career_ChangeGear_Help", {
+        "eng": "Race the developers' runs. For every 3 challenges won, you will"
+               " be awarded a stat point to add to your board stats.",
+        "fre": "Affrontez les descentes des développeurs. Tous les 3 défis"
+               " gagnés, vous recevez un point à ajouter aux stats de votre planche.",
+        "ger": "Fahre gegen die Läufe der Entwickler. Für je 3 gewonnene"
+               " Challenges bekommst du einen Punkt für deine Board-Werte."}),
+    "DevChal_None": ("Career_ChangeGear", {
+        "eng": "NO CHALLENGES YET", "fre": "AUCUN DÉFI POUR L'INSTANT",
+        "ger": "NOCH KEINE CHALLENGES"}),
+    "DevChal_None_Help": ("Career_ChangeGear_Help", {
+        "eng": "No developer challenges are installed yet. For every 3 challenges won,"
+               " you will be awarded a stat point to add to your board stats.",
+        "fre": "Aucun défi des développeurs n'est encore installé. Tous les 3 défis"
+               " gagnés, vous recevez un point à ajouter aux stats de votre planche.",
+        "ger": "Noch keine Entwickler-Challenges installiert. Für je 3 gewonnene"
+               " Challenges bekommst du einen Punkt für deine Board-Werte."}),
     # Options -> Game Options: the PC settings (edit 4).
     "GameOptions_Window": ("GameOptions_Vibration", {
         "eng": "WINDOW", "fre": "FENÊTRE", "ger": "FENSTER"}),
@@ -312,6 +341,66 @@ def main_actions():
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(rui_actions.write(f))
     print(f"wrote {path.relative_to(ROOT)}")
+
+
+CAREER_SCENE = "GuiPackages/Shell.rui/Scenes/MainCareer.scene"
+# Inserted after the first entry of each list (keyed by that entry).
+DEV_AFTER = {
+    '"$SelectLevel"': '"$DevChallenges"',                    # AButton, Start
+    '"Career_PlayLevel"': '"Career_DevChallenges"',
+    '"Career_PlayLevel_Help"': '"Career_DevChallenges_Help"',
+}
+
+
+def career_menu():
+    """Career with DEVELOPER CHALLENGES second, under RIDE! (edit 10)."""
+    src = source_of(CAREER_SCENE)
+    kept, added = [], 0
+    for line in src.splitlines():
+        kept.append(line)
+        item = line.strip().rstrip(",")
+        if item in DEV_AFTER and line.rstrip().endswith(","):
+            indent = line[:len(line) - len(line.lstrip())]
+            kept.append(indent + DEV_AFTER[item] + ",")
+            added += 1
+    if added != 4:
+        sys.exit(f"{CAREER_SCENE}: expected 4 lists starting with RIDE!, found {added}")
+    write_override(CAREER_SCENE, "\r\n".join(kept) + "\r\n",
+                   "Career with DEVELOPER CHALLENGES under RIDE!")
+
+
+def career_actions():
+    """Scenes/MainCareer.actions plus DevChallenges: $FlyButton, then
+    PushMenu of the list screen, as the other items open their screens
+    ($FlyButton flies the chosen button up to be the new screen's title)."""
+    entry = "GuiPackages/Shell.rui/Scenes/MainCareer.actions"
+    with zipfile.ZipFile(GAME / "GuiPackages" / "Shell.rui") as z:
+        f = rui_actions.read(z.read("Scenes/MainCareer.actions"))
+    if f.find("DevChallenges"):
+        sys.exit(f"{entry}: already has a DevChallenges action")
+    import dev_challenge
+    stmts = [b"$" + f.ref("FlyButton"),
+             f.ref("PushMenu") + b'("' + f.ref(dev_challenge.SCENE_NAME) + b'")']
+    f.actions.append(rui_actions.Action("DevChallenges", [], [(b"", stmts)]))
+    f.actions.sort(key=lambda a: a.name)      # the game looks them up sorted
+    path = OVERRIDES / entry
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(rui_actions.write(f))
+    print(f"wrote {path.relative_to(ROOT)}")
+
+
+def dev_challenges_scene():
+    """The DEVELOPER CHALLENGES screen with nothing installed (edit 10).
+    tools/mods/dev_challenge.py's pack replaces it with its challenges."""
+    import dev_challenge
+    files = dev_challenge.scene_files(GAME, [(
+        "$DevChal_None", "DevChal_None", "DevChal_None_Help",
+        ["PlayMenuItemSelectSound()"])])
+    for entry, data in files.items():
+        path = OVERRIDES / dev_challenge.SCENE_ARCHIVE / entry
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        print(f"wrote {path.relative_to(ROOT)}")
 
 
 def lua_list_append(src, name, items, start=0, indent=None):
@@ -581,6 +670,9 @@ def strings():
 if __name__ == "__main__":
     main_menu()
     main_actions()
+    career_menu()
+    career_actions()
+    dev_challenges_scene()
     game_options_scene()
     game_options_scene_data()
     options_scene()

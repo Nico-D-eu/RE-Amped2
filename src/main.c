@@ -1122,6 +1122,160 @@ static BOOL ini_path(char *path, size_t size)
     return TRUE;
 }
 
+/* A file of the port's own beside amped2.ini (or beside the AMPED2_INI file
+ * of a test run), e.g. the developer challenges' devchallenges.json. */
+int amped2_side_file(const char *name, char *path, size_t size)
+{
+    char *slash;
+    if (!ini_path(path, size))
+        return 0;
+    slash = strrchr(path, HOST_SEP);
+    if (!slash || (size_t)(slash - path) + strlen(name) + 2 >= size)
+        return 0;
+    strcpy(slash + 1, name);
+    return 1;
+}
+
+/*
+ * Developer challenges: marking a section of a run with L3+R3 (recording
+ * sessions only, AMPED2_DEVCHAL_RECORD=1, test\devchal-play.cmd). The first
+ * press marks where the challenge starts, the next where it ends; one high
+ * beep, then two lower ones (Beep: MessageBeep dropped the second). A mark is the time into the run as the replay counts it, give
+ * or take the drop's fly-out: the clock starts when a drop point is chosen
+ * or the run restarts (recomp_manual.c calls amped2_devrec_event) and stops
+ * while the game is paused. Each finished section goes into
+ * devchal-marks.json beside amped2.ini, where tools/mods/dev_challenge.py
+ * add --marks reads the last one of the level. The pad is read with XInput
+ * from a thread of its own, so the game's input is not touched.
+ */
+#if defined(_WIN32)
+#include <xinput.h>
+static volatile LONG s_devrec_on = -1;
+static ULONGLONG s_devrec_start, s_devrec_paused, s_devrec_pause_at;
+static double s_devrec_mark = -1.0;
+extern char amped2_devrec_level[8];         /* recomp_manual.c */
+
+static double devrec_now(void)
+{
+    ULONGLONG now = GetTickCount64(), paused = s_devrec_paused;
+    if (!s_devrec_start)
+        return -1.0;
+    if (s_devrec_pause_at)
+        paused += now - s_devrec_pause_at;
+    return (double)(now - s_devrec_start - paused) / 1000.0;
+}
+
+static void devrec_write(double start, double end)
+{
+    char path[512], when[32], *buf = NULL;
+    FILE *f;
+    long len = 0;
+    SYSTEMTIME st;
+    if (!amped2_side_file("devchal-marks.json", path, sizeof path))
+        return;
+    if ((f = fopen(path, "rb")) != NULL) {
+        fseek(f, 0, SEEK_END);
+        len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        buf = (char *)malloc((size_t)len + 1);
+        if (buf) {
+            len = (long)fread(buf, 1, (size_t)len, f);
+            buf[len] = 0;
+        }
+        fclose(f);
+    }
+    GetLocalTime(&st);
+    snprintf(when, sizeof when, "%04u-%02u-%02u %02u:%02u:%02u", st.wYear, st.wMonth, st.wDay,
+             st.wHour, st.wMinute, st.wSecond);
+    if ((f = fopen(path, "wb")) == NULL) {
+        free(buf);
+        return;
+    }
+    {
+        char *close = buf ? strrchr(buf, ']') : NULL;
+        if (close) {                        /* keep the earlier marks */
+            char *p = close;
+            while (p > buf && (p[-1] == ' ' || p[-1] == '\n' || p[-1] == '\r'))
+                p--;
+            fwrite(buf, 1, (size_t)(p - buf), f);
+            fprintf(f, "%s\n", (p > buf && p[-1] == '[') ? "" : ",");
+        } else {
+            fprintf(f, "{\n  \"marks\": [\n");
+        }
+    }
+    fprintf(f, "    {\"level\": \"%s\", \"start\": %.2f, \"end\": %.2f, \"when\": \"%s\"}\n  ]\n}\n",
+            amped2_devrec_level, start, end, when);
+    fclose(f);
+    free(buf);
+    fprintf(stderr, "  [DEVCHAL] marked %s %.2f-%.2f s -> %s\n", amped2_devrec_level, start, end, path);
+    fflush(stderr);
+}
+
+static DWORD WINAPI devrec_thread(LPVOID unused)
+{
+    int was = 0;
+    (void)unused;
+    for (;;) {
+        int both = 0;
+        DWORD i;
+        for (i = 0; i < 4 && !both; i++) {
+            XINPUT_STATE xs;
+            if (XInputGetState(i, &xs) == ERROR_SUCCESS)
+                both = (xs.Gamepad.wButtons & (XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB))
+                       == (XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB);
+        }
+        if (both && !was) {
+            double t = devrec_now();
+            if (t < 0) {
+                fprintf(stderr, "  [DEVCHAL] L3+R3: no run yet\n");
+            } else if (s_devrec_mark < 0) {
+                s_devrec_mark = t;
+                fprintf(stderr, "  [DEVCHAL] L3+R3: start %.2f s\n", t);
+                Beep(1200, 120);                /* plays to the end, unlike MessageBeep */
+            } else if (t > s_devrec_mark + 1.0) {
+                devrec_write(s_devrec_mark, t);
+                s_devrec_mark = -1.0;
+                Beep(800, 120);
+                Sleep(80);
+                Beep(800, 120);
+            }
+            fflush(stderr);
+        }
+        was = both;
+        Sleep(20);
+    }
+    return 0;
+}
+
+/* 0: a run starts (drop point chosen, restart), 1: paused, 2: unpaused. */
+void amped2_devrec_event(int what)
+{
+    if (s_devrec_on < 0) {
+        const char *e = getenv("AMPED2_DEVCHAL_RECORD");
+        s_devrec_on = e && *e && *e != '0';
+        if (s_devrec_on) {
+            CreateThread(NULL, 0, devrec_thread, NULL, 0, NULL);
+            fprintf(stderr, "  [DEVCHAL] recording session: L3+R3 marks a challenge's start and end\n");
+        }
+    }
+    if (!s_devrec_on)
+        return;
+    if (what == 0) {
+        s_devrec_start = GetTickCount64();
+        s_devrec_paused = 0;
+        s_devrec_pause_at = 0;
+        s_devrec_mark = -1.0;
+    } else if (what == 1 && !s_devrec_pause_at) {
+        s_devrec_pause_at = GetTickCount64();
+    } else if (what == 2 && s_devrec_pause_at) {
+        s_devrec_paused += GetTickCount64() - s_devrec_pause_at;
+        s_devrec_pause_at = 0;
+    }
+}
+#else
+void amped2_devrec_event(int what) { (void)what; }
+#endif
+
 /* The key's name if `line` sets one ("key=..." or ";key=..."), else NULL.
  * `len` gets its length. */
 static const char *ini_line_key(const char *line, size_t *len, int *commented)
