@@ -1665,29 +1665,43 @@ static void amped2_devchal_list_mark(void)
     char key[40], text[64];
     size_t len;
     int i, hits;
+    int form;
     amped2_devchal_load();
     for (i = 0; i < g_devchal_nwon; i++) {
-        snprintf(key, sizeof key, "DevChal_%s", g_devchal_won[i]);
-        if (!(ks = amped2_key_string(key)))
-            continue;
-        g_esi = AMPED2_CARDTXT_VA;
-        AMPED2_GCALL(sub_00017830);
-        g_esp = sesp;
-        g_esp -= 4; MEM32(g_esp) = 0;
-        g_esp -= 4; MEM32(g_esp) = ks;
-        g_esp -= 4; MEM32(g_esp) = MEM32(0x0038CDF4u);
-        g_edi = AMPED2_CARDTXT_VA;
-        g_devchal_nolist = 1;
-        AMPED2_GCALL(sub_000B2020);
-        g_devchal_nolist = 0;
-        g_esp = sesp;
-        snprintf(text, sizeof text, "%s", amped2_gstr(MEM32(AMPED2_CARDTXT_VA)) ? amped2_gstr(MEM32(AMPED2_CARDTXT_VA)) : "");
-        g_ecx = AMPED2_CARDTXT_VA;
-        AMPED2_GCALL(sub_0001A490);
-        g_esp = sesp;
+        /* In the shell a bare key may be looked up in the screen's own
+         * package (user's test, 2026-11-13: nothing marked); the item's
+         * text is in Base's table. */
+        text[0] = 0;
+        for (form = 0; form < 2; form++) {
+            snprintf(key, sizeof key, form ? "Base.DevChal_%s" : "DevChal_%s", g_devchal_won[i]);
+            if (!(ks = amped2_key_string(key)))
+                continue;
+            g_esi = AMPED2_CARDTXT_VA;
+            AMPED2_GCALL(sub_00017830);
+            g_esp = sesp;
+            g_esp -= 4; MEM32(g_esp) = 0;
+            g_esp -= 4; MEM32(g_esp) = ks;
+            g_esp -= 4; MEM32(g_esp) = MEM32(0x0038CDF4u);
+            g_edi = AMPED2_CARDTXT_VA;
+            g_devchal_nolist = 1;
+            AMPED2_GCALL(sub_000B2020);
+            g_devchal_nolist = 0;
+            g_esp = sesp;
+            snprintf(text, sizeof text, "%s", amped2_gstr(MEM32(AMPED2_CARDTXT_VA)));
+            g_ecx = AMPED2_CARDTXT_VA;
+            AMPED2_GCALL(sub_0001A490);
+            g_esp = sesp;
+            len = strlen(text);
+            if (len >= 4 && (!strcmp(text + len - 3, "   ") || text[len - 1] == 0x1E))
+                break;
+        }
         len = strlen(text);
-        if (len < 4 || strcmp(text + len - 3, "   "))
+        if (len < 4 || strcmp(text + len - 3, "   ")) {
+            fprintf(stderr, "  [DEVCHAL] list: %s not marked, its text \"%s\" (key %s)\n",
+                    g_devchal_won[i], text, key);
+            fflush(stderr);
             continue;                       /* marked already, or an older pack */
+        }
         hits = 0;
         for (at = mem + 0x10; at + len < top; at++) {
             at = memchr(at, text[0], (size_t)(top - len - at));
