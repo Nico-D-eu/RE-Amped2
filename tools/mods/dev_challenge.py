@@ -635,10 +635,53 @@ def portrait_name(boarder: str) -> str:
     return "Pict_Dev_" + re.sub(r"[^A-Za-z0-9]", "", boarder)
 
 
+def dxt3(rgba) -> bytes:
+    """A small DXT3 encoder (no compressor needed on the player's PC):
+    4-bit alpha, and per 4x4 block the colour endpoints at the ends of the
+    block's colour range along its main axis, each texel the nearest of the
+    four colours. Blocks row by row, as Xbox DXT textures are stored."""
+    import numpy as np
+    h, w = rgba.shape[:2]
+    b = rgba.reshape(h // 4, 4, w // 4, 4, 4).transpose(0, 2, 1, 3, 4).reshape(-1, 16, 4).astype(np.float32)
+    a4 = np.clip(np.round(b[..., 3] / 17), 0, 15).astype(np.uint64)
+    alpha = (a4 << (4 * np.arange(16, dtype=np.uint64))).sum(axis=1).astype("<u8")
+    rgb = b[..., :3]
+    mean = rgb.mean(axis=1, keepdims=True)
+    d = rgb - mean
+    cov = np.einsum("nki,nkj->nij", d, d)
+    axis = np.ones((len(b), 3), np.float32)
+    for _ in range(8):                                   # power iteration
+        axis = np.einsum("nij,nj->ni", cov, axis)
+        axis /= np.maximum(np.linalg.norm(axis, axis=1, keepdims=True), 1e-6)
+    t = np.einsum("nki,ni->nk", d, axis)
+    lo = mean[:, 0] + axis * t.min(axis=1, keepdims=True)
+    hi = mean[:, 0] + axis * t.max(axis=1, keepdims=True)
+
+    def to565(c):
+        c = np.clip(np.round(c), 0, 255).astype(np.uint32)
+        return ((c[:, 0] >> 3) << 11) | ((c[:, 1] >> 2) << 5) | (c[:, 2] >> 3)
+
+    def from565(v):
+        return np.stack([((v >> 11) & 31) * 255 / 31, ((v >> 5) & 63) * 255 / 63,
+                         (v & 31) * 255 / 31], axis=1).astype(np.float32)
+
+    c0, c1 = to565(hi), to565(lo)
+    swap = c0 < c1
+    c0, c1 = np.where(swap, c1, c0), np.where(swap, c0, c1)
+    e0, e1 = from565(c0), from565(c1)
+    pal = np.stack([e0, e1, (2 * e0 + e1) / 3, (e0 + 2 * e1) / 3], axis=1)
+    idx = ((rgb[:, :, None, :] - pal[:, None, :, :]) ** 2).sum(axis=3).argmin(axis=2).astype(np.uint32)
+    bits = (idx << (2 * np.arange(16, dtype=np.uint32))).sum(axis=1).astype(np.uint32)
+    out = np.zeros(len(b), dtype=[("a", "<u8"), ("c0", "<u2"), ("c1", "<u2"), ("i", "<u4")])
+    out["a"], out["c0"], out["c1"], out["i"] = alpha, c0, c1, bits
+    return out.tobytes()
+
+
 def portrait_xpr(game: Path, png: Path) -> bytes:
     """The developer's picture as a texture like the pros': a pro's xpr
-    (DXT3) rebuilt with the picture, as swizzled A8R8G8B8, which needs no
-    DXT compressor on the player's PC."""
+    rebuilt with the picture. Same format and size (128x128 DXT3, one mip):
+    the card loads it into the picture box's texture, and the loader
+    (sub_0013C3D0) refuses an xpr whose texture differs."""
     import numpy as np
     import xboxtex
     from PIL import Image
@@ -650,11 +693,8 @@ def portrait_xpr(game: Path, png: Path) -> bytes:
     side = min(img.size)
     img = img.crop(((img.width - side) // 2, (img.height - side) // 2,
                     (img.width + side) // 2, (img.height + side) // 2))
-    px = np.asarray(img.resize((PORTRAIT, PORTRAIT), Image.LANCZOS))
-    data = xboxtex.swizzle(px[..., [2, 1, 0, 3]]).tobytes()
-    log2 = PORTRAIT.bit_length() - 1
-    fmt = (t.format & ~(0xFFFF << 8)) | (0x06 << 8) | (1 << 16) | (log2 << 20) | (log2 << 24)
-    return c.rebuild({0: (fmt, data)})
+    px = np.asarray(img.resize((t.width, t.height), Image.LANCZOS))
+    return c.rebuild({0: (t.format, dxt3(px))})
 
 
 def check_glyph(game: Path):
