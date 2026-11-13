@@ -1620,15 +1620,13 @@ static void amped2_card_fill(uint32_t card)
  * won list the lookup gets DevChal_dev<n>_Won instead, the title followed
  * by glyph 0x1E, which the tool turns into a green check in the GUI fonts
  * (an unused icon cell; icons keep their own colours). */
-static int g_devchal_nolist;                /* our own lookup of an item's text */
-
 static uint32_t amped2_devchal_list_key(uint32_t key)
 {
     const char *k = amped2_gstr(MEM32(key)), *dot, *n;
     char to[40];
     uint32_t s;
     int i;
-    if (!k || g_devchal_nolist)
+    if (!k)
         return key;
     dot = strrchr(k, '.');
     if (dot)
@@ -1649,80 +1647,6 @@ static uint32_t amped2_devchal_list_key(uint32_t key)
     return s ? s : key;
 }
 
-/* The list's items are made once, when the shell's screens are built at
- * start-up, so a challenge won since then still had no check (user's test,
- * 2026-11-13). dev_challenge.py ends each item's text with three spaces;
- * on the way back to the list, every String holding a won item's text
- * (the item's, the string table's; found by its text and header: length
- * -0x0C, capacity -0x08, references -0x04) gets "  " and the check glyph
- * in place of those spaces, the same length. */
-static void amped2_devchal_list_mark(void)
-{
-    uint32_t sa = g_eax, sb = g_ebx, sc = g_ecx, sd = g_edx, ss = g_esi, si = g_edi, sp = g_ebp;
-    uint32_t sesp = g_esp, sseh = g_seh_ebp, ks, g;
-    const uint8_t *mem = (const uint8_t *)XBOX_PTR(0), *at;
-    const uint8_t *top = mem + (g_xbox_map_size ? g_xbox_map_size : g_xbox_total_ram);  /* committed RAM */
-    char key[40], text[64];
-    size_t len;
-    int i, hits;
-    int form;
-    amped2_devchal_load();
-    for (i = 0; i < g_devchal_nwon; i++) {
-        /* In the shell a bare key may be looked up in the screen's own
-         * package (user's test, 2026-11-13: nothing marked); the item's
-         * text is in Base's table. */
-        text[0] = 0;
-        for (form = 0; form < 2; form++) {
-            snprintf(key, sizeof key, form ? "Base.DevChal_%s" : "DevChal_%s", g_devchal_won[i]);
-            if (!(ks = amped2_key_string(key)))
-                continue;
-            g_esi = AMPED2_CARDTXT_VA;
-            AMPED2_GCALL(sub_00017830);
-            g_esp = sesp;
-            g_esp -= 4; MEM32(g_esp) = 0;
-            g_esp -= 4; MEM32(g_esp) = ks;
-            g_esp -= 4; MEM32(g_esp) = MEM32(0x0038CDF4u);
-            g_edi = AMPED2_CARDTXT_VA;
-            g_devchal_nolist = 1;
-            AMPED2_GCALL(sub_000B2020);
-            g_devchal_nolist = 0;
-            g_esp = sesp;
-            snprintf(text, sizeof text, "%s", amped2_gstr(MEM32(AMPED2_CARDTXT_VA)));
-            g_ecx = AMPED2_CARDTXT_VA;
-            AMPED2_GCALL(sub_0001A490);
-            g_esp = sesp;
-            len = strlen(text);
-            if (len >= 4 && (!strcmp(text + len - 3, "   ") || text[len - 1] == 0x1E))
-                break;
-        }
-        len = strlen(text);
-        if (len < 4 || strcmp(text + len - 3, "   ")) {
-            fprintf(stderr, "  [DEVCHAL] list: %s not marked, its text \"%s\" (key %s)\n",
-                    g_devchal_won[i], text, key);
-            fflush(stderr);
-            continue;                       /* marked already, or an older pack */
-        }
-        hits = 0;
-        for (at = mem + 0x10; at + len < top; at++) {
-            at = memchr(at, text[0], (size_t)(top - len - at));
-            if (!at)
-                break;
-            g = (uint32_t)(at - mem);
-            if ((g & 3) || at[len] || memcmp(at, text, len))
-                continue;
-            if (MEM32(g - 0x0C) != len || MEM32(g - 0x08) < len
-                || (int32_t)MEM32(g - 0x04) < 0 || MEM32(g - 0x04) > 0x10000u)
-                continue;
-            MEM8(g + len - 1) = 0x1E;
-            hits++;
-        }
-        fprintf(stderr, "  [DEVCHAL] list: %s marked won (%d String(s))\n", g_devchal_won[i], hits);
-        fflush(stderr);
-    }
-    g_eax = sa; g_ebx = sb; g_ecx = sc; g_edx = sd; g_esi = ss; g_edi = si; g_ebp = sp;
-    g_seh_ebp = sseh;
-}
-
 uint32_t amped2_devchal_key(uint32_t key, uint32_t sp)
 {
     static int trace = -1;
@@ -1735,8 +1659,13 @@ uint32_t amped2_devchal_key(uint32_t key, uint32_t sp)
     int i;
     if (!key || !MEM32(key))
         return key;
-    if (!g_devchal_playing[0])
-        return amped2_devchal_list_key(key);
+    /* The list's items are made when the shell is built: at start-up, and
+     * again on the way back from a run, which is still "playing" until the
+     * shell pushes LevelSelect; so the swap holds for a run too (a win's
+     * check showed only after a restart, user's test 2026-11-13). */
+    s = amped2_devchal_list_key(key);
+    if (s != key || !g_devchal_playing[0])
+        return s;
     ret = MEM32(sp);
     if (ret == 0x0004CBCBu)                     /* Pro card, the player's status */
         card = MEM32(sp + 0xB8);
@@ -2000,7 +1929,6 @@ static void amped2_pushmenu(void)
             g_ebx = sb; g_esi = ss; g_edi = sd; g_ecx = sc;
         }
         MEM32(g_esp + 4) = AMPED2_DEVLIST_STR_VA;
-        amped2_devchal_list_mark();
         g_devchal_return = 0;
         g_devchal_playing[0] = 0;
         g_devchal_dp = 0;
