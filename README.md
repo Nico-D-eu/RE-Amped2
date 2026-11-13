@@ -205,7 +205,7 @@ screen. **F3** shows the frame rate and the active mods.
 ### Developer challenges
 
 New in 0.4.0, with the RE-Amped2 menus: **Career › Developer Challenges**
-lists six challenges recorded by the developer on six mountains. In a Pro
+lists six challenges the developer recorded across the mountains. In a Pro
 race you chase the developer's own run down the line; in a photo shoot you
 fly through the rings of their line and beat their score. A won challenge
 gets a green check, and every third win gives your boarder a stat point.
