@@ -1656,7 +1656,8 @@ static uint32_t amped2_devchal_list_key(uint32_t key)
  * "  " and the check) is pointed at the _Won text instead, with the game's
  * own assign (refcounts kept). The buffers are found by text and header
  * (length -0x0C, capacity -0x08, references -0x04) in committed guest RAM,
- * the Strings by holding a buffer's address. */
+ * the Strings by holding a buffer's address. GUI text is UTF-16 (the
+ * lookup's String of "BEAR..." read as bytes is "B"). */
 #define AMPED2_RETARGET_MAX 16
 static void amped2_devchal_list_retarget(const char *id)
 {
@@ -1665,8 +1666,8 @@ static void amped2_devchal_list_retarget(const char *id)
     const uint8_t *mem = (const uint8_t *)XBOX_PTR(0), *at;
     const uint8_t *top = mem + (g_xbox_map_size ? g_xbox_map_size : g_xbox_total_ram);  /* committed RAM */
     char key[48], title[64];
-    const char *won;
-    size_t len;
+    uint16_t won[64];
+    size_t len, n;
     int nb = 0, nl = 0, i;
     snprintf(key, sizeof key, "DevChal_%s_Won", id);
     if (!(ks = amped2_key_string(key)))
@@ -1681,21 +1682,29 @@ static void amped2_devchal_list_retarget(const char *id)
     AMPED2_GCALL(sub_000B2020);                 /* its text */
     g_esp = sesp;
     wbuf = MEM32(AMPED2_CARDTXT_VA);
-    won = amped2_gstr(wbuf);
-    len = won ? strlen(won) : 0;
-    if (len < 4 || len >= sizeof title || strcmp(won + len - 3, "  \x1e")) {
-        fprintf(stderr, "  [DEVCHAL] list: %s not marked, %s is \"%s\"\n", id, key, won ? won : "");
+    len = 0;
+    if (wbuf >= 0x10000u && wbuf < 0x08000000u)
+        for (; len < 63 && MEM16(wbuf + 2 * len); len++)
+            won[len] = MEM16(wbuf + 2 * len);
+    for (i = 0; i < (int)len; i++)
+        title[i] = won[i] < 0x80 ? (char)won[i] : '?';
+    title[len] = 0;
+    if (len < 4 || len == 63 || won[len - 3] != ' ' || won[len - 2] != ' ' || won[len - 1] != 0x1E) {
+        fprintf(stderr, "  [DEVCHAL] list: %s not marked, %s is \"%s\" (%u UTF-16)\n",
+                id, key, title, (unsigned)len);
     } else {
-        memcpy(title, won, len - 3);
-        title[len -= 3] = 0;
-        for (at = mem + 0x10; at + len < top && nb < AMPED2_RETARGET_MAX; at++) {
-            at = memchr(at, title[0], (size_t)(top - len - at));
+        len -= 3;                               /* the title */
+        title[len] = 0;
+        n = 2 * len;                            /* its bytes */
+        for (at = mem + 0x10; at + n + 2 <= top && nb < AMPED2_RETARGET_MAX; at++) {
+            at = memchr(at, (uint8_t)won[0], (size_t)(top - n - 2 - at));
             if (!at)
                 break;
             g = (uint32_t)(at - mem);
-            if ((g & 3) || at[len] || memcmp(at, title, len))
+            if ((g & 1) || at[n] || at[n + 1] || memcmp(at, won, n) || g < 0x10)
                 continue;
-            if (MEM32(g - 0x0C) != len || MEM32(g - 0x08) < len
+            if ((MEM32(g - 0x0C) != len && MEM32(g - 0x0C) != n)
+                || MEM32(g - 0x08) < MEM32(g - 0x0C)
                 || (int32_t)MEM32(g - 0x04) < 0 || MEM32(g - 0x04) > 0x10000u)
                 continue;
             bufs[nb++] = g;
@@ -1714,6 +1723,8 @@ static void amped2_devchal_list_retarget(const char *id)
         }
         fprintf(stderr, "  [DEVCHAL] list: %s marked won: \"%s\" in %d buffer(s), %d String(s)",
                 id, title, nb, nl);
+        for (i = 0; i < nb && i < 4; i++)
+            fprintf(stderr, " buf %08X len %u", bufs[i], MEM32(bufs[i] - 0x0C));
         for (i = 0; i < nl && i < 8; i++)
             fprintf(stderr, " %08X", locs[i]);
         fprintf(stderr, "\n");
