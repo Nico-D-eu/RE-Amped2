@@ -2000,7 +2000,8 @@ What `StartDevChallenge(level, drop point)` (`src/recomp_manual.c`) builds on:
   `Base.rui`) stays loaded; leaving the mountain reloads only
   `SharedShell.rui` and `Shell.rui`. So a fresh win retargets the item's
   text String: it finds the buffers holding the title by text and header,
-  then the Strings holding them, and assigns the _Won text to each. The end card sets the stat-point note in the screen's
+  then the Strings holding them, and assigns the _Won text to each. The
+  string table's texts are UTF-16 (`String` +0 points at the 16-bit text). The end card sets the stat-point note in the screen's
   text widget `[screen +0x64]` (screen = card - 0x94; text String +0x2C,
   shown when +0x50 is set; the game's setter is `sub_001202A0`) at its
   status lookup (return `0x0004C766` / `0x0004CFA6`); +0x34 is the yellow
