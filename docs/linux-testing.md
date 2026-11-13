@@ -44,7 +44,7 @@ Answer `y`. The container's first start takes a few minutes. Then:
       On other distros it lists what to install by hand.
 - [ ] The Java question for the RE-Amped2 menus. Say yes once; on another
       distro, try no and check the install finishes without the menus.
-- [ ] The disc is unpacked and its title ID accepted.
+- [ ] The disc is unpacked and its title ID and entry point accepted.
 - [ ] Translating and compiling finish. Note the time, which `install.sh`
       prints.
 - [ ] `~/Games/RE-Amped2` has `RE-Amped2`, `README.txt`, `licenses/` and

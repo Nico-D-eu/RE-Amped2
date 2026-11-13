@@ -378,6 +378,7 @@ extern void sub_0002B6C0_gen(void);
 extern void sub_000F37E0(void);   /* src/lua_probe.c */
 extern void sub_000F24C0(void);   /* src/lua_probe.c */
 extern void sub_00150E80(void);   /* src/lua_probe.c */
+extern void sub_000B1E20(void);   /* src/lua_probe.c */
 
 /* Skip FMV (see sub_00150E80 in lua_probe.c). main.c sets it from
  * AMPED2_PLAY_MOVIES: movies play unless that is 0. */
@@ -533,7 +534,7 @@ static void xmv_stats(uint32_t dec, uint32_t status, int req_before, double ms)
         drain_t0 = 0;
     }
     if (GetTickCount() - t0 >= 1000) {
-        extern volatile long g_xbox_vblank_count;
+        extern volatile int32_t g_xbox_vblank_count;   /* LONG in the toolkit */
         static uint32_t last_d3d, last_ours;
         uint32_t dev = MEM32(0x0032CEF8u);
         uint32_t d3d = dev ? MEM32(dev + 0x1DD8) : 0, ours = (uint32_t)g_xbox_vblank_count;
@@ -729,7 +730,7 @@ void sub_0032F2C6(void)
  */
 void sub_0031AE90(void)
 {
-    extern volatile long g_xbox_vblank_count;
+    extern volatile int32_t g_xbox_vblank_count;   /* LONG in the toolkit */
     long v = g_xbox_vblank_count;
     unsigned long t0 = GetTickCount();
     uint32_t dev = MEM32(0x32CEF8);
@@ -763,7 +764,7 @@ void sub_0031AE90(void)
  */
 static uint32_t xmv_vblank_count(void)
 {
-    extern volatile long g_xbox_vblank_count;
+    extern volatile int32_t g_xbox_vblank_count;   /* LONG in the toolkit */
     static int d3d_clock = -1;
 
     if (d3d_clock < 0) {
@@ -1040,13 +1041,1120 @@ static void amped2_register_command(uint32_t self, const char *name, uint32_t fn
     g_ecx = saved_ecx;
 }
 
+/* ── Developer challenges: StartDevChallenge(n) ─────────────────────── */
+#define AMPED2_DEVCHAL_NAME_VA 0x00010F10u
+#define AMPED2_DEVCHAL_FN_VA   0xFEFFFF10u
+
+static const char *amped2_gstr(uint32_t va)
+{
+    if (va < 0x10000u || va >= 0x08000000u)
+        return "(null)";
+    return (const char *)XBOX_PTR(va);
+}
+
+static int amped2_ieq(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++) {
+        char x = *a, y = *b;
+        if (x >= 'A' && x <= 'Z') x += 32;
+        if (y >= 'A' && y <= 'Z') y += 32;
+        if (x != y) return 0;
+    }
+    return *a == *b;
+}
+
+/* A C string into the header-page scratch at va (64 bytes each). */
+static void amped2_put_cstr(uint32_t va, const char *s)
+{
+    size_t i;
+    for (i = 0; s[i] && i < 63; i++)
+        MEM8(va + i) = (uint8_t)s[i];
+    MEM8(va + i) = 0;
+}
+
+/* Call a guest function from C: dummy return address, as the generated
+ * bodies pop it themselves. Callers push stack arguments first. */
+#define AMPED2_GCALL(fn) do { g_esp -= 4; MEM32(g_esp) = 0; fn(); } while (0)
+
+extern void sub_00013800(void), sub_00020C30(void), sub_000200B0(void);
+extern void sub_0010BCB0(void), sub_0010DA50(void), sub_000A2590(void);
+extern void sub_00102360(void), sub_001022A0(void), sub_0010FED0(void), sub_0010FEA0(void);
+extern void sub_0010ED60(void);
+extern void sub_002194B0(void), sub_00018B40(void);
+
+/* The challenge StartDevChallenge set up: its level and drop point ID. The
+ * next drop-point screen starts it (amped2_droppoint_push). */
+static char g_devchal_level[8], g_devchal_drop[24], g_devchal_playing[24];
+static int g_devchal_pending;
+/* The run in progress: its drop point (guest; valid while the level is
+ * loaded), whether its win was counted, and whether the shell, when it
+ * starts after the level, opens the DEVELOPER CHALLENGES list. */
+static uint32_t g_devchal_dp;
+/* The run's challenge object (amped2_challenges_load) and its state then. */
+static uint32_t g_devchal_chal, g_devchal_state0;
+static int g_devchal_counted, g_devchal_return;
+/* Stat points earned (one per three challenges won) and not yet handed to
+ * the game's own skill-point check. */
+static int g_devchal_award;
+
+/* ── Developer challenges: results, in devchallenges.json beside amped2.ini
+ *
+ *     { "won": ["dev1", "dev3"], "points": 0 }
+ *
+ * "won" holds each challenge won (its pack ID, the drop point's ID in lower
+ * case), once however often it is won; "points" the stat points already
+ * given, one per three wins. Not the career save: the career only changes
+ * by the stat point, spent the game's own way. */
+#define AMPED2_DEVCHAL_MAX 64
+static char g_devchal_won[AMPED2_DEVCHAL_MAX][24];
+static int g_devchal_nwon, g_devchal_points, g_devchal_loaded;
+
+extern int amped2_side_file(const char *name, char *path, size_t size);
+
+static void amped2_devchal_load(void)
+{
+    char path[512], buf[8192], *p, *end;
+    FILE *f;
+    size_t len;
+    if (g_devchal_loaded)
+        return;
+    g_devchal_loaded = 1;
+    if (!amped2_side_file("devchallenges.json", path, sizeof path) || !(f = fopen(path, "rb")))
+        return;
+    len = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[len] = 0;
+    p = strstr(buf, "\"won\"");
+    p = p ? strchr(p, '[') : NULL;
+    end = p ? strchr(p, ']') : NULL;
+    while (p && end && g_devchal_nwon < AMPED2_DEVCHAL_MAX) {
+        char *q = strchr(p + 1, '"'), *r;
+        if (!q || q > end) break;
+        r = strchr(q + 1, '"');
+        if (!r || r > end) break;
+        if (r - q - 1 > 0 && r - q - 1 < 24) {
+            memcpy(g_devchal_won[g_devchal_nwon], q + 1, (size_t)(r - q - 1));
+            g_devchal_won[g_devchal_nwon][r - q - 1] = 0;
+            g_devchal_nwon++;
+        }
+        p = r;
+    }
+    p = strstr(buf, "\"points\"");
+    p = p ? strchr(p, ':') : NULL;
+    g_devchal_points = p ? atoi(p + 1) : 0;
+    fprintf(stderr, "  [DEVCHAL] %s: %d won, %d point(s) given\n", path, g_devchal_nwon,
+            g_devchal_points);
+}
+
+static void amped2_devchal_save(void)
+{
+    char path[512], tmp[520];
+    FILE *f;
+    int i;
+    if (!amped2_side_file("devchallenges.json", path, sizeof path))
+        return;
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    if (!(f = fopen(tmp, "wb")))
+        return;
+    fprintf(f, "{\n  \"won\": [");
+    for (i = 0; i < g_devchal_nwon; i++)
+        fprintf(f, "%s\"%s\"", i ? ", " : "", g_devchal_won[i]);
+    fprintf(f, "],\n  \"points\": %d\n}\n", g_devchal_points);
+    fclose(f);
+    remove(path);
+    rename(tmp, path);
+}
+
+static void amped2_devchal_card_note(void);
+static int g_devchal_point_now;             /* this run's win earned a stat point */
+
+/* A win of the run in progress: count the challenge (once) and work out
+ * whether a stat point is due. */
+static void amped2_devchal_list_retarget(const char *id);
+static void amped2_devchal_win(void)
+{
+    char id[24];
+    int i, due, fresh = 0;
+    amped2_devchal_load();
+    for (i = 0; g_devchal_playing[i] && i < 23; i++)
+        id[i] = (char)(g_devchal_playing[i] >= 'A' && g_devchal_playing[i] <= 'Z'
+                       ? g_devchal_playing[i] + 32 : g_devchal_playing[i]);
+    id[i] = 0;
+    for (i = 0; i < g_devchal_nwon; i++)
+        if (!strcmp(g_devchal_won[i], id))
+            break;
+    if (i == g_devchal_nwon && g_devchal_nwon < AMPED2_DEVCHAL_MAX) {
+        snprintf(g_devchal_won[g_devchal_nwon++], 24, "%s", id);
+        amped2_devchal_save();
+        fresh = 1;
+        amped2_devchal_list_retarget(id);
+    }
+    due = g_devchal_nwon / 3 - g_devchal_points;
+    g_devchal_award = due > 0 ? due : 0;
+    fprintf(stderr, "  [DEVCHAL] won %s: %d challenge(s) won, %d point(s) given, %d due\n",
+            id, g_devchal_nwon, g_devchal_points, g_devchal_award);
+    fflush(stderr);
+    g_devchal_point_now = fresh && g_devchal_nwon % 3 == 0;
+    amped2_devchal_card_note();
+}
+
+/* The i-th argument of a GUI command call as text ("" if none). Arguments
+ * are 12-byte values at [args+0x84], [args+0x88] of them; a quoted one keeps
+ * its text as a String (char *) at +8. */
+static const char *amped2_cmd_arg(uint32_t args, uint32_t i)
+{
+    if (i >= MEM32(args + 0x88))
+        return "";
+    return amped2_gstr(MEM32(MEM32(args + 0x84) + 12 * i + 8));
+}
+
+static void amped2_cmd_devchal(void)
+{
+    uint32_t args = MEM32(g_esp + 4);
+    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp, key;
+    const char *level = amped2_cmd_arg(args, 0), *drop = amped2_cmd_arg(args, 1);
+    char buf[64];
+    size_t i;
+
+    if (!level[0] || strlen(level) > 4 || !drop[0] || strlen(drop) >= sizeof g_devchal_drop) {
+        fprintf(stderr, "  [DEVCHAL] StartDevChallenge(\"%s\", \"%s\"): bad arguments\n", level, drop);
+        fflush(stderr);
+        SET_LO8(g_eax, 0);
+        g_esp += 8;
+        return;
+    }
+    for (i = 0; level[i]; i++)
+        g_devchal_level[i] = (char)(level[i] >= 'a' && level[i] <= 'z' ? level[i] - 32 : level[i]);
+    g_devchal_level[i] = 0;
+    snprintf(g_devchal_drop, sizeof g_devchal_drop, "%s", drop);
+    g_devchal_pending = 1;
+
+    /* What SelectLevel() does for the level's entry (sub_001E0F50), without
+     * the entry's locked check: the session's level file and path, as the
+     * Level Select entries hold them ("LX2.LVL", "D:\LEVELS\LX2\"). */
+    snprintf(buf, sizeof buf, "%s.LVL", g_devchal_level);
+    amped2_put_cstr(0x00010F40u, buf);
+    snprintf(buf, sizeof buf, "D:\\LEVELS\\%s\\", g_devchal_level);
+    amped2_put_cstr(0x00010F80u, buf);
+    g_esp -= 16;
+    key = g_esp;
+    MEM32(key) = 0;
+    MEM32(key + 4) = 0;
+    g_esp -= 4; MEM32(g_esp) = key;         /* String("LX2.LVL") */
+    g_eax = 0x00010F40u;
+    AMPED2_GCALL(sub_000122B0);
+    g_esp -= 4; MEM32(g_esp) = key + 4;     /* String("D:\LEVELS\LX2\") */
+    g_eax = 0x00010F80u;
+    AMPED2_GCALL(sub_000122B0);
+    g_esp -= 4; MEM32(g_esp) = key;         /* session.SetLevelFile(file) */
+    g_ecx = 0x003AD748u;
+    AMPED2_GCALL(sub_00020C30);
+    g_eax = key + 4;                        /* session.LevelPath = path */
+    g_ebx = 0x003AD758u;
+    AMPED2_GCALL(sub_00013800);
+    g_ecx = 0x003AD748u;                    /* session -> SessionDetails */
+    AMPED2_GCALL(sub_000200B0);
+    MEM32(MEM32(0x003ACD14u) + 0x94) = 0xFFFFFFFFu;
+    {
+        uint32_t obj = MEM32(0x003AD0DCu), va = MEM32(MEM32(obj) + 0x58);
+        recomp_func_t fn = recomp_lookup_manual(va);
+        if (!fn) fn = recomp_lookup(va);
+        g_ecx = obj;
+        if (fn) AMPED2_GCALL(fn);
+    }
+    g_ecx = key;
+    AMPED2_GCALL(sub_0001A490);
+    g_ecx = key + 4;
+    AMPED2_GCALL(sub_0001A490);
+    g_esp += 16;
+
+    fprintf(stderr, "  [DEVCHAL] StartDevChallenge: level %s ('%s', '%s'), drop point %s\n",
+            g_devchal_level, amped2_gstr(MEM32(0x003AD754u)), amped2_gstr(MEM32(0x003AD758u)),
+            g_devchal_drop);
+    fflush(stderr);
+    g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp;
+    SET_LO8(g_eax, 0);
+    g_esp += 8;                             /* ret 4 */
+}
+
+/* Has the run in progress been won? Its challenge's progress record
+ * (challenge +0x38) state +4 turns 2 (Complete) or 3 (Improve, the
+ * challenge's StateOnComplete). Checked every frame of the end-of-run update
+ * and once more on the way out. A drop point's +0x10 is the drop point's
+ * own record, not the challenge's. */
+static void amped2_devchal_poll(void)
+{
+    static int fake = -1;
+    uint32_t rec, st;
+    if (g_devchal_chal && getenv("AMPED2_DEVCHAL_TRACE")) {
+        uint32_t r = MEM32(g_devchal_chal + 0x38), ps = MEM32(g_devchal_chal + 0x24);
+        uint32_t pr = ps && MEM32(ps) ? MEM32(MEM32(ps) + 0x18) : 0;
+        static uint32_t lastlog = 0xFFFFFFFFu;
+        uint32_t now = (r ? MEM32(r + 4) : 0xFF) << 8 | (pr ? MEM32(pr + 4) : 0xFF);
+        if (now != lastlog) {
+            fprintf(stderr, "  [DEVCHAL] poll: challenge %d part %d active %u counted %d\n",
+                    r ? (int)MEM32(r + 4) : -1, pr ? (int)MEM32(pr + 4) : -1,
+                    MEM8(g_devchal_chal + 0x4C), g_devchal_counted);
+            fflush(stderr);
+            lastlog = now;
+        }
+    }
+    if (!g_devchal_chal || g_devchal_counted)
+        return;
+    if (fake < 0)
+        fake = getenv("AMPED2_DEVCHAL_FAKEWIN") != NULL;   /* tests only */
+    rec = MEM32(g_devchal_chal + 0x38);
+    st = rec ? MEM32(rec + 4) : 0;
+    {
+        /* Its part (loaded as Available too) completes with the run. */
+        uint32_t ps = MEM32(g_devchal_chal + 0x24), pr = ps && MEM32(ps) ? MEM32(MEM32(ps) + 0x18) : 0;
+        uint32_t pst = pr ? MEM32(pr + 4) : 0;
+        if (pst == 2 || pst == 3)
+            st = pst;
+    }
+    if (((st == 2 || st == 3) && st != g_devchal_state0) || fake) {   /* loaded as 1 */
+        g_devchal_counted = 1;
+        amped2_devchal_win();
+    }
+}
+
+/* The level's drop points: [[[0x003ACDC8]+0x24]+0x58], +8 array, +0xC
+ * count, +0 the current one. The one whose ID (+0x4C) is `id`, or 0. */
+static uint32_t amped2_find_drop(const char *id)
+{
+    uint32_t mgr = MEM32(MEM32(MEM32(0x003ACDC8u) + 0x24) + 0x58), i, n;
+    n = mgr ? MEM32(mgr + 0xC) : 0;
+    for (i = 0; i < n; i++) {
+        uint32_t d = MEM32(MEM32(mgr + 8) + 4 * i);
+        if (d && amped2_ieq(amped2_gstr(MEM32(d + 0x4C)), id))
+            return d;
+    }
+    return 0;
+}
+
+/* The level's drop-point screen (Game.rui DropPoint, object 0x003CDF90,
+ * vtable 0x003573D8) builds its menu when pushed, slot 6 sub_0010BCB0
+ * (thiscall, `ret 4`). With a developer challenge pending, its drop point
+ * goes into this one menu as any other (its IsDebugOnly flag, byte +0xA,
+ * is cleared while the menu is built), selected beforehand as the current
+ * drop point (sub_000A2590), and is chosen at once as ChooseDropPoint()
+ * (sub_0010DA50) does for the selected item: the run then starts as from
+ * the menu. Lending another item the drop point instead put the player at
+ * the right place but started no challenge (no pro, no markers) when the
+ * challenge was not "New". */
+/* A level's challenge by ID: an object whose +0x1C is its ID (a String's
+ * char *) and whose progress record (+0x38) points back at it (+0), as the
+ * challenge loader (sub_0005C450, 0x0005D89C) links them. Found by a scan of
+ * the guest heap, once per level; 0 if none. The whole mapped guest memory:
+ * this build maps more than the Xbox's 64 MB (toolkit g_xbox_map_size), and
+ * in the user's BR2 runs the challenges lay above 0x04000000, so a scan that
+ * stopped there found nothing and the challenge stayed switched off. */
+extern size_t g_xbox_map_size, g_xbox_total_ram;    /* toolkit memory layout */
+static uint32_t amped2_find_challenge(const char *id)
+{
+    const uint32_t lo = 0x00400000u;
+    const uint32_t hi = (uint32_t)(g_xbox_map_size ? g_xbox_map_size : g_xbox_total_ram);
+    size_t n = strlen(id);
+    uint32_t a, b;
+    int copies = 0, refs = 0;
+    /* Every byte: a String's text need not be 4-byte aligned. */
+    for (a = lo; a + n + 1 < hi; a++) {
+        if (MEM8(a) != (uint8_t)id[0] || memcmp((const void *)XBOX_PTR(a), id, n + 1))
+            continue;
+        copies++;
+        for (b = lo; b + 0x40 < hi; b += 4) {
+            uint32_t obj, rec;
+            if (MEM32(b) != a)
+                continue;
+            refs++;
+            obj = b - 0x1C;
+            rec = MEM32(obj + 0x38);
+            if (rec >= lo && rec < hi && MEM32(rec) == obj)
+                return obj;
+        }
+    }
+    fprintf(stderr, "  [DEVCHAL] %s not found: %d copies of the ID, %d references, scanned %08X-%08X\n",
+            id, copies, refs, lo, hi);
+    return 0;
+}
+
+/* In-memory progress entries for the developer challenges. The loader
+ * sub_0005C450 runs the level's <L>_Challenges.lua (sub_00022CB0 at
+ * 0x0005C571), then the career's <L>_Progress.lua (0x0005CFAB) into a table,
+ * and looks up each challenge's entry by ID (sub_000EAE50 at 0x0005D6F8). A
+ * challenge the career does not list (a developer challenge added after the
+ * career was saved) is read through the previous entry's leftovers: it
+ * loads, is left out or crashes (0x0005D786, its "Parts"). Both files reach
+ * Lua through luaL_loadbuffer, whose reader getS (0x000F3640, cdecl
+ * (L, ud, size *); ud = {text, size}, handed out once) is called through a
+ * pointer from luaZ_fill. While the challenges load, this wrapper notes the
+ * IDs DevChal<n> the level's challenges file names, and gives a progress
+ * file (text starting "Progress") a second piece of text after its own: for
+ * each of those IDs it has no entry for, the default entry the loader makes
+ * without a progress file (Available, on complete Improve, one Available
+ * part). Only the Lua text in memory changes, after the file was read (and
+ * any signature check of the bytes); the career's files are not written,
+ * and the game saves the entries itself, signed, as for any challenge.
+ * The text goes into the header-page scratch at 0x00010C00 (the XBE
+ * headers end at 0x00010B60; 0x00010E00 holds the card's Strings below, the
+ * strings at 0x00010F00). */
+#define AMPED2_PROGRESS_ADD_VA  0x00010C00u
+#define AMPED2_PROGRESS_ADD_MAX 0x200u
+extern void sub_000F3640(void);
+static int g_devchal_loading;               /* inside amped2_challenges_load */
+static char g_devchal_ids[16][16];          /* the level's DevChal<n> IDs */
+static int g_devchal_nids;
+static uint32_t g_progress_ud, g_progress_added;
+
+static const char *amped2_gmemmem(uint32_t p, uint32_t n, const char *s, uint32_t *at)
+{
+    uint32_t k = (uint32_t)strlen(s), i;
+    for (i = 0; i + k <= n; i++)
+        if (!memcmp((const void *)XBOX_PTR(p + i), s, k)) {
+            *at = p + i;
+            return s;
+        }
+    return NULL;
+}
+
+static void amped2_lua_getS(void)
+{
+    uint32_t ud = MEM32(g_esp + 8), sizep = MEM32(g_esp + 0xC);
+    uint32_t text = ud ? MEM32(ud) : 0, size = ud ? MEM32(ud + 4) : 0;
+    if (g_devchal_loading && text && size) {
+        uint32_t i = 0, at;
+        while (i < size && (MEM8(text + i) == ' ' || MEM8(text + i) == '\t'
+                            || MEM8(text + i) == '\r' || MEM8(text + i) == '\n'))
+            i++;
+        if (size - i >= 8 && !memcmp((const void *)XBOX_PTR(text + i), "Progress", 8)) {
+            g_progress_ud = ud;             /* the career's progress: add after it */
+            g_progress_added = 0;
+        } else {                            /* the challenges file: its DevChal IDs */
+            uint32_t p = text, n = size;
+            while (g_devchal_nids < 16 && amped2_gmemmem(p, n, "\"DevChal", &at)) {
+                char id[16];
+                int k = 0, j;
+                at++;
+                while (k < 15 && at + k < text + size && MEM8(at + k) != '"') {
+                    id[k] = (char)MEM8(at + k);
+                    k++;
+                }
+                id[k] = 0;
+                for (j = 0; j < g_devchal_nids && strcmp(g_devchal_ids[j], id); j++)
+                    ;
+                if (j == g_devchal_nids && k > 7)
+                    strcpy(g_devchal_ids[g_devchal_nids++], id);
+                n -= at + k - p;
+                p = at + k;
+            }
+        }
+    }
+    sub_000F3640();
+    if (g_eax == 0 && ud && ud == g_progress_ud && !g_progress_added) {
+        char buf[AMPED2_PROGRESS_ADD_MAX];
+        int len = snprintf(buf, sizeof buf,
+            "\nlocal function DevChalEntry(id) if Progress and Progress[id] == nil then"
+            " Progress[id] = {State = \"Available\", StateOnComplete = \"Improve\","
+            " Parts = {{State = \"Available\", StateOnComplete = \"Improve\"}}} end end\n");
+        int i;
+        g_progress_added = 1;
+        for (i = 0; i < g_devchal_nids && len > 0 && len + 40 < (int)sizeof buf; i++)
+            len += snprintf(buf + len, sizeof buf - len, "DevChalEntry(\"%s\")\n", g_devchal_ids[i]);
+        if (g_devchal_nids && len > 0) {
+            for (i = 0; i < len; i++)
+                MEM8(AMPED2_PROGRESS_ADD_VA + i) = (uint8_t)buf[i];
+            MEM32(sizep) = (uint32_t)len;
+            g_eax = AMPED2_PROGRESS_ADD_VA;
+            fprintf(stderr, "  [DEVCHAL] progress: entries for %d developer challenge(s) if missing\n",
+                    g_devchal_nids);
+            fflush(stderr);
+        }
+    }
+}
+
+/* The intro and end card of a developer challenge (user, 2026-11-11): the
+ * PreRun card is a record of Strings, filled natively by sub_0004C6F0 (Pro
+ * card) and sub_0004CF30 (photo shoot) into [screen +0x184] + 0x94, from
+ * Base.rui string keys, each looked up through sub_000B1E20 (hand copy in
+ * lua_probe.c, config/manual_functions.json: its callers are direct calls).
+ * The card's fields: +0x00 title, +0x20 the player's name, +0x24 / +0x2C
+ * the two labels, +0x28 / +0x30 the two boxes (Pro: "Ride with <pro>." and
+ * "Try to beat the pro's run.", photo: the director and the score),
+ * +0x38 the player's status, +0x40 the challenge ID (the picture is the
+ * texture named by the string <L>_<ID>), +0x48 the kind (0xF Pro, 5 photo).
+ * The boxes, labels and ID are filled only by a loop over the level's
+ * ProChal<n> / Sequence<n> challenges, so a developer challenge's card kept
+ * stale text (user's test, 2026-11-12: "Sponsor:", "Likes:", "Big Air").
+ * While a developer challenge runs, the probe hands the lookup the title
+ * DEV CHALLENGE / DEV PHOTOSHOOT, and at the card's last lookup before that
+ * loop (the player's status: return address 0x0004CBCB Pro, 0x0004D1CB
+ * photo) fills the labels empty, the boxes with the developer's name and a
+ * banter line (a different one each run) and the ID with DevChal<n>.
+ * dev_challenge.py writes those keys (DevChal_Card_*, DevChal_Name_<drop
+ * point>, DevChal_Banter1..AMPED2_DEVCHAL_BANTERS). The keys' Strings are
+ * made once (sub_000122B0) and kept, in the header-page scratch at
+ * 0x00010E00. */
+#define AMPED2_DEVCHAL_BANTERS 10
+#define AMPED2_KEYSTR_VA  0x00010E00u       /* 4-byte String slots */
+#define AMPED2_KEYSTR_MAX 40
+#define AMPED2_CARDTXT_VA 0x00010EA0u       /* a looked-up text while it is copied */
+#define AMPED2_KEYTXT_VA  0x00010EC0u       /* a key's text while its String is made */
+extern void sub_00017830(void), sub_0001EE70(void), sub_000B2020(void);
+static char g_keystr_name[AMPED2_KEYSTR_MAX][32];
+static int g_keystr_n;
+static unsigned g_devchal_runs;             /* picks the banter line */
+
+static uint32_t amped2_key_string(const char *name)
+{
+    uint32_t sa = g_eax, sb = g_ebx, sc = g_ecx, sd = g_edx, ss = g_esi, si = g_edi, sp = g_ebp;
+    uint32_t sesp = g_esp, slot;
+    int i;
+    for (i = 0; i < g_keystr_n; i++)
+        if (!strcmp(g_keystr_name[i], name))
+            return AMPED2_KEYSTR_VA + 4 * i;
+    if (g_keystr_n == AMPED2_KEYSTR_MAX || strlen(name) >= 32)
+        return 0;
+    slot = AMPED2_KEYSTR_VA + 4 * g_keystr_n;
+    amped2_put_cstr(AMPED2_KEYTXT_VA, name);
+    MEM32(slot) = 0;
+    g_esp -= 4; MEM32(g_esp) = slot;        /* String(name) into the slot */
+    g_eax = AMPED2_KEYTXT_VA;
+    AMPED2_GCALL(sub_000122B0);
+    g_esp = sesp;
+    g_eax = sa; g_ebx = sb; g_ecx = sc; g_edx = sd; g_esi = ss; g_edi = si; g_ebp = sp;
+    if (!MEM32(slot))
+        return 0;
+    strcpy(g_keystr_name[g_keystr_n++], name);
+    return slot;
+}
+
+/* Field `field` of the card = `how` CARD_TEXT: the text of string key
+ * `key`, looked up through sub_000B2020 (stdcall table, &key, 0; edi = out
+ * String); CARD_EMPTY: an empty String (sub_00017830, esi = String);
+ * CARD_KEY: `key` itself. Assigned (sub_0001EE70: eax = &from, ebx = &to),
+ * the scratch String released. The registers are the caller's again
+ * afterwards. */
+enum { CARD_KEY, CARD_TEXT, CARD_EMPTY };
+static void amped2_card_set(uint32_t field, const char *key, int how)
+{
+    uint32_t sa = g_eax, sb = g_ebx, sc = g_ecx, sd = g_edx, ss = g_esi, si = g_edi, sp = g_ebp;
+    uint32_t sesp = g_esp, sseh = g_seh_ebp, ks = how == CARD_EMPTY ? 0 : amped2_key_string(key);
+    if (how != CARD_EMPTY && !ks)
+        return;
+    if (how != CARD_KEY) {
+        g_esi = AMPED2_CARDTXT_VA;
+        AMPED2_GCALL(sub_00017830);              /* an empty String */
+        g_esp = sesp;
+    }
+    if (how == CARD_TEXT) {
+        g_esp -= 4; MEM32(g_esp) = 0;
+        g_esp -= 4; MEM32(g_esp) = ks;
+        g_esp -= 4; MEM32(g_esp) = MEM32(0x0038CDF4u);
+        g_edi = AMPED2_CARDTXT_VA;
+        AMPED2_GCALL(sub_000B2020);
+        g_esp = sesp;
+    }
+    g_eax = how == CARD_KEY ? ks : AMPED2_CARDTXT_VA;
+    g_ebx = field;
+    AMPED2_GCALL(sub_0001EE70);
+    g_esp = sesp;
+    if (how != CARD_KEY) {
+        g_ecx = AMPED2_CARDTXT_VA;
+        AMPED2_GCALL(sub_0001A490);
+        g_esp = sesp;
+    }
+    g_eax = sa; g_ebx = sb; g_ecx = sc; g_edx = sd; g_esi = ss; g_edi = si; g_ebp = sp;
+    g_seh_ebp = sseh;
+}
+
+static uint32_t g_devchal_card;            /* the card record of the run */
+
+/* The card's text box (user, 2026-11-12/13): how many more wins the next
+ * stat point takes (one per 3 developer challenges won), or, after the win
+ * that earned one, that it did. The box is the PreRun screen's text widget
+ * [screen +0x64] (text String +0x2C, shown when its +0x50 is set; the
+ * game's own setter sub_001202A0 does the same), screen = card - 0x94; the
+ * end card sets it only for ProChal<n> (ChalProResults*), so a developer
+ * challenge showed the layout's placeholder ("The text that will be used to
+ * tell trick number..."). Card +0x34 is the yellow line under the header,
+ * not the box (user's test, 2026-11-13). */
+static void amped2_devchal_card_note(void)
+{
+    char k[40];
+    uint32_t card = g_devchal_card, w;
+    if (!card || !g_devchal_playing[0] || (MEM32(card + 0x48) != 0xF && MEM32(card + 0x48) != 5))
+        return;
+    w = MEM32(card - 0x94 + 0x64);
+    if (!w || w >= 0x04000000u || !MEM32(w + 0x50))
+        return;
+    amped2_devchal_load();
+    if (g_devchal_point_now)
+        snprintf(k, sizeof k, "DevChal_Card_Point");
+    else
+        snprintf(k, sizeof k, "DevChal_Card_Win%d", 3 - g_devchal_nwon % 3);
+    amped2_card_set(w + 0x2C, k, CARD_TEXT);
+}
+
+static void amped2_card_fill(uint32_t card)
+{
+    char k[40];
+    g_devchal_card = card;
+    g_devchal_point_now = 0;
+    amped2_devchal_card_note();
+    amped2_card_set(card + 0x24, NULL, CARD_EMPTY);     /* the labels */
+    amped2_card_set(card + 0x2C, NULL, CARD_EMPTY);
+    snprintf(k, sizeof k, "DevChal_Name_%s", g_devchal_playing);
+    amped2_card_set(card + 0x28, k, CARD_TEXT);
+    snprintf(k, sizeof k, "DevChal_Banter%u", g_devchal_runs % AMPED2_DEVCHAL_BANTERS + 1);
+    amped2_card_set(card + 0x30, k, CARD_TEXT);
+    if (!strncmp(g_devchal_playing, "Dev", 3)) {
+        snprintf(k, sizeof k, "DevChal%s", g_devchal_playing + 3);
+        amped2_card_set(card + 0x40, k, CARD_KEY);  /* the picture: string <L>_DevChal<n> */
+    }
+    fprintf(stderr, "  [DEVCHAL] card %08X (kind %u): %s, banter %u\n", card, MEM32(card + 0x48),
+            g_devchal_playing, g_devchal_runs % AMPED2_DEVCHAL_BANTERS + 1);
+    fflush(stderr);
+}
+
+/* The DEVELOPER CHALLENGES list (user, 2026-11-12): a won challenge's item
+ * says its title with a green check after it. The item's text key is
+ * DevChal_dev<n> (dev_challenge.py); for a challenge in devchallenges.json's
+ * won list the lookup gets DevChal_dev<n>_Won instead, the title followed
+ * by glyph 0x1E, which the tool turns into a green check in the GUI fonts
+ * (an unused icon cell; icons keep their own colours). */
+static uint32_t amped2_devchal_list_key(uint32_t key)
+{
+    const char *k = amped2_gstr(MEM32(key)), *dot, *n;
+    char to[40];
+    uint32_t s;
+    int i;
+    if (!k)
+        return key;
+    dot = strrchr(k, '.');
+    if (dot)
+        k = dot + 1;
+    if (strncmp(k, "DevChal_dev", 11) || !k[11] || strlen(k) > 24)
+        return key;
+    for (n = k + 11; *n; n++)
+        if (*n < '0' || *n > '9')
+            return key;                     /* DevChal_dev<n>_Help and the like */
+    amped2_devchal_load();
+    for (i = 0; i < g_devchal_nwon; i++)
+        if (!strcmp(g_devchal_won[i], k + 8))
+            break;
+    if (i == g_devchal_nwon)
+        return key;
+    snprintf(to, sizeof to, "%s_Won", k);
+    s = amped2_key_string(to);
+    return s ? s : key;
+}
+
+/* The list (PlayerFeedback, in Base.rui, which stays loaded) makes its items
+ * once, at start-up, so the swap above gives a challenge won since then its
+ * check only after a restart (user's tests, 2026-11-13). At the win, every
+ * String holding the item's plain text (the title: the _Won text without
+ * "  " and the check) is pointed at the _Won text instead, with the game's
+ * own assign (refcounts kept). The buffers are found by text and header
+ * (length -0x0C, capacity -0x08, references -0x04) in committed guest RAM,
+ * the Strings by holding a buffer's address. GUI text is UTF-16 (the
+ * lookup's String of "BEAR..." read as bytes is "B"). */
+#define AMPED2_RETARGET_MAX 16
+static void amped2_devchal_list_retarget(const char *id)
+{
+    uint32_t sa = g_eax, sb = g_ebx, sc = g_ecx, sd = g_edx, ss = g_esi, si = g_edi, sp = g_ebp;
+    uint32_t sesp = g_esp, sseh = g_seh_ebp, ks, g, wbuf, bufs[AMPED2_RETARGET_MAX], locs[64];
+    const uint8_t *mem = (const uint8_t *)XBOX_PTR(0), *at;
+    const uint8_t *top = mem + (g_xbox_map_size ? g_xbox_map_size : g_xbox_total_ram);  /* committed RAM */
+    char key[48], title[64];
+    uint16_t won[64];
+    size_t len, n;
+    int nb = 0, nl = 0, i;
+    snprintf(key, sizeof key, "DevChal_%s_Won", id);
+    if (!(ks = amped2_key_string(key)))
+        return;
+    g_esi = AMPED2_CARDTXT_VA;
+    AMPED2_GCALL(sub_00017830);                 /* an empty String */
+    g_esp = sesp;
+    g_esp -= 4; MEM32(g_esp) = 0;
+    g_esp -= 4; MEM32(g_esp) = ks;
+    g_esp -= 4; MEM32(g_esp) = MEM32(0x0038CDF4u);
+    g_edi = AMPED2_CARDTXT_VA;
+    AMPED2_GCALL(sub_000B2020);                 /* its text */
+    g_esp = sesp;
+    wbuf = MEM32(AMPED2_CARDTXT_VA);
+    len = 0;
+    if (wbuf >= 0x10000u && wbuf < 0x08000000u)
+        for (; len < 63 && MEM16(wbuf + 2 * len); len++)
+            won[len] = MEM16(wbuf + 2 * len);
+    for (i = 0; i < (int)len; i++)
+        title[i] = won[i] < 0x80 ? (char)won[i] : '?';
+    title[len] = 0;
+    if (len < 4 || len == 63 || won[len - 3] != ' ' || won[len - 2] != ' ' || won[len - 1] != 0x1E) {
+        fprintf(stderr, "  [DEVCHAL] list: %s not marked, %s is \"%s\" (%u UTF-16)\n",
+                id, key, title, (unsigned)len);
+    } else {
+        len -= 3;                               /* the title */
+        title[len] = 0;
+        n = 2 * len;                            /* its bytes */
+        for (at = mem + 0x10; at + n + 2 <= top && nb < AMPED2_RETARGET_MAX; at++) {
+            at = memchr(at, (uint8_t)won[0], (size_t)(top - n - 2 - at));
+            if (!at)
+                break;
+            g = (uint32_t)(at - mem);
+            if ((g & 1) || at[n] || at[n + 1] || memcmp(at, won, n) || g < 0x10)
+                continue;
+            if ((MEM32(g - 0x0C) != len && MEM32(g - 0x0C) != n)
+                || MEM32(g - 0x08) < MEM32(g - 0x0C)
+                || (int32_t)MEM32(g - 0x04) < 0 || MEM32(g - 0x04) > 0x10000u)
+                continue;
+            bufs[nb++] = g;
+        }
+        for (g = 0x10; mem + g + 4 <= top && nl < 64; g += 4)
+            for (i = 0; i < nb; i++)
+                if (MEM32(g) == bufs[i] && g != AMPED2_CARDTXT_VA) {
+                    locs[nl++] = g;
+                    break;
+                }
+        for (i = 0; i < nl; i++) {
+            g_eax = AMPED2_CARDTXT_VA;
+            g_ebx = locs[i];
+            AMPED2_GCALL(sub_0001EE70);         /* String assign: from eax to ebx */
+            g_esp = sesp;
+        }
+        fprintf(stderr, "  [DEVCHAL] list: %s marked won: \"%s\" in %d buffer(s), %d String(s)",
+                id, title, nb, nl);
+        for (i = 0; i < nb && i < 4; i++)
+            fprintf(stderr, " buf %08X len %u", bufs[i], MEM32(bufs[i] - 0x0C));
+        for (i = 0; i < nl && i < 8; i++)
+            fprintf(stderr, " %08X", locs[i]);
+        fprintf(stderr, "\n");
+    }
+    fflush(stderr);
+    g_ecx = AMPED2_CARDTXT_VA;
+    AMPED2_GCALL(sub_0001A490);                 /* release the scratch String */
+    g_esp = sesp;
+    g_eax = sa; g_ebx = sb; g_ecx = sc; g_edx = sd; g_esi = ss; g_edi = si; g_ebp = sp;
+    g_seh_ebp = sseh;
+}
+
+uint32_t amped2_devchal_key(uint32_t key, uint32_t sp)
+{
+    static int trace = -1;
+    static char seen[64][40];
+    static int nseen;
+    static unsigned seen_run;
+    const char *k, *dot;
+    char to[40];
+    uint32_t s, ret, card = 0;
+    int i;
+    if (!key || !MEM32(key))
+        return key;
+    if (!g_devchal_playing[0])
+        return amped2_devchal_list_key(key);
+    ret = MEM32(sp);
+    if (ret == 0x0004CBCBu)                     /* Pro card, the player's status */
+        card = MEM32(sp + 0xB8);
+    else if (ret == 0x0004D1CBu)                /* photo-shoot card, the same */
+        card = MEM32(sp + 0xBC);
+    if (card && (MEM32(card + 0x48) == 0xF || MEM32(card + 0x48) == 5))
+        amped2_card_fill(card);
+    if ((ret == 0x0004C766u && MEM32(sp + 0xB8) == g_devchal_card)   /* the end card: */
+        || (ret == 0x0004CFA6u && MEM32(sp + 0xBC) == g_devchal_card))  /* its status */
+        amped2_devchal_card_note();
+    k = amped2_gstr(MEM32(key));
+    if (!k)
+        return key;
+    dot = strrchr(k, '.');
+    if (dot)
+        k = dot + 1;
+    to[0] = 0;
+    if (!strcmp(k, "PreRun_Pro_Title"))
+        strcpy(to, "DevChal_Card_Pro");
+    else if (!strcmp(k, "PreRun_PhotoShoot_Title"))
+        strcpy(to, "DevChal_Card_Photo");
+    if (trace < 0)
+        trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
+    if (trace) {                            /* each key once a run, for finding the card's */
+        if (seen_run != g_devchal_runs) {
+            seen_run = g_devchal_runs;
+            nseen = 0;
+        }
+        for (i = 0; i < nseen && strcmp(seen[i], k); i++)
+            ;
+        if (i == nseen && nseen < 64) {
+            snprintf(seen[nseen++], sizeof seen[0], "%s", k);
+            fprintf(stderr, "  [DEVCHAL] text %s%s%s\n", k, to[0] ? " -> " : "", to);
+            fflush(stderr);
+        }
+    }
+    if (!to[0] || !(s = amped2_key_string(to)))
+        return key;
+    return s;
+}
+
+/* The level's challenges are built when the run starts (vtable 0x00347814,
+ * sub_0004A700, thiscall, `ret`; it calls the loader sub_0005C450 on the
+ * level's <L>_Challenges.lua). The loader takes each challenge's state from
+ * the career's own <L>_Progress.lua when the career has one: a challenge it
+ * does not list (a developer challenge, added after the career was saved)
+ * parses as Locked (sub_00031020 on a missing entry), and its +0x4C
+ * ("active") is cleared, so the run had no pro, markers or score. Without a
+ * progress file the loader makes a default record instead (0x0005D855:
+ * Available, on complete Improve). After the load, a Locked developer
+ * challenge of the run gets those defaults in memory; the career's file is
+ * not touched. */
+extern void sub_0004A700(void);
+static void amped2_challenges_load(void)
+{
+    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp;
+    g_devchal_nids = 0;
+    g_progress_ud = 0;
+    g_devchal_loading = 1;
+    if (g_devchal_playing[0])
+        g_devchal_runs++;           /* the next banter line */
+    sub_0004A700();
+    g_devchal_loading = 0;
+    g_progress_ud = 0;
+    if (g_devchal_playing[0]) {
+        char id[32];
+        uint32_t c, rec;
+        snprintf(id, sizeof id, "DevChal%s", g_devchal_playing + 3);  /* Dev1 -> DevChal1 */
+        c = amped2_find_challenge(id);
+        rec = c ? MEM32(c + 0x38) : 0;
+        fprintf(stderr, "  [DEVCHAL] challenges loaded: %s at %08X, state %d, active %u\n", id, c,
+                rec ? (int)MEM32(rec + 4) : -1, c ? MEM8(c + 0x4C) : 0);
+        g_devchal_chal = c;
+        g_devchal_counted = 0;
+        if (rec) {
+            uint32_t parts = MEM32(c + 0x24), nparts = MEM32(c + 0x28), i;
+            if (MEM32(rec + 4) == 0) {      /* missing: the loader's defaults */
+                MEM32(rec + 0xC) = 1;
+                MEM32(rec + 0x10) = 2;
+            }
+            /* Available every time, won before or not: a win turns it into
+             * its StateOnComplete (Improve), which is how the win is seen
+             * (a career that saved it as Improve kept it at 3 through a
+             * win, user's trace 2026-11-09). */
+            if (MEM32(rec + 4) != 6)
+                MEM32(rec + 4) = 1;
+            MEM32(rec + 8) = 3;             /* on complete: Improve, as the pros */
+            MEM32(rec + 0x28) = 0;          /* LockedByChallenge (vector +0x24): none */
+            MEM8(c + 0x4C) = 1;
+            /* Its parts (vector at challenge +0x24, +0x28 of them; a Pro
+             * part, vtable 0x00349220, keeps its record at +0x18, state +4,
+             * on complete +8; challenge +4 is its drop-point list): a
+             * missing entry gets the previous challenge's part states
+             * too (RecordHSlegend: Complete, Complete), and the game saves
+             * them after a win, so every later run ended at once. */
+            for (i = 0; parts && i < nparts && i < 8; i++) {
+                uint32_t part = MEM32(parts + 4 * i), prec = part ? MEM32(part + 0x18) : 0;
+                fprintf(stderr, "  [DEVCHAL] part %u %08X vt %08X record %08X state %d/%d\n", i,
+                        part, part ? MEM32(part) : 0, prec, prec ? (int)MEM32(prec + 4) : -1,
+                        prec ? (int)MEM32(prec + 8) : -1);
+                if (!prec || prec < 0x00400000u || prec >= 0x04000000u
+                    || MEM32(prec + 4) > 6 || MEM32(prec + 8) > 6)
+                    continue;
+                if (MEM32(prec + 4) != 6)
+                    MEM32(prec + 4) = 1;    /* Available, as the challenge */
+                MEM32(prec + 8) = 3;
+            }
+            fprintf(stderr, "  [DEVCHAL] %s set up: state %d, %u part(s)\n", id,
+                    (int)MEM32(rec + 4), nparts);
+        }
+        g_devchal_state0 = rec ? MEM32(rec + 4) : 0;
+        fflush(stderr);
+    }
+    g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp;
+}
+
+static void amped2_droppoint_push(void)
+{
+    uint32_t self = g_ecx, ret, dp = 0;
+    uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sp = g_ebp, sc = g_ecx;
+    uint8_t debug_only = 0;
+    if (g_devchal_pending && (dp = amped2_find_drop(g_devchal_drop)) != 0) {
+        debug_only = MEM8(dp + 0xA);
+        MEM8(dp + 0xA) = 0;
+        g_ecx = MEM32(MEM32(MEM32(0x003ACDC8u) + 0x24) + 0x58);
+        g_edi = dp;
+        AMPED2_GCALL(sub_000A2590);
+        g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp; g_ecx = sc;
+    }
+    sub_0010BCB0();
+    ret = g_eax;
+    if (g_devchal_pending) {
+        uint32_t list = MEM32(self + 0x3C), item = 0, i, n, sel = 0;
+        if (dp)
+            MEM8(dp + 0xA) = debug_only;
+        n = list ? MEM32(list + 0x50) : 0;
+        for (i = 0; i < n && dp && !item; i++) {
+            uint32_t it = MEM32(MEM32(list + 0x4C) + 4 * i);
+            if (it && MEM32(it + 0x20) == dp) {
+                item = it;
+                sel = i;
+            }
+        }
+        /* The career menu lists only plain drop points and the fixed
+         * Sponsor1-3, PhotoShoot1-3, Pro1-3: a Dev<n> is never in it, so an
+         * unlocked item lends it its slot. */
+        for (i = 0; i < n && dp && !item; i++) {
+            uint32_t it = MEM32(MEM32(list + 0x4C) + 4 * i);
+            if (it && MEM32(it + 0x20) && !amped2_ieq(amped2_gstr(MEM32(it + 8)), "Locked")) {
+                item = it;
+                sel = i;
+                MEM32(it + 0x20) = dp;
+            }
+        }
+        fprintf(stderr, "  [DEVCHAL] drop-point screen: %s -> dp %08X (challenge %08X state %d),"
+                " menu item %u of %u%s, was selected %d\n", g_devchal_drop, dp,
+                dp ? MEM32(dp + 0x10) : 0,
+                dp && MEM32(dp + 0x10) ? (int)MEM32(MEM32(dp + 0x10) + 4) : -1, sel, n,
+                item ? "" : " (not in the menu)", list ? (int)MEM32(list + 0x24) : -1);
+        if (item) {
+            MEM32(list + 0x24) = sel;
+            MEM32(self + 0x7C) = 0;         /* 0.0f: the screen's input delay */
+            g_ecx = self;
+            g_esp -= 4; MEM32(g_esp) = 0;   /* the (unused) call arguments */
+            AMPED2_GCALL(sub_0010DA50);
+            snprintf(g_devchal_playing, sizeof g_devchal_playing, "%s", g_devchal_drop);
+            g_devchal_dp = dp;
+            g_devchal_counted = 0;
+        }
+        g_devchal_pending = 0;
+        fflush(stderr);
+    } else if (g_devchal_playing[0]) {
+        amped2_devchal_poll();
+        /* Back at the drop points after the run ("Choose new run", "New
+         * run"): a developer challenge has no menu here, so leave for the
+         * DEVELOPER CHALLENGES list. */
+        fprintf(stderr, "  [DEVCHAL] drop-point screen after %s: back to the list\n",
+                g_devchal_playing);
+        fflush(stderr);
+        g_devchal_return = 1;
+        g_esp -= 4; MEM32(g_esp) = 0;
+        AMPED2_GCALL(sub_00102360);         /* LaunchShellToCareerLevelSelect() */
+    }
+    g_ebx = sb; g_esi = ss; g_edi = sd; g_ebp = sp;
+    g_eax = ret;
+}
+
+/* Leaving the mountain during or after a developer challenge (pause menu
+ * LaunchShellToMainMenu sub_001022A0, end-of-run EORLeaveMountain
+ * sub_0010FED0 and EORChangeMountain sub_0010FEA0; all thiscall `ret 4`)
+ * goes to the career's level select instead, which the shell's PushMenu
+ * then turns into the DEVELOPER CHALLENGES list. */
+static void amped2_devchal_leave(void (*orig)(void))
+{
+    if (g_devchal_playing[0]) {
+        amped2_devchal_poll();
+        fprintf(stderr, "  [DEVCHAL] leaving %s: back to the list\n", g_devchal_playing);
+        fflush(stderr);
+        g_devchal_return = 1;
+        sub_00102360();                     /* same stack: ret 4 */
+    } else {
+        orig();
+    }
+}
+static void amped2_leave_main(void) { amped2_devchal_leave(sub_001022A0); }
+static void amped2_leave_eor(void) { amped2_devchal_leave(sub_0010FED0); }
+static void amped2_leave_change(void) { amped2_devchal_leave(sub_0010FEA0); }
+static void amped2_leave_pause(void) { amped2_devchal_leave(sub_0010ED60); }
+
+/* The GUI's PushMenu (vtable 0x0036C868 +0x50, sub_002194B0, thiscall, one
+ * stack argument: the name, a String). When the shell starts after a
+ * developer challenge it pushes Main, MainCareer and LevelSelect (its
+ * start-up switch on [[0x003ACD0C]+0x54] = 5, at 0x00100B9B); LevelSelect
+ * becomes the list (PlayerFeedback). The name is a String the wrapper makes
+ * once and keeps at 0x00010FC0. */
+#define AMPED2_DEVLIST_STR_VA  0x00010FC0u
+#define AMPED2_DEVLIST_NAME_VA 0x00010FC4u
+/* After those pushes the start-up sets the screen's header from the text ID
+ * "FreeRide_PlayLevel" (RIDE!), a C string at 0x00355530 with 18 characters
+ * of room. For this one start it reads "DevChal_Title" (DEVELOPER
+ * CHALLENGES, a string dev_challenge.py adds), put back at the next push. */
+#define AMPED2_TITLE_ID_VA 0x00355530u
+static char g_title_saved[19];
+static int g_title_patched;
+
+static void amped2_title_restore(void)
+{
+    size_t i;
+    if (!g_title_patched)
+        return;
+    for (i = 0; i < sizeof g_title_saved; i++)
+        MEM8(AMPED2_TITLE_ID_VA + i) = (uint8_t)g_title_saved[i];
+    g_title_patched = 0;
+}
+
+static void amped2_pushmenu(void)
+{
+    uint32_t name = MEM32(g_esp + 4);
+    amped2_title_restore();
+    if (!g_devchal_return && g_devchal_playing[0] && name
+        && amped2_ieq(amped2_gstr(MEM32(name)), "Main")) {
+        g_devchal_playing[0] = 0;           /* the shell, some other way */
+        g_devchal_dp = 0;
+        g_devchal_chal = 0;
+    }
+    if (g_devchal_return && name
+        && amped2_ieq(amped2_gstr(MEM32(name)), "LevelSelect")) {
+        size_t i;
+        for (i = 0; i < sizeof g_title_saved; i++)
+            g_title_saved[i] = (char)MEM8(AMPED2_TITLE_ID_VA + i);
+        if (!strcmp(g_title_saved, "FreeRide_PlayLevel")) {
+            amped2_put_cstr(AMPED2_TITLE_ID_VA, "DevChal_Title");
+            g_title_patched = 1;
+        }
+        if (!MEM32(AMPED2_DEVLIST_STR_VA)) {
+            uint32_t sb = g_ebx, ss = g_esi, sd = g_edi, sc = g_ecx;
+            amped2_put_cstr(AMPED2_DEVLIST_NAME_VA, "PlayerFeedback");
+            g_esp -= 4; MEM32(g_esp) = AMPED2_DEVLIST_STR_VA;
+            g_eax = AMPED2_DEVLIST_NAME_VA;
+            AMPED2_GCALL(sub_000122B0);
+            g_ebx = sb; g_esi = ss; g_edi = sd; g_ecx = sc;
+        }
+        MEM32(g_esp + 4) = AMPED2_DEVLIST_STR_VA;
+        g_devchal_return = 0;
+        g_devchal_playing[0] = 0;
+        g_devchal_dp = 0;
+        g_devchal_chal = 0;
+        fprintf(stderr, "  [DEVCHAL] shell: LevelSelect -> the DEVELOPER CHALLENGES list\n");
+        fflush(stderr);
+    }
+    sub_002194B0();
+}
+
+/* The level session's update (vtable 0x00344860, sub_00018B40, thiscall,
+ * `ret 8`; the flow object 0x003AD688, +0x10 = the player). It runs the
+ * end of a run (results, rewards); each frame looks for a developer
+ * challenge's win.
+ *
+ * A stat point goes through the game's own skill-point check: end-of-run
+ * state +0x28 = 2 (sub-state +0x1C = 0, flow +0x20 = 0) runs sub_00017840,
+ * where sub_000469E0 gives a point for every two steps the player's +0x2DD
+ * climbs to +0x2DE (NumScoreChalDone, the REWARD_SCORESKILLPOINTS count),
+ * then the "EarnedSkillPoints" message and the SkillPoints_InGame screen.
+ * +0x2DE goes up by two per point due for that one frame and both come back
+ * down after, so the career's count stays as it was (+0x2DD is not saved:
+ * the career load sets it to +0x2DE). */
+/* AMPED2_DEVCHAL_TRACE: a challenge's reward description (challenge
+ * vtable 0x0034A424 slot 3, sub_00066890, thiscall, `ret 4`; switches on
+ * the reward type at [challenge+0x18]) is logged with the challenge's ID,
+ * to see when the career hands out rewards. */
+extern void sub_00066890(void);
+static void amped2_trace_reward(void)
+{
+    uint32_t c = g_ecx, r = MEM32(c + 0x18);
+    static int trace = -1;
+    if (trace < 0)
+        trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
+    if (trace) {
+        fprintf(stderr, "  [DEVCHAL] reward of %s: type %u index %u\n", amped2_gstr(MEM32(c + 0x1C)),
+                r ? MEM16(r) : 0, r ? MEM16(r + 2) : 0);
+        fflush(stderr);
+    }
+    sub_00066890();
+}
+
+/* Recording sessions (AMPED2_DEVCHAL_RECORD, src/main.c): the run clock
+ * for the L3+R3 marks. ChooseDropPoint() (sub_0010DA50), the restarts
+ * (RestartChallenge sub_0010F150, EORRestartChallenge sub_0010FEE0), Pause()
+ * (sub_0010F200) and Unpause() (sub_0010F1C0) are GUI commands, thiscall,
+ * `ret 4`; the level is the session's file (0x003AD754, "LX2.LVL"). */
+extern void amped2_devrec_event(int what);
+extern void sub_0010F150(void), sub_0010FEE0(void), sub_0010F200(void), sub_0010F1C0(void);
+char amped2_devrec_level[8];
+
+static void amped2_devrec_level_now(void)
+{
+    const char *f = amped2_gstr(MEM32(0x003AD754u));
+    size_t i;
+    for (i = 0; f[i] && f[i] != '.' && i < sizeof amped2_devrec_level - 1; i++)
+        amped2_devrec_level[i] = (char)(f[i] >= 'a' && f[i] <= 'z' ? f[i] - 32 : f[i]);
+    amped2_devrec_level[i] = 0;
+}
+static void amped2_rec_choose(void) { amped2_devrec_level_now(); amped2_devrec_event(0); sub_0010DA50(); }
+static void amped2_rec_restart(void) { amped2_devrec_event(0); sub_0010F150(); }
+static void amped2_rec_eor_restart(void) { amped2_devrec_event(0); sub_0010FEE0(); }
+static void amped2_rec_pause(void) { amped2_devrec_event(1); sub_0010F200(); }
+static void amped2_rec_unpause(void) { amped2_devrec_event(2); sub_0010F1C0(); }
+
+static void amped2_session_update(void)
+{
+    uint32_t sess = g_ecx, player = MEM32(sess + 0x10), bump = 0;
+    static uint32_t last = 0xFFFFFFFFu;
+    static int trace = -1;
+    if (trace < 0) {
+        int due;
+        trace = getenv("AMPED2_DEVCHAL_TRACE") != NULL;
+        /* A point earned and not given yet (left before the check ran, or
+         * from an earlier game) is given at the next check, any mountain. */
+        amped2_devchal_load();
+        due = g_devchal_nwon / 3 - g_devchal_points;
+        if (due > g_devchal_award)
+            g_devchal_award = due;
+    }
+    if (trace) {
+        uint32_t c = g_devchal_chal, rec = c ? MEM32(c + 0x38) : 0;
+        uint32_t parts = c ? MEM32(c + 0x24) : 0, part = parts ? MEM32(parts) : 0;
+        uint32_t prec = part ? MEM32(part + 0x18) : 0;
+        int cs = rec ? (int)MEM32(rec + 4) : -1, ps = prec ? (int)MEM32(prec + 4) : -1;
+        int act = c ? MEM8(c + 0x4C) : -1;
+        uint32_t now = (MEM32(sess + 0x20) << 24) | (MEM32(sess + 0x1C) << 16)
+                       | (MEM32(sess + 0x28) << 8) | ((uint32_t)(cs & 0xF) << 4) | (uint32_t)(ps & 0xF);
+        static int lastact = -2;
+        if (now != last || act != lastact) {
+            fprintf(stderr, "  [DEVCHAL] session flow %u sub %u end %u challenge %d part %d active %d"
+                    " 2DD %u 2DE %u\n", MEM32(sess + 0x20), MEM32(sess + 0x1C), MEM32(sess + 0x28),
+                    cs, ps, act, player ? MEM8(player + 0x2DD) : 0, player ? MEM8(player + 0x2DE) : 0);
+            fflush(stderr);
+            last = now;
+            lastact = act;
+        }
+    }
+    amped2_devchal_poll();
+    /* The end of a run from a Pro drop point runs the Pro rewards
+     * (sub-state +0x1C = the drop point's type, 1: sub_00017D60), which has
+     * no skill-point check; a developer challenge has no reward of its own,
+     * so the end of its run takes the normal one (0: sub_00017840) when a
+     * point is due, as a High Score challenge's run does (user's trace:
+     * end-of-run state 2 -> 3 as +0x2DD climbs, then the stat screen). */
+    if (g_devchal_award > 0 && g_devchal_chal && player && MEM32(sess + 0x20) == 0
+        && MEM32(sess + 0x1C) == 1 && MEM32(sess + 0x28) == 2) {
+        MEM32(sess + 0x1C) = 0;
+        fprintf(stderr, "  [DEVCHAL] end of the run: normal rewards, for the stat point\n");
+        fflush(stderr);
+    }
+    if (g_devchal_award > 0 && player && MEM32(sess + 0x20) == 0 && MEM32(sess + 0x1C) == 0
+        && MEM32(sess + 0x28) == 2 && MEM8(player + 0x2DD) == MEM8(player + 0x2DE)
+        && MEM8(player + 0x2DE) + 2 * g_devchal_award < 256) {
+        bump = 2u * (uint32_t)g_devchal_award;
+        MEM8(player + 0x2DE) += (uint8_t)bump;
+    }
+    sub_00018B40();
+    if (bump) {
+        int given = (int)(MEM8(player + 0x2DD) - (MEM8(player + 0x2DE) - bump)) / 2;
+        MEM8(player + 0x2DE) -= (uint8_t)bump;
+        MEM8(player + 0x2DD) -= (uint8_t)(2 * given);
+        fprintf(stderr, "  [DEVCHAL] skill-point check: %d stat point(s) given\n", given);
+        fflush(stderr);
+        if (given > 0) {
+            g_devchal_points += given;
+            g_devchal_award -= given;
+            amped2_devchal_save();
+        }
+    }
+}
+
 void sub_00218140(void)
 {
     uint32_t self = g_ecx, ret;
     sub_00218140_gen();
     ret = g_eax;
     amped2_register_command(self, "QuitGame", AMPED2_QUIT_FN_VA, AMPED2_QUIT_NAME_VA);
-    fprintf(stderr, "  [MOD] shell command QuitGame registered\n");
+    amped2_register_command(self, "StartDevChallenge", AMPED2_DEVCHAL_FN_VA,
+                            AMPED2_DEVCHAL_NAME_VA);
+    fprintf(stderr, "  [MOD] shell commands QuitGame, StartDevChallenge registered\n");
     fflush(stderr);
     g_eax = ret;
 }
@@ -1504,6 +2612,8 @@ void sub_001A2460(void)                     /* ChallengeScriptedObject */
  * device is [0x0032CEF8], [dev] the write pointer and [dev+4] the point
  * where 0x0031E940 (stdcall, its two arguments from [0x0032DDC4]) has to
  * make room first. */
+extern void sub_0031E940(void);
+
 static void amped2_pb_nop(uint32_t param)
 {
     uint32_t dev = MEM32(0x0032CEF8), put, saved_eax = g_eax;
@@ -1627,10 +2737,27 @@ void sub_00248FF0(void)
     }
 }
 
+
 recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
 {
     if (xbox_va == 0x00248FF0) return sub_00248FF0;  /* text aspect (vtable 0x0036E518) */
     if (xbox_va == AMPED2_QUIT_FN_VA) return amped2_cmd_quit;
+    if (xbox_va == AMPED2_DEVCHAL_FN_VA) return amped2_cmd_devchal;
+    if (xbox_va == 0x0010BCB0) return amped2_droppoint_push;  /* drop-point screen: push */
+    if (xbox_va == 0x001022A0) return amped2_leave_main;      /* LaunchShellToMainMenu */
+    if (xbox_va == 0x0010FED0) return amped2_leave_eor;       /* EORLeaveMountain */
+    if (xbox_va == 0x0010FEA0) return amped2_leave_change;    /* EORChangeMountain */
+    if (xbox_va == 0x0010ED60) return amped2_leave_pause;     /* LeaveMountain (pause) */
+    if (xbox_va == 0x002194B0) return amped2_pushmenu;        /* GUI PushMenu */
+    if (xbox_va == 0x00018B40) return amped2_session_update;  /* level session update */
+    if (xbox_va == 0x0004A700) return amped2_challenges_load; /* level challenges: load */
+    if (xbox_va == 0x000F3640) return amped2_lua_getS;        /* luaL_loadbuffer's reader */
+    if (xbox_va == 0x00066890) return amped2_trace_reward;    /* challenge reward text */
+    if (xbox_va == 0x0010DA50) return amped2_rec_choose;      /* ChooseDropPoint() */
+    if (xbox_va == 0x0010F150) return amped2_rec_restart;     /* RestartChallenge() */
+    if (xbox_va == 0x0010FEE0) return amped2_rec_eor_restart; /* EORRestartChallenge() */
+    if (xbox_va == 0x0010F200) return amped2_rec_pause;       /* Pause() */
+    if (xbox_va == 0x0010F1C0) return amped2_rec_unpause;     /* Unpause() */
     if (xbox_va == 0x00218140) return sub_00218140;  /* registers QuitGame */
     if (xbox_va == 0x001EE6A0) return sub_001EE6A0;  /* Game Options: show */
     if (xbox_va == 0x001EE7E0) return sub_001EE7E0;  /* Game Options: change */
@@ -1658,7 +2785,8 @@ recomp_func_t recomp_lookup_manual(uint32_t xbox_va)
     /* Hand copies in src/lua_probe.c (config/manual_functions.json). */
     if (xbox_va == 0x000F37E0) return sub_000F37E0;  /* lua_pcall-shaped */
     if (xbox_va == 0x000F24C0) return sub_000F24C0;  /* luaD_throw */
-    if (xbox_va == 0x00150E80) return sub_00150E80;  /* movie next-frame */
+    if (xbox_va == 0x00150E80) return sub_00150E80;
+    if (xbox_va == 0x000B1E20) return sub_000B1E20;  /* string-table lookup */  /* movie next-frame */
 
     return (recomp_func_t)0;
 }

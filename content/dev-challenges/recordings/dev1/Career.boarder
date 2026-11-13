@@ -1,0 +1,63 @@
+BoarderDefinition = 
+{
+	Board = L"Bobby Meeks' Board",
+	BoardSkills = 
+	{
+		Balance = 2,
+		Jump = 3,
+		Speed = 3,
+		Spin = 4,
+		Switch = 0,
+	},
+	CareerStatus = 4,
+	MeshFilename = "U:\\0D2B04430DBE\\Career.parts",
+	Name = L"Nico-D",
+	NumReplays = 9,
+	Options = 
+	{
+		Audio = 
+		{
+			HeadphonesOn = false,
+			MusicVolume = 0.6999999284744263,
+			SFXVolume = 0.800000011920929,
+			ShufflePlayOn = true,
+			SongInfoOn = true,
+			SpeechVolume = 0.3999999761581421,
+		},
+		EducationScreens = 
+		{
+			EventOn = false,
+			LegendOn = true,
+			NormalOn = false,
+			OTMOn = false,
+			PhotoShootOn = false,
+			ProOn = false,
+			SnowSkateOn = false,
+			SponsorOn = false,
+		},
+		Game = 
+		{
+			CameraDistance = 0,
+			ControllerScheme = "default.control",
+			Hints = false,
+			Vibration = true,
+		},
+		Online = 
+		{
+			AppearOnline = true,
+			LiveVoiceSetting = 0,
+		},
+	},
+	PreferredStanceIsRegular = true,
+	Skills = 
+	{
+		Balance = 9,
+		Jump = 11,
+		Speed = 13,
+		Spin = 13,
+		Switch = 5,
+	},
+	WorldRank = 1,
+}
+
+
