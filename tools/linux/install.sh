@@ -296,10 +296,12 @@ fi
 # into the pack mods/packs/dev-challenges. They need the menus.
 if [ "$MENUS_OK" = 1 ]; then
     stage "Developer challenges"
-    if (cd "$WORK/src/amped2" && logged "$WORK/venv/bin/python" tools/mods/dev_challenge.py                 --content content/dev-challenges build) &&
+    if (cd "$WORK/src/amped2" && logged "$WORK/venv/bin/python" tools/mods/dev_challenge.py \
+                --content content/dev-challenges build) &&
             [ -d "$WORK/src/amped2/mods/packs/dev-challenges/loose" ]; then
         mkdir -p "$DEST/mods/packs/dev-challenges"
-        cp -r "$WORK/src/amped2/mods/packs/dev-challenges/loose"               "$WORK/src/amped2/mods/packs/dev-challenges/textures" "$DEST/mods/packs/dev-challenges/"
+        cp -r "$WORK/src/amped2/mods/packs/dev-challenges/loose" \
+              "$WORK/src/amped2/mods/packs/dev-challenges/textures" "$DEST/mods/packs/dev-challenges/"
         DEVCHAL_OK=1
         say "Added the developer challenges (mods/packs/dev-challenges)."
     else
