@@ -766,7 +766,10 @@ def challenge_strings(devs, drops_name, names=None):
         s["DevChal_Name_" + dev_ids(d)[0]] = ("ProName1", (names or {}).get(d["id"], "RE-Amped2"))
         mountain = MOUNTAINS.get(d["level"], d["level"])
         board = "snowskate" if d["kind"] == "skate" else "snowboard"
-        s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper())
+        # Three spaces where a win puts "  " + CHECK: the list's items are made
+        # at start-up, and the game marks a win since then in place, same
+        # length (src/recomp_manual.c, amped2_devchal_list_mark).
+        s["DevChal_" + d["id"]] = ("Career_ChangeGear", d["title"].upper() + "   ")
         s["DevChal_%s_Won" % d["id"]] = ("Career_ChangeGear", d["title"].upper() + "  " + CHECK)
         s["%s_%s" % (d["level"], dev_ids(d)[1])] = (     # the card's picture
             "BR2_ProChal1", portrait_name((names or {}).get(d["id"], "RE-Amped2")))
