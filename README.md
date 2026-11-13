@@ -78,6 +78,7 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | | Saves | ✅ |
 | | A full career to the end | ✅ |
 | | Legend challenges (they unlock after the career) | 🟡 not tested yet |
+| | Developer challenges: races and photo shoots against the developer's own runs, a stat point per 3 wins | ✅ new in 0.4.0 |
 | | Split-screen multiplayer | ⬜ hidden for now |
 | | Xbox Live | ➖ the service is gone |
 | **Graphics** | DirectX 11 renderer, steady 60 fps | ✅ |
@@ -201,6 +202,17 @@ screen. **F3** shows the frame rate and the active mods.
 
 **Saves** are in `game\UDATA` in the install folder.
 
+### Developer challenges
+
+New in 0.4.0, with the RE-Amped2 menus: **Career › Developer Challenges**
+lists six challenges recorded by the developer on six mountains. In a Pro
+race you chase the developer's own run down the line; in a photo shoot you
+fly through the rings of their line and beat their score. A won challenge
+gets a green check, and every third win gives your boarder a stat point.
+Wins are kept in `devchallenges.json` in the install folder. The runs ship
+as recordings in `content/dev-challenges`; the installer builds the
+challenges from your own game files.
+
 ### Settings
 
 With the RE-Amped2 menus, **Options and Mods › Game Options** has *Window*
@@ -262,7 +274,7 @@ and about 6.5 GB. The conversion runs in a minimised window. If you close it,
 
 ## Known issues
 
-In the current release (0.3.1):
+In the current release (0.4.0):
 
 - **Linux is a preview.** It has only been tested under WSL2 (Ubuntu 24.04
   on Windows): install, menus and riding a level. It has not been run on a
