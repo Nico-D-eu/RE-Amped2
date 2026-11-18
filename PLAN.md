@@ -2077,6 +2077,13 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
   Windows too: ML1 rides, APU at speed). With it, the title runs at 58 fps.
 - **Anisotropic filtering in GL** (`RECOMP_GPU_ANISO`, 16 by default), as in
   D3D11.
+- **ML1 on Linux at 59 fps:** the Clang build riding ML1 through GL on the
+  RTX 2070 (WSLg, D3D12 driver, anisotropy 16) drew 2949 frames in the
+  50 s after the pad walk reached the slope; earlier measurements were
+  43-50. Meets Phase 21's frame-rate criterion (the run's audio was the
+  dummy driver, so not its sound half).
+- **arm64 + OpenGL ES together** (the Android combination) under qemu:
+  the title drawn correctly on ES 3.2, no shader failures.
 - `install.sh` on an arm64 machine: the bundled xdvdfs is x86-64, so the
   installer now checks that it runs and otherwise takes one from the
   PATH (`cargo install xdvdfs-cli`).
