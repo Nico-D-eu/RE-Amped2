@@ -2089,9 +2089,19 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    x86.
 3. CI: an aarch64 cross-compile job beside the Linux one (compile and
    link only).
-4. **Android:** the same arm64 code with a GLES 3 path for the back end
-   (or Vulkan, Phase 22), SDL2's Android activity, AAudio through SDL, and
-   the game data in app storage. A Gradle wrapper around the CMake build.
+4. **Android:** the same arm64 code, SDL2's Android activity, AAudio
+   through SDL, and the game data in app storage; a Gradle wrapper around
+   the CMake build. **The renderer is ready:** `nv2a_gl.c` has an OpenGL
+   ES 3.2 mode (`RECOMP_GL_ES=1`, the default under `__ANDROID__`;
+   xboxrecomp `bc4df0e`). Checked on Mesa's ES 3.2 (llvmpipe, SDL on EGL):
+   the title with correct colours, and ML1 ridden with fog, shadows, the
+   rider and the HUD, no shader failures in 2 million draws. Differences
+   from desktop GL: RGBA uploads with a red/blue swizzle and a CPU swap of
+   the presented frame, visibility tests that only say "any sample
+   passed" (lens flares are all-or-nothing), no depth clamp without
+   `GL_EXT_depth_clamp`. Mobile GPUs have no S3TC: texture packs in DXT
+   fall back to the decoded game textures (the game's own textures are
+   decoded on the CPU anyway).
 5. **Switch (homebrew):** devkitA64 + libnx, Mesa GL through libnx's
    EGL, the same arm64 code. Check the fixed 4 GB guest window against
    the Switch's address-space limits first.
