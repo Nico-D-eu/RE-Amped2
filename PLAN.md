@@ -2109,6 +2109,17 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    `GL_EXT_depth_clamp`. Mobile GPUs have no S3TC: texture packs in DXT
    fall back to the decoded game textures (the game's own textures are
    decoded on the CPU anyway).
+   **APK built (2026-11-18):** with NDK 27.2 (API 29+) and SDL 2.30.10
+   built for arm64-v8a, the whole game links as `libmain.so` (102 MB) and
+   `android/build_apk.sh` packs a signed 28 MB APK with the SDK's own tools
+   (no Gradle). Runtime changes for bionic and GLES are in xboxrecomp
+   `619fb8c` (an `epoxy/gl.h` over the system GLES 3.2, no OpenSSL, no
+   thread pinning, memfd through the syscall). The game reads `game/`
+   from the app's external files folder (`Android/data/org.reamped2.app/
+   files/game`), and logs to `amped2.log` there. Still to do: run it (an
+   emulator with arm64 translation, then a phone), touch controls (a pad
+   is the target for now), audio through SDL's AAudio/OpenSL path, and an
+   installer step that builds the APK from the player's disc.
 5. **Switch (homebrew):** devkitA64 + libnx, Mesa GL through libnx's
    EGL, the same arm64 code. Check the fixed 4 GB guest window against
    the Switch's address-space limits first.
