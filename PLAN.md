@@ -2120,6 +2120,23 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    emulator with arm64 translation, then a phone), touch controls (a pad
    is the target for now), audio through SDL's AAudio/OpenSL path, and an
    installer step that builds the APK from the player's disc.
+   **Boots on Android (emulator, 2026-11-18):** an Android 11 x86_64
+   emulator image (KVM, run as root in WSL) runs the arm64 APK through its
+   arm64 translation. With `RECOMP_EXT_VMA` (set by main.c on Android)
+   every guest window maps; the APU runs at 1500 frames/s; SDL's window
+   (GLES2 renderer) and OpenSL ES audio (48 kHz) open; the game reads its
+   archives up to the front end and the first music track. The GL back
+   end does not start yet: it makes a hidden window of its own for its
+   context, and Android has only one window ("Android only supports one
+   window"), so the run fell back to the software rasteriser (2 frames in
+   70 s under translation; the screen stays black). The emulator's GPU
+   (SwiftShader) is GLES 3.0 anyway. **Next:** on Android, the GL back end
+   draws on the app's window and presents itself (blit the frame to the
+   window's framebuffer and swap) instead of the read-back through the SDL
+   renderer; then a real phone with GLES 3.2. Data setup for tests:
+   `adb root`, push to `/sdcard/Android/data/org.reamped2.app/files/game`
+   after the app has run once, then `chown` to the app's user and
+   `restorecon` (SELinux label).
 5. **Switch (homebrew):** devkitA64 + libnx, Mesa GL through libnx's
    EGL, the same arm64 code. Check the fixed 4 GB guest window against
    the Switch's address-space limits first.
