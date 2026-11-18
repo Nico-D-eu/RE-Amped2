@@ -48,7 +48,11 @@
 #include <dlfcn.h>
 #include <signal.h>
 #include <time.h>
+#if defined(__APPLE__)
+#include <sys/ucontext.h>   /* <ucontext.h> needs _XOPEN_SOURCE on macOS */
+#else
 #include <ucontext.h>
+#endif
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -969,6 +973,11 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
     rip = (void *)((ucontext_t *)ucv)->uc_mcontext.gregs[REG_RIP];
 #elif defined(__linux__) && defined(__aarch64__)
     rip = (void *)((ucontext_t *)ucv)->uc_mcontext.pc;
+#elif defined(__APPLE__) && defined(__aarch64__)
+    /* macOS keeps the thread state behind a pointer, with its own names. */
+    rip = (void *)(uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__pc;
+#elif defined(__APPLE__) && defined(__x86_64__)
+    rip = (void *)(uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__rip;
 #endif
     fprintf(stderr, "[CRASH] %s at RIP=0x%llX, fault addr=0x%llX\n", strsignal(sig),
             (unsigned long long)(uintptr_t)rip, (unsigned long long)addr);
