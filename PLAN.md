@@ -2139,6 +2139,19 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    desktop GL at 57 fps, and OpenGL ES 3.2 through EGL on llvmpipe, the
    Android path, both showing the title correctly. The movie overlay is not
    drawn in this mode yet.
+   **The title screen on a phone (2026-11-19, Galaxy S25):** fixed. The
+   stall below was Android's 32 KB per-thread signal stack: ART chains every
+   handler through its own on that stack, and the AC'97 trap path needs
+   more, so it overflowed, faulted on its first push and looped (470,000
+   faults a second). xboxrecomp `1dbbe0f` gives trapping threads a 512 KB
+   alternate stack on Android. Now: the APU is started by the title (1500
+   frames/s), GL comes up on the Adreno 830 (ES 3.2, one-window mode) and
+   the title screen is drawn correctly at about 53 fps, no shader
+   failures. Found with `RECOMP_FAULT_REPORT` (amped2 `ee7afcf`).
+   **Next:** input on the phone (a Bluetooth or USB pad through SDL should
+   already reach the emulated pad; touch controls after), then the menus
+   and ML1 on the phone, the movie overlay in one-window mode, and an
+   installer path that builds the APK from the player's disc.
    **First phone run (2026-11-18, Galaxy S25 SM-S931B, Android 17 / API
    37, Snapdragon 8 Elite, Adreno 830 GLES 3.2, 4 KB pages):** adb from
    Windows (`C:\Users\nicko\android-platform-tools`; WSL sees no USB).
