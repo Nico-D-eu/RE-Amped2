@@ -964,6 +964,54 @@ static void crash_report(int sig, uintptr_t addr, void *rip)
     copy_log(dir);
 }
 
+#if defined(__aarch64__) && defined(__ANDROID__)
+static volatile unsigned long g_android_faults;
+static volatile uintptr_t g_android_fault_addr, g_android_fault_pc;
+static volatile int g_android_fault_sig;
+
+/* RECOMP_FAULT_REPORT: once a second, how many faults the handler took and
+ * the last one (address, guest address, pc as library offset). */
+static void *android_fault_reporter(void *unused)
+{
+    unsigned long last = 0;
+    (void)unused;
+    for (;;) {
+        unsigned long n = g_android_faults;
+        uintptr_t pc = g_android_fault_pc, a = g_android_fault_addr;
+        Dl_info di;
+        const char *sym = "?";
+        uintptr_t off = 0;
+        if (pc && dladdr((void *)pc, &di)) {
+            sym = di.dli_sname ? di.dli_sname : "?";
+            off = pc - (uintptr_t)(di.dli_saddr ? di.dli_saddr : di.dli_fbase);
+        }
+        fprintf(stderr, "[FAULTS] %lu (+%lu/s), last sig %d addr %p guest 0x%08X pc %p %s+0x%lx\n",
+                n, n - last, g_android_fault_sig, (void *)a,
+                (uint32_t)(a - (uintptr_t)g_xbox_mem_offset), (void *)pc, sym,
+                (unsigned long)off);
+        {   /* Once: the mappings around the faulting address. */
+            static int shown;
+            FILE *m;
+            char ln[512];
+            if (!shown && a && (m = fopen("/proc/self/maps", "r")) != NULL) {
+                shown = 1;
+                while (fgets(ln, sizeof ln, m)) {
+                    unsigned long lo, hi;
+                    if (sscanf(ln, "%lx-%lx", &lo, &hi) == 2
+                            && hi + (64ul << 20) > a && lo < a + (64ul << 20))
+                        fprintf(stderr, "[FAULTS] map %s%s", ln,
+                                (a >= lo && a < hi) ? "        ^ holds the address\n" : "");
+                }
+                fclose(m);
+            }
+        }
+        last = n;
+        sleep(1);
+    }
+    return NULL;
+}
+#endif
+
 static void fault_handler(int sig, siginfo_t *si, void *ucv)
 {
     extern XBOX_THREAD_LOCAL uint32_t g_xbox_current_dpc;
@@ -971,20 +1019,12 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
     void *rip = NULL;
 
 #if defined(__aarch64__) && defined(__ANDROID__)
-    {   /* The first faults, with the instruction: on a phone a guest access
-         * that faults again and again (no progress, all time in signal
-         * handling) is otherwise invisible. Not async-signal-safe; a
-         * debugging aid for the first few only. */
-        static volatile int seen;
-        if (seen < 20) {
-            ucontext_t *uc = (ucontext_t *)ucv;
-            uint32_t va = (uint32_t)(addr - (uintptr_t)g_xbox_mem_offset);
-            seen++;
-            fprintf(stderr, "[FAULT] #%d sig %d addr %p (guest 0x%08X) pc %p insn %08X\n",
-                    seen, sig, (void *)addr, va, (void *)(uintptr_t)uc->uc_mcontext.pc,
-                    *(const uint32_t *)(uintptr_t)uc->uc_mcontext.pc);
-        }
-    }
+    /* Recorded only (no stdio, no reads through the context's pointers):
+     * android_fault_reporter prints them from a normal thread. */
+    __atomic_add_fetch(&g_android_faults, 1, __ATOMIC_RELAXED);
+    g_android_fault_addr = addr;
+    g_android_fault_pc = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext.pc;
+    g_android_fault_sig = sig;
 #endif
     if (xbox_PosixMmioFault(ucv, addr))
         return;                     /* emulated register: resume after it */
@@ -2154,6 +2194,10 @@ int main(int argc, char **argv)
             }
             if (ef)
                 fclose(ef);
+        }
+        if (getenv("RECOMP_FAULT_REPORT")) {
+            pthread_t rt;
+            pthread_create(&rt, NULL, android_fault_reporter, NULL);
         }
         /* RECOMP_ANDROID_CPU=<n>: run on one core, set here before any
          * thread starts so every later thread inherits it. The Xbox had
