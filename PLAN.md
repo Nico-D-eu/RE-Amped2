@@ -2138,9 +2138,31 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    Checked under WSLg with `RECOMP_GL_WINSHOT` (the window's own pixels):
    desktop GL at 57 fps, and OpenGL ES 3.2 through EGL on llvmpipe, the
    Android path, both showing the title correctly. The movie overlay is not
-   drawn in this mode yet. **Next:** a real phone with GLES 3.2 (the
-   emulator's SwiftShader is 3.0; `-gpu host` might give 3.2), then touch
-   controls and the movie overlay. Data setup for tests:
+   drawn in this mode yet.
+   **First phone run (2026-11-18, Galaxy S25 SM-S931B, Android 17 / API
+   37, Snapdragon 8 Elite, Adreno 830 GLES 3.2, 4 KB pages):** adb from
+   Windows (`C:\Users\nicko\android-platform-tools`; WSL sees no USB).
+   On this phone adb may write the app's `Android/data` folder directly
+   (group `ext_data_rw`) once the app has run. The APK runs natively: the
+   memory layout maps (all 28 mirrors, `RECOMP_EXT_VMA`), the one-window
+   window opens, AAudio or OpenSL ES opens, and the game reads its
+   archives up to `characters\boarder\MedHiResCharacter.gfx`, then stalls.
+   No GL start, no draws; the APU's frame thread reports 0 frames/s from
+   the first status line (1500 on the emulator), whatever the audio
+   driver (OpenSL ES, AAudio, SDL's dummy). Pinning everything to one core
+   (`RECOMP_ANDROID_CPU=7`) changes nothing, so it is not cross-core
+   memory ordering. simpleperf (profileable APK) shows one guest thread
+   looping through the signal chain: `fault_handler` ->
+   `xbox_PosixMmioFault` -> `xbox_Ac97PosixFault`, again and again, so the
+   game keeps writing the trapped AC'97 page, presumably waiting for the
+   codec to report ready, which the stalled APU never does. The other hot
+   thread is `nv2a_ack_thread` (sched_yield). **Next:** find why
+   `mcpx_apu_frame_thread` makes no frames on the phone (throttle /
+   `qemu_cond_timedwait` with bionic, `pause_requested`, or the thread
+   never starting), e.g. by logging its loop; the fault log in main.c
+   printed nothing in that run, also to explain. Test aids: amped2
+   `d04e5f4` (`android_env.txt`, `RECOMP_ANDROID_CPU`, the fault log,
+   profileable). Data setup for tests:
    `adb root`, push to `/sdcard/Android/data/org.reamped2.app/files/game`
    after the app has run once, then `chown` to the app's user and
    `restorecon` (SELinux label).
