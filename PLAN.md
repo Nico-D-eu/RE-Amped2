@@ -2070,6 +2070,13 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
   (OpenGL 4.5 core), the title screen ("PRESS START TO BEGIN") is drawn
   correctly, with no shader failures: 159 flips and 2945 draws in about
   9 minutes (1.8 fps; the speed is qemu's, not the port's).
+- **Clang** (x86-64 Linux) builds the whole game with no errors. It
+  crashed at boot until the APU trap used the shared decoder: Clang turns
+  DirectSound's register poll into `test dword [mem], imm32`, which this
+  fork's private APU decoder lacked (xboxrecomp `75f674c`, checked on
+  Windows too: ML1 rides, APU at speed). With it, the title runs at 58 fps.
+- **Anisotropic filtering in GL** (`RECOMP_GPU_ANISO`, 16 by default), as in
+  D3D11.
 - `install.sh` on an arm64 machine: the bundled xdvdfs is x86-64, so the
   installer now checks that it runs and otherwise takes one from the
   PATH (`cargo install xdvdfs-cli`).
