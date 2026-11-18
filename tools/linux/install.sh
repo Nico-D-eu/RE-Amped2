@@ -61,7 +61,11 @@ DEST=$(realpath -m "${ARGS[1]:-$HOME/Games/RE-Amped2}")
 # The payload: amped2/ and xboxrecomp/ side by side, xdvdfs in tools/.
 PAYLOAD=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 XDVDFS="$PAYLOAD/tools/xdvdfs"
-if [ ! -x "$XDVDFS" ] && command -v xdvdfs >/dev/null; then
+# The bundled xdvdfs is an x86-64 build. On another CPU (an arm64 board or
+# Mac) it is executable but cannot run, so take one from the PATH instead:
+# `cargo install xdvdfs-cli` builds it for any CPU.
+if { [ ! -x "$XDVDFS" ] || ! "$XDVDFS" --version >/dev/null 2>&1; } \
+        && command -v xdvdfs >/dev/null; then
     XDVDFS=$(command -v xdvdfs)
 fi
 
@@ -207,6 +211,8 @@ fi
 # ── Disc ──────────────────────────────────────────────────────────────
 stage "Disc"
 [ -x "$XDVDFS" ] || fail "xdvdfs is missing from the download ($PAYLOAD/tools/xdvdfs)."
+"$XDVDFS" --version >/dev/null 2>&1 \
+    || fail "The bundled xdvdfs does not run on this CPU ($(uname -m)). Install one with 'cargo install xdvdfs-cli' and run this again."
 logged "$XDVDFS" ls "$DISC" || fail "$DISC is not an Xbox disc image xdvdfs can read."
 # xdvdfs will not unpack over existing files (EEXIST on Linux), so a
 # reinstall unpacks beside game/ and moves each file over its old copy.

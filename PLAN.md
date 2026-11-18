@@ -1278,11 +1278,7 @@ Not yet: Clang, the stall snapshot.
 7. **The suite on Linux.** `suite.ps1` and `diag.ps1` under PowerShell 7,
    with `-Samples` via `/proc`.
 
-**macOS and arm64 afterwards.**
-- **macOS:** a 64-bit process cannot map below 4 GB (`__PAGEZERO`), so the
-  guest memory offset has to work at a high base. Check what upstream does.
-- **arm64:** the generated code's SSE helpers need portable versions (check
-  upstream's), and Apple Silicon caps OpenGL at 4.1.
+**macOS and arm64 afterwards:** Phase 27.
 
 **Exit criteria**
 
@@ -2032,6 +2028,69 @@ deleted from storage; with the setting off, no network connection is made
 later; no frame-time change while uploading.
 
 ---
+
+### Phase 27: arm64 Linux and macOS (the road to Android and Switch)
+
+**Why now (user, 2026-11-18):** the next release's focus is the game, the
+Linux version and other platforms: PS5, Xbox Dev Mode, macOS, Switch and
+Android. Three of those (Apple Silicon macOS, Android, Switch) are arm64,
+so an arm64 build is the shared first step, and it can be built and run
+here without Arm hardware: cross-compiled in WSL, run through qemu-user.
+
+**Status (2026-11-18): the arm64 Linux build compiles, links and boots.**
+- `cmake/toolchains/aarch64-linux-gnu.cmake` cross-compiles on Ubuntu with
+  multiarch (arm64 SDL2, epoxy, GL, OpenSSL and ffmpeg from
+  `ports.ubuntu.com`). All of the generated code compiled for aarch64 on
+  the first try: the lifter's SSE helpers are lane-wise C, and the x86
+  intrinsics in `recomp_types.h` all have portable fallbacks.
+- One toolkit fix to link: this fork's APU file had lost upstream's arm64
+  APU register trap (`apu_hook_handle_mmio_posix`, the A64 decoder over
+  the signal's ucontext). Restored (xboxrecomp `arm64-port`).
+- Under qemu-user (software rasteriser, 150 s): no crash; the guest memory
+  is mapped at `0x400003631000`, far above 4 GB, which is what macOS
+  forces (`__PAGEZERO`), so the offset path works; the APU runs at about
+  1570 frames/s through the arm64 register traps; the game reads the
+  front end's archives (about the point x86 reaches in 20 s).
+- On x86 Linux the guest memory is also placed by the OS at a high
+  address (the POSIX span is reserved with no hint), so the macOS memory
+  situation is already exercised by every Linux run.
+
+**macOS.** Expected to need little beyond a build: upstream's toolkit
+already handles arm64 macOS (OS-chosen base when the low bases sit in
+`__PAGEZERO`, Apple's ucontext layout, QoS on the guest thread). Done:
+`nv2a_gl.c` asks for a forward-compatible core context on Apple, without
+which macOS gives no 3.3 context. The GL back end uses nothing above 4.1
+unconditionally (`glBufferStorage` is optional). Still to do, on a Mac:
+a native build (Homebrew SDL2, libepoxy, OpenSSL, ffmpeg), the
+`main.c` crash handler's Apple register names, and an `.app` bundle in
+the Linux tarball's style (the player builds it from their own disc).
+Cannot be tested without a Mac; the qemu run covers the arm64 half.
+
+- **The GL back end draws on arm64:** under qemu with Mesa's llvmpipe
+  (OpenGL 4.5 core), the title screen ("PRESS START TO BEGIN") is drawn
+  correctly, with no shader failures: 159 flips and 2945 draws in about
+  9 minutes (1.8 fps; the speed is qemu's, not the port's).
+- `install.sh` on an arm64 machine: the bundled xdvdfs is x86-64, so the
+  installer now checks that it runs and otherwise takes one from the
+  PATH (`cargo install xdvdfs-cli`).
+
+**Next steps.**
+1. A real arm64 machine (a Raspberry Pi 5, an Asahi Mac, an Arm laptop):
+   the native build through `install.sh`, and the frame rate in ML1.
+2. Rendering differences on arm64: `rcpss`/`rsqrtss` become exact
+   division instead of x86's 12-bit approximations; check a frame against
+   x86.
+3. CI: an aarch64 cross-compile job beside the Linux one (compile and
+   link only).
+4. **Android:** the same arm64 code with a GLES 3 path for the back end
+   (or Vulkan, Phase 22), SDL2's Android activity, AAudio through SDL, and
+   the game data in app storage. A Gradle wrapper around the CMake build.
+5. **Switch (homebrew):** devkitA64 + libnx, Mesa GL through libnx's
+   EGL, the same arm64 code. Check the fixed 4 GB guest window against
+   the Switch's address-space limits first.
+6. **Xbox Dev Mode (Phase 13):** needs Visual Studio's UWP workload (not
+   installed here) and a console for the spike.
+7. **PS5 (Phase 14):** unchanged; research only.
 
 ## Risks
 
