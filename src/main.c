@@ -48,6 +48,7 @@
 #include <dlfcn.h>
 #include <signal.h>
 #include <time.h>
+#include <unistd.h>          /* chdir (Android) */
 #if defined(__APPLE__)
 #include <sys/ucontext.h>   /* <ucontext.h> needs _XOPEN_SOURCE on macOS */
 #else
@@ -2101,6 +2102,19 @@ int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
+#if defined(__ANDROID__)
+    /* SDL's activity runs this as SDL_main (CMakeLists: main=SDL_main).
+     * Everything is relative to the app's external files folder
+     * (Android/data/<package>/files), where the player puts game/ from
+     * their own disc; stderr has nowhere to go on Android, so it becomes
+     * amped2.log there. */
+    {
+        extern const char *SDL_AndroidGetExternalStoragePath(void);
+        const char *dir = SDL_AndroidGetExternalStoragePath();
+        if (dir && chdir(dir) == 0)
+            freopen("amped2.log", "w", stderr);
+    }
+#endif
     amped2_setup();
     if (amped2_load())
         return 1;
