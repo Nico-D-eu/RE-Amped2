@@ -2130,10 +2130,17 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    context, and Android has only one window ("Android only supports one
    window"), so the run fell back to the software rasteriser (2 frames in
    70 s under translation; the screen stays black). The emulator's GPU
-   (SwiftShader) is GLES 3.0 anyway. **Next:** on Android, the GL back end
-   draws on the app's window and presents itself (blit the frame to the
-   window's framebuffer and swap) instead of the read-back through the SDL
-   renderer; then a real phone with GLES 3.2. Data setup for tests:
+   (SwiftShader) is GLES 3.0 anyway. **Done since:** the GL back end's
+   one-window mode (`RECOMP_GL_ONE_WINDOW`, default on Android; xboxrecomp
+   `d5067dc`): the presenter makes its window GL-capable with the back
+   end's attributes and no SDL renderer, and the back end makes its context
+   on it and presents each flip itself (blit, flip, letterbox, swap).
+   Checked under WSLg with `RECOMP_GL_WINSHOT` (the window's own pixels):
+   desktop GL at 57 fps, and OpenGL ES 3.2 through EGL on llvmpipe, the
+   Android path, both showing the title correctly. The movie overlay is not
+   drawn in this mode yet. **Next:** a real phone with GLES 3.2 (the
+   emulator's SwiftShader is 3.0; `-gpu host` might give 3.2), then touch
+   controls and the movie overlay. Data setup for tests:
    `adb root`, push to `/sdcard/Android/data/org.reamped2.app/files/game`
    after the app has run once, then `chown` to the app's user and
    `restorecon` (SELinux label).
