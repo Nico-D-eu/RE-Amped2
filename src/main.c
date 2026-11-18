@@ -49,6 +49,8 @@
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>          /* chdir (Android) */
+#include <sched.h>           /* sched_setaffinity (Android) */
+#include <errno.h>
 #if defined(__APPLE__)
 #include <sys/ucontext.h>   /* <ucontext.h> needs _XOPEN_SOURCE on macOS */
 #else
@@ -968,6 +970,22 @@ static void fault_handler(int sig, siginfo_t *si, void *ucv)
     uintptr_t addr = (uintptr_t)si->si_addr;
     void *rip = NULL;
 
+#if defined(__aarch64__) && defined(__ANDROID__)
+    {   /* The first faults, with the instruction: on a phone a guest access
+         * that faults again and again (no progress, all time in signal
+         * handling) is otherwise invisible. Not async-signal-safe; a
+         * debugging aid for the first few only. */
+        static volatile int seen;
+        if (seen < 20) {
+            ucontext_t *uc = (ucontext_t *)ucv;
+            uint32_t va = (uint32_t)(addr - (uintptr_t)g_xbox_mem_offset);
+            seen++;
+            fprintf(stderr, "[FAULT] #%d sig %d addr %p (guest 0x%08X) pc %p insn %08X\n",
+                    seen, sig, (void *)addr, va, (void *)(uintptr_t)uc->uc_mcontext.pc,
+                    *(const uint32_t *)(uintptr_t)uc->uc_mcontext.pc);
+        }
+    }
+#endif
     if (xbox_PosixMmioFault(ucv, addr))
         return;                     /* emulated register: resume after it */
 #if defined(__linux__) && defined(__x86_64__)
@@ -2119,6 +2137,39 @@ int main(int argc, char **argv)
          * ranges taken (seen under the emulator's arm64 translation) and
          * the first contiguous allocation faulted. */
         setenv("RECOMP_EXT_VMA", "1", 0);
+        /* android_env.txt beside amped2.ini: KEY=VALUE lines set before
+         * anything starts, as a shell would on the other platforms (there
+         * is no shell to start an app from on Android). */
+        {
+            FILE *ef = fopen("android_env.txt", "r");
+            char line[512];
+            while (ef && fgets(line, sizeof line, ef)) {
+                char *eq = strchr(line, '='), *end = line + strcspn(line, "\r\n");
+                *end = 0;
+                if (eq && line[0] != '#') {
+                    *eq = 0;
+                    setenv(line, eq + 1, 1);
+                    fprintf(stderr, "[BOOT] android_env.txt: %s=%s\n", line, eq + 1);
+                }
+            }
+            if (ef)
+                fclose(ef);
+        }
+        /* RECOMP_ANDROID_CPU=<n>: run on one core, set here before any
+         * thread starts so every later thread inherits it. The Xbox had
+         * one CPU, and x86 orders memory between cores (TSO) where Arm
+         * does not: on a phone, guest threads spread over cores can miss
+         * each other's writes. */
+        {
+            const char *oc = getenv("RECOMP_ANDROID_CPU");
+            if (oc && *oc) {
+                cpu_set_t set;
+                CPU_ZERO(&set);
+                CPU_SET(atoi(oc), &set);
+                fprintf(stderr, "[BOOT] one core (CPU %s): %s\n", oc,
+                        sched_setaffinity(0, sizeof set, &set) == 0 ? "pinned" : strerror(errno));
+            }
+        }
     }
 #endif
     amped2_setup();

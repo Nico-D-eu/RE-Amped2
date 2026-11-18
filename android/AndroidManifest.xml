@@ -19,6 +19,8 @@
         android:extractNativeLibs="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
         android:hardwareAccelerated="true">
+        <!-- simpleperf from adb can profile it (no debugger, no root). -->
+        <profileable android:shell="true" />
         <activity android:name="org.libsdl.app.SDLActivity"
             android:label="RE-Amped2"
             android:screenOrientation="sensorLandscape"
