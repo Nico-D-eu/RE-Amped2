@@ -2113,6 +2113,12 @@ int main(int argc, char **argv)
         const char *dir = SDL_AndroidGetExternalStoragePath();
         if (dir && chdir(dir) == 0)
             freopen("amped2.log", "w", stderr);
+        /* Hold the whole 4 GB guest window in one reservation. Without it
+         * the windows above guest RAM (contiguous memory at 0x80000000,
+         * the NV2A, MCPX, flash and tiled apertures) found their host
+         * ranges taken (seen under the emulator's arm64 translation) and
+         * the first contiguous allocation faulted. */
+        setenv("RECOMP_EXT_VMA", "1", 0);
     }
 #endif
     amped2_setup();
