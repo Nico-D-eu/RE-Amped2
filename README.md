@@ -101,7 +101,8 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | | New characters and remixed levels | ⬜ planned |
 | **Platforms** | Windows 10 and 11 (64-bit) | ✅ |
 | | Linux | 🟡 preview: an install script that builds the game from your disc. Tested only under WSL2 (Ubuntu 24.04) so far, not yet on a real Linux PC |
-| | Steam Deck, macOS | ⬜ planned, after Linux |
+| | Android phones and tablets (with a gamepad) | ✅ new in 0.5.0: the Windows installer builds the app from your disc and can put it on a phone over USB. Galaxy S25: 58 fps; a 2017 phone (Mate 10 Pro): about 19 fps |
+| | Steam Deck, macOS | ⬜ planned, after Linux (macOS builds, untested) |
 | | Xbox Series X\|S (Dev Mode) | ⬜ planned |
 | | PlayStation 5 (homebrew) | ⬜ being explored |
 
@@ -176,6 +177,33 @@ and please report how it goes.
 
 You need OpenGL 3.3 or newer, and 4.2 for the RE-Amped2 look. Java is only
 needed for the RE-Amped2 menus; without it they are left out.
+
+### On Android (new in 0.5.0)
+
+RE-Amped2 runs on Android phones and tablets with a gamepad. There is no app
+to download: like the PC game, it is built from your own disc, by the
+Windows installer.
+
+1. Run the installer as usual and tick **Also build an Android app (APK)**.
+   It downloads Java and Google's Android tools (about 3 GB, kept in the
+   install folder's `android` folder) after asking you, and adds about an
+   hour to the install.
+2. To put it on your phone straight away, switch on USB debugging
+   (Settings › About phone › tap *Build number* seven times, then
+   Developer options › USB debugging), connect the phone, allow the PC, and
+   tick **Install it on a phone connected over USB**. The installer copies
+   the game (about 4.3 GB) and the mods to it. **Copy the HD movies to the
+   phone too** adds about 4.3 GB more. Keep the phone unlocked while it
+   copies.
+3. Without a phone connected, the app is `RE-Amped2.apk` in the install
+   folder. Install it on the phone (allow installs from that source), start
+   it once, then copy the install folder's `game` folder to
+   `Android/data/org.reamped2.app/files/game` on the phone (and `mods` to
+   `.../files/mods` for the RE-Amped2 menus and looks).
+4. Pair a Bluetooth or USB gamepad and start **RE-Amped2** from the app
+   list. Settings go in `Android/data/org.reamped2.app/files/amped2.ini`.
+
+You need Android 10 or newer with OpenGL ES 3.2 (most phones since 2017).
 
 ---
 
@@ -274,7 +302,7 @@ and about 6.5 GB. The conversion runs in a minimised window. If you close it,
 
 ## Known issues
 
-In the current release (0.4.0):
+In the current release (0.5.0):
 
 - **Linux is a preview.** It has only been tested under WSL2 (Ubuntu 24.04
   on Windows): install, menus and riding a level. It has not been run on a
@@ -288,6 +316,12 @@ In the current release (0.4.0):
   next track starts. Sound effects keep working. Your `amped2.log` from such
   a session helps.
 - **An occasional 1–2 second hitch** in a level, about once an hour.
+- **Android needs a gamepad.** There are no touch controls yet. Older
+  phones are slower: a 2017 Mate 10 Pro runs levels at about 19 fps.
+- **Android: reinstalling from another PC** (a new install folder makes a
+  new signing key) needs the old app uninstalled first, which deletes its
+  saves. Copy `Android/data/org.reamped2.app/files/game/UDATA` off the phone
+  first and back afterwards.
 - **Not checked yet:** the Legend challenges. If you get that far, we'd
   like to hear how it went, good or bad.
 

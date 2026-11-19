@@ -23,6 +23,13 @@ opens the licence texts (see below).
    one used), and four checkboxes: desktop shortcut, the RE-Amped2 menus
    (the menu mod), the RE-Amped2 look (the branding pack and sharp fonts) and, unticked by
    default, HD movies (below). HD movies add 6.5 GB to the space needed.
+   Below them, unticked: **Also build an Android app (APK)**, with **Install
+   it on a phone connected over USB** and **Copy the HD movies to the phone
+   too** under it (stage 8, `tools\android\build_android.ps1`; about 8 GB
+   more on the PC). Its downloads (OpenJDK 17, Google's command-line tools
+   and the Android SDK/NDK, SDL 2.30.10; pinned and hash-checked) are listed
+   in the consent dialog (`AndroidTools.cs`), which also accepts Google's
+   Android SDK licence for the player.
    The page lists the build tools: found, missing but installable (winget),
    or missing with a download link. Folders under Program Files or Windows are
    refused, since the game writes its saves and `amped2.ini` beside itself.
