@@ -37,9 +37,11 @@ javac -nowarn -source 8 -target 8 -cp "$JAR" -d "$W/classes" \
     $(find "$SDLSRC/android-project/app/src/main/java" -name '*.java') 2>&1 | grep -v "^warning\|^Note:" || true
 "$BT/d8" --release --min-api 29 --lib "$JAR" --output "$W" $(find "$W/classes" -name '*.class')
 
-echo "Manifest and native libraries"
+echo "Manifest, icon and native libraries"
+# The launcher icon (android/res, made from branding/RE-Amped2.ico).
+"$BT/aapt2" compile --dir "$HERE/res" -o "$W/res.zip"
 "$BT/aapt2" link -o "$W/base.apk" --manifest "$HERE/AndroidManifest.xml" -I "$JAR" \
-    --min-sdk-version 29 --target-sdk-version 34
+    --min-sdk-version 29 --target-sdk-version 34 "$W/res.zip"
 cp "$BUILD/libmain.so" "$W/lib/arm64-v8a/"
 cp "$SDLPRE/lib/libSDL2.so" "$W/lib/arm64-v8a/"
 # Python's zipfile rather than zip(1), which many systems lack.
