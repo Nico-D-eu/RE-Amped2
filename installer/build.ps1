@@ -21,10 +21,15 @@
 
 .PARAMETER Unluac
     Path to unluac.jar (default: tools\bin\unluac.jar).
+
+.PARAMETER Toolkit
+    The xboxrecomp checkout to pack (default: ..\xboxrecomp beside the
+    project), e.g. a worktree of a branch that is not merged yet.
 #>
 param(
     [string]$Xdvdfs = '',
-    [string]$Unluac = ''
+    [string]$Unluac = '',
+    [string]$Toolkit = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,7 +37,7 @@ $ErrorActionPreference = 'Stop'
 $Installer = $PSScriptRoot
 $Project   = Split-Path -Parent $Installer
 $Root      = Split-Path -Parent $Project
-$Toolkit   = Join-Path $Root 'xboxrecomp'
+if (-not $Toolkit) { $Toolkit = Join-Path $Root 'xboxrecomp' }
 if (-not $Xdvdfs) { $Xdvdfs = Join-Path $Root 'xdvdfs.exe' }
 if (-not $Unluac) { $Unluac = Join-Path $Project 'tools\bin\unluac.jar' }
 
