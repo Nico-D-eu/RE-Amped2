@@ -9,6 +9,12 @@ namespace Amped2Installer
         [STAThread]
         static void Main(string[] args)
         {
+            // --prepare: no window, progress on stdout, an exit code (launchers).
+            if (Headless.Wanted(args))
+            {
+                Environment.ExitCode = Headless.Run(args);
+                return;
+            }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
