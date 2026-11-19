@@ -2145,10 +2145,9 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    that arrive after start-up are opened (on Android all do; only A got
    through before, as a key), and the GLES streaming rings are persistent
    through `GL_EXT_buffer_storage` (they mapped per upload: 1-2 fps).
-   Sound plays well. **Open:** rumble (SDL's HIDAPI layer fails to start
-   on Android 14+ with "RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED should
-   be specified", a known SDL 2.30 issue with targetSdk 34: try targetSdk
-   33, a newer SDL, or its Java fix); touch controls; the movie overlay in
+   Sound plays well. Rumble works too (xboxrecomp `0ad2d35`: SDL 2's
+   Android joystick rumble is unsupported, so the pad's SDL haptic device,
+   its Android vibrator, plays it). **Open:** touch controls; the movie overlay in
    one-window mode; an installer path for the APK; a signed release key.
    **The title screen on a phone (2026-11-19, Galaxy S25):** fixed. The
    stall below was Android's 32 KB per-thread signal stack: ART chains every
