@@ -2177,6 +2177,12 @@ int main(int argc, char **argv)
          * ranges taken (seen under the emulator's arm64 translation) and
          * the first contiguous allocation faulted. */
         setenv("RECOMP_EXT_VMA", "1", 0);
+        /* Landscape only. With no orientation hint SDL asks Android for
+         * "full user" (requestedOrientation 13) over the manifest's
+         * sensorLandscape, so a phone with rotation locked to portrait
+         * showed the game as a strip across the middle. SDL reads its
+         * hints from the environment too. */
+        setenv("SDL_IOS_ORIENTATIONS", "LandscapeLeft LandscapeRight", 0);
         /* amped2.ini lives here too: beside the program (ini_path's
          * default) is the app's read-only native-library folder. */
         if (dir) {
