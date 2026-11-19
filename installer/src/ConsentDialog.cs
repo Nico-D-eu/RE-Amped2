@@ -28,13 +28,14 @@ namespace Amped2Installer
         readonly Font _small = new Font("Segoe UI", 8.75f);
 
         /// <summary>Shows the dialog; true only when the player agreed.</summary>
-        public static bool Ask(IWin32Window owner, IList<ToolStatus> tools, bool menuPackages, bool hdMovies)
+        public static bool Ask(IWin32Window owner, IList<ToolStatus> tools, bool menuPackages, bool hdMovies,
+                               bool android = false)
         {
-            using (var d = new ConsentDialog(tools, menuPackages, hdMovies))
+            using (var d = new ConsentDialog(tools, menuPackages, hdMovies, android))
                 return d.ShowDialog(owner) == DialogResult.OK;
         }
 
-        ConsentDialog(IList<ToolStatus> tools, bool menuPackages, bool hdMovies)
+        ConsentDialog(IList<ToolStatus> tools, bool menuPackages, bool hdMovies, bool android)
         {
             SuspendLayout();
             Text = "RE-Amped2 Installer";
@@ -75,8 +76,9 @@ namespace Amped2Installer
                 Add(link);
             }
 
-            int count = tools.Count + (hdMovies ? MovieTools.Tools.Length : 0);
-            Add(Line(tools.Count == 0 ? "Download the HD movie tools?"
+            int count = tools.Count + (hdMovies ? MovieTools.Tools.Length : 0) + (android ? AndroidTools.Parts.Length : 0);
+            Add(Line(tools.Count == 0 && !hdMovies ? "Download the Android tools?"
+                     : tools.Count == 0 ? "Download the HD movie tools?"
                      : count == 1 ? "Install this free tool?" : $"Install these {count} free tools?", _h1, Ink, 8));
             if (tools.Count > 0)
             {
@@ -98,6 +100,17 @@ namespace Amped2Installer
                     AddTool(t.Name, t.Publisher, t.Purpose, t.Note, t.LicenseUrl);
                 Add(Line("Delete the tools\\bin folder to remove them. The HD copies of the movies are made from your own " +
                          "disc, on this PC, into mods\\movie_pack.", _small, Muted, 6));
+            }
+            if (android)
+            {
+                Add(Line("The Android app needs Java and Google's Android tools. With your permission, the installer " +
+                         "downloads fixed versions, checks them against known fingerprints and keeps them in the install " +
+                         "folder's android folder. Installing the Android SDK accepts Google's Android SDK licence for you.",
+                         _base, Body, 12));
+                foreach (var t in AndroidTools.Parts)
+                    AddTool(t.Name, t.Publisher, t.Purpose, t.Note, t.LicenseUrl);
+                Add(Line("Delete the android folder to remove them. The app is built from your own disc, on this PC.",
+                         _small, Muted, 6));
             }
             Add(Line("The installer also downloads the recompiler's Python packages (Capstone" +
                      (menuPackages ? "; NumPy and Pillow for the RE-Amped2 menus and sharp fonts" : "") +
