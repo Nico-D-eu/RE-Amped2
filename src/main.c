@@ -37,6 +37,10 @@
  *   Kernel imports: 158
  */
 
+/* Exit code when the game files aren't found (installer/recomplauncher.json
+ * explains it to the player). */
+#define AMPED2_EXIT_NO_GAME 10
+
 #if !defined(_WIN32)
 #define _GNU_SOURCE     /* REG_RIP, dladdr, strsignal */
 #endif
@@ -1604,6 +1608,17 @@ static void amped2_setup(void)
         host_putenv(b);
     }
     load_settings();
+    /* Started from RecompLauncher's Big Picture mode (a controller on the
+     * couch or a Steam Deck): full screen, unless amped2.ini or the
+     * environment already says how. RecompLauncher sets RECOMPLAUNCHER_MODE
+     * for every game it starts, from version 0.9.3. */
+    {
+        const char *mode = getenv("RECOMPLAUNCHER_MODE");
+        if (mode && !strcmp(mode, "bigpicture") && !getenv("RECOMP_WINDOW_MODE")) {
+            host_putenv("RECOMP_WINDOW_MODE=borderless");
+            fprintf(stderr, "[BOOT] started from RecompLauncher's Big Picture mode: full screen\n");
+        }
+    }
     /* The game's own HD mode: with 720p reported it renders 1280x720, 16:9,
      * with its HUD and menus laid out for it (see README, "Built-in HD and
      * widescreen modes"). VideoModes=none in amped2.ini gives 640x480 4:3. */
@@ -1741,7 +1756,9 @@ static int amped2_load(void)
                      searched);
             fprintf(stderr, "%s\n", msg);
             MessageBoxA(NULL, msg, "Recomp", MB_ICONERROR);
-            return 1;
+            /* Its own exit code, which launchers can explain to the player
+             * (exit_codes in installer/recomplauncher.json). */
+            return AMPED2_EXIT_NO_GAME;
         }
     }
     printf("XBE loaded: %zu bytes\n", s_xbe_size);
