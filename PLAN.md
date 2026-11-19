@@ -2146,9 +2146,11 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    after the player's consent; NDK build on Windows; APK with the launcher
    icon from `branding/RE-Amped2.ico`, signed with a key made on the PC;
    optional adb install and game copy). Checked end to end on this PC
-   (a 27 MB APK); not yet a whole install with the option, nor the
-   Windows-built APK on a phone (it would replace the WSL-signed test app,
-   which needs an uninstall, so the user decides). Linux and macOS stay
+   (a 27 MB APK); not yet a whole install with the option. The
+   Windows-built APK is on the S25 since 2026-11-19 (amped2 `a8eec95`
+   fixed its game copy, which had dropped the Animations folder level,
+   and made Android read amped2.ini from the files folder and skip the
+   boot movies until one-window mode draws them); ML1 58.5 fps. Linux and macOS stay
    their own install scripts, run on those machines.
    **Playable on a phone (2026-11-19, Galaxy S25 + Xbox Series X
    controller over Bluetooth):** ML1 holds 58.9 fps (GPU about 4.4 ms a
