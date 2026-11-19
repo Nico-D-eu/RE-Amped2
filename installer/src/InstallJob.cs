@@ -21,6 +21,7 @@ namespace Amped2Installer
         public bool HdMovies;        // fetch the movie tools and convert the movies afterwards (MovieTools)
         public bool Android;         // also build the Android app (tools\android\build_android.ps1)
         public bool AndroidToPhone;  // ... and install it on a phone connected over USB
+        public bool AndroidHdMovies; // ... with the HD movies (mods\movie_pack, about 4.3 GB on the phone)
         /// <summary>Build tools the player agreed to have installed (ConsentDialog); nothing else is.</summary>
         public HashSet<string> ApprovedTools = new HashSet<string>();
     }
@@ -541,8 +542,19 @@ namespace Amped2Installer
             var args = $"-NoProfile -ExecutionPolicy Bypass -File {ProcessRunner.Quote(script)}" +
                        $" -Amped2 {ProcessRunner.Quote(Amped2)} -Toolkit {ProcessRunner.Quote(Path.Combine(Src, "xboxrecomp"))}" +
                        $" -Work {ProcessRunner.Quote(work)} -Out {ProcessRunner.Quote(Dest)} -AcceptAndroidLicenses";
+            string hdNote = null;
             if (_o.AndroidToPhone)
+            {
                 args += $" -InstallOnPhone -Game {ProcessRunner.Quote(GameDir)} -Mods {ProcessRunner.Quote(Path.Combine(Dest, "mods"))}";
+                // The HD movies convert after the install, in the background,
+                // so on a first install they aren't there yet to copy.
+                if (_o.AndroidHdMovies && Directory.Exists(Path.Combine(Dest, @"mods\movie_pack")))
+                    args += " -HdMovies";
+                else if (_o.AndroidHdMovies)
+                    hdNote = "The HD movies weren't ready to copy to the phone (they convert after the install). When " +
+                             "they're done, copy the install folder's mods\\movie_pack folder to " +
+                             "Android/data/org.reamped2.app/files/mods on the phone.";
+            }
             double frac = 0;
             string last = "";
             int code = ProcessRunner.Run(PowerShellExe, args, Amped2, line =>
@@ -565,6 +577,8 @@ namespace Amped2Installer
                 r.AndroidApk = apk;
                 r.AndroidOnPhone = code == 0 && _o.AndroidToPhone;
             }
+            if (code == 0 && hdNote != null)
+                r.AndroidNote = hdNote;
             if (code != 0)
                 r.AndroidNote = File.Exists(apk)
                     ? "The Android app was built (RE-Amped2.apk in the install folder), but it couldn't be put on the phone: " + last

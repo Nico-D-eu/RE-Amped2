@@ -63,7 +63,7 @@ namespace Amped2Installer
         // ── Page 2: location ─────────────────────────────────────────
         TextBox _dirBox;
         Label _spaceLabel, _existingLabel, _toolsNote, _timeNote;
-        CheckBox _shortcutBox, _menuBox, _lookBox, _hdBox, _androidBox, _phoneBox;
+        CheckBox _shortcutBox, _menuBox, _lookBox, _hdBox, _androidBox, _phoneBox, _phoneHdBox;
         TableLayoutPanel _toolsList;
         LinkLabel _recheck;
         Toolchain _tools;
@@ -363,9 +363,24 @@ namespace Amped2Installer
                 AutoSize = true,
                 Margin = new Padding(18, 0, 0, 0),
             };
-            _androidBox.CheckedChanged += (s, e) => { _phoneBox.Enabled = _androidBox.Checked; UpdateSpace(); };
+            _phoneHdBox = new CheckBox
+            {
+                Text = "Copy the HD movies to the phone too (about 4.3 GB on the phone)",
+                Checked = false,
+                Enabled = false,
+                AutoSize = true,
+                Margin = new Padding(36, 0, 0, 0),
+            };
+            _androidBox.CheckedChanged += (s, e) =>
+            {
+                _phoneBox.Enabled = _androidBox.Checked;
+                _phoneHdBox.Enabled = _androidBox.Checked && _phoneBox.Checked;
+                UpdateSpace();
+            };
+            _phoneBox.CheckedChanged += (s, e) => _phoneHdBox.Enabled = _androidBox.Checked && _phoneBox.Checked;
             Add(page, _androidBox);
             Add(page, _phoneBox);
+            Add(page, _phoneHdBox);
             var androidNote = Para("Runs after the PC install: about an hour more. Downloads Java and Google's Android " +
                                    "tools (about 3 GB, kept in the install folder's android folder). Needs Android 10 or " +
                                    "later with OpenGL ES 3.2 (most phones since 2017).", Muted, _small);
@@ -732,6 +747,7 @@ namespace Amped2Installer
                 HdMovies = _hdBox.Checked,
                 Android = _androidBox.Checked,
                 AndroidToPhone = _androidBox.Checked && _phoneBox.Checked,
+                AndroidHdMovies = _androidBox.Checked && _phoneBox.Checked && _phoneHdBox.Checked,
                 ApprovedTools = approvedTools,
             };
             _installIntro.Text = "Sit back: the installer is building RE-Amped2 from your disc image, right here on your PC. " +

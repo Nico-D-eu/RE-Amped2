@@ -34,6 +34,7 @@ param(
     [string]$Out = '',
     [string]$Game = '',                 # extracted game folder, copied to the phone
     [string]$Mods = '',                 # optional mods folder (menus, packs), copied too
+    [switch]$HdMovies,                  # with -Mods: copy mods\movie_pack (the HD movies, about 4 GB) too
     [switch]$AcceptAndroidLicenses,
     [switch]$InstallOnPhone,
     [switch]$PackOnly                   # reuse an existing libmain.so in -Work (testing)
@@ -236,6 +237,17 @@ if ($InstallOnPhone) {
             Run $Adb @('push', $_.FullName, "$F/game/") "copy $($_.Name)"
         }
     }
-    if ($Mods -and (Test-Path $Mods)) { Run $Adb @('push', $Mods, "$F/") 'copy mods' }
+    if ($Mods -and (Test-Path $Mods)) {
+        # The menus (build), the packs and mods.json. Not cache (the game
+        # rebuilds it), and the HD movies only with -HdMovies: about 4 GB
+        # on the phone. mods/ is made first, for the reason above.
+        Write-Host '  copying the mods'
+        Run $Adb @('shell', 'mkdir', '-p', "$F/mods") 'make the mods folder'
+        $skip = @('cache')
+        if (-not $HdMovies) { $skip += 'movie_pack' }
+        Get-ChildItem $Mods | Where-Object { $skip -notcontains $_.Name } | ForEach-Object {
+            Run $Adb @('push', $_.FullName, "$F/mods/") "copy mods\$($_.Name)"
+        }
+    }
     Write-Host 'Installed. Start RE-Amped2 from the phone''s app list; a Bluetooth or USB gamepad plays it.'
 }
