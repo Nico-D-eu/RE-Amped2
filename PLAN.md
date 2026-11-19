@@ -2139,6 +2139,17 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    desktop GL at 57 fps, and OpenGL ES 3.2 through EGL on llvmpipe, the
    Android path, both showing the title correctly. The movie overlay is not
    drawn in this mode yet.
+   **Playable on a phone (2026-11-19, Galaxy S25 + Xbox Series X
+   controller over Bluetooth):** ML1 holds 58.9 fps (GPU about 4.4 ms a
+   frame) and the user played it. Two fixes in xboxrecomp `ab0f907`: pads
+   that arrive after start-up are opened (on Android all do; only A got
+   through before, as a key), and the GLES streaming rings are persistent
+   through `GL_EXT_buffer_storage` (they mapped per upload: 1-2 fps).
+   Sound plays well. **Open:** rumble (SDL's HIDAPI layer fails to start
+   on Android 14+ with "RECEIVER_EXPORTED or RECEIVER_NOT_EXPORTED should
+   be specified", a known SDL 2.30 issue with targetSdk 34: try targetSdk
+   33, a newer SDL, or its Java fix); touch controls; the movie overlay in
+   one-window mode; an installer path for the APK; a signed release key.
    **The title screen on a phone (2026-11-19, Galaxy S25):** fixed. The
    stall below was Android's 32 KB per-thread signal stack: ART chains every
    handler through its own on that stack, and the AC'97 trap path needs
