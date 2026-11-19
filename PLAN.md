@@ -2150,7 +2150,11 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    Windows-built APK is on the S25 since 2026-11-19 (amped2 `a8eec95`
    fixed its game copy, which had dropped the Animations folder level,
    and made Android read amped2.ini from the files folder and skip the
-   boot movies until one-window mode draws them); ML1 58.5 fps. Linux and macOS stay
+   boot movies until one-window mode draws them); ML1 58.5 fps. Movies are
+   drawn in one-window mode since toolkit `a17c04e` (on again on Android),
+   HD movie copies decode with MediaCodec on Android (amped2 `ecd555e`),
+   and the phone install copies the mods, the HD movies on request
+   (`8d7b3a0`). Linux and macOS stay
    their own install scripts, run on those machines.
    **Playable on a phone (2026-11-19, Galaxy S25 + Xbox Series X
    controller over Bluetooth):** ML1 holds 58.9 fps (GPU about 4.4 ms a
