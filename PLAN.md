@@ -2139,6 +2139,17 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    desktop GL at 57 fps, and OpenGL ES 3.2 through EGL on llvmpipe, the
    Android path, both showing the title correctly. The movie overlay is not
    drawn in this mode yet.
+   **In the installer (2026-11-19):** a tick box "Also build an Android
+   app (APK)" plus "Install it on a phone connected over USB"; the work is
+   `tools/android/build_android.ps1` (pinned OpenJDK 17, Google's
+   command-line tools and SDL 2.30.10; Android SDK/NDK through sdkmanager
+   after the player's consent; NDK build on Windows; APK with the launcher
+   icon from `branding/RE-Amped2.ico`, signed with a key made on the PC;
+   optional adb install and game copy). Checked end to end on this PC
+   (a 27 MB APK); not yet a whole install with the option, nor the
+   Windows-built APK on a phone (it would replace the WSL-signed test app,
+   which needs an uninstall, so the user decides). Linux and macOS stay
+   their own install scripts, run on those machines.
    **Playable on a phone (2026-11-19, Galaxy S25 + Xbox Series X
    controller over Bluetooth):** ML1 holds 58.9 fps (GPU about 4.4 ms a
    frame) and the user played it. Two fixes in xboxrecomp `ab0f907`: pads
