@@ -73,6 +73,31 @@ function Run($exe, [string[]]$a, [string]$what) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
+# adb push that survives the USB connection dropping, which it does: a
+# test install lost the phone 45 s into Audio ("failed to read copy
+# response: EOF") and left a file cut off at 97%. On a failure, wait up to
+# two minutes for the phone to come back and push the whole thing again (a
+# push overwrites, so a cut-off file is replaced); three tries in all.
+function Push($adb, [string]$src, [string]$dst, [string]$what) {
+    for ($try = 1; ; $try++) {
+        & $adb push $src $dst
+        if ($LASTEXITCODE -eq 0) { return }
+        if ($try -ge 3) {
+            throw "$what failed (exit $LASTEXITCODE) after $try tries: the USB connection keeps dropping " +
+                  '(try another cable or port, and keep the phone unlocked)'
+        }
+        Write-Host "  $what was cut off (the phone dropped off USB?); waiting for it to try again"
+        # PowerShell 5.1 makes a native tool's redirected stderr an error
+        # record, which 'Stop' would turn fatal.
+        $eap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        for ($w = 0; $w -lt 60 -and -not ((& $adb get-state 2>$null) -match 'device'); $w++) {
+            Start-Sleep -Seconds 2
+        }
+        $ErrorActionPreference = $eap
+    }
+}
+
 Step 'Downloads'
 foreach ($p in $Pins) {
     $f = Join-Path $Dl $p.Name
@@ -234,7 +259,7 @@ if ($InstallOnPhone) {
         # loading a level without its animations (2026-11-19).
         Run $Adb @('shell', 'mkdir', '-p', "$F/game") 'make the game folder'
         Get-ChildItem $Game | Where-Object { @('UDATA', 'TDATA', 'CACHE') -notcontains $_.Name } | ForEach-Object {
-            Run $Adb @('push', $_.FullName, "$F/game/") "copy $($_.Name)"
+            Push $Adb $_.FullName "$F/game/" "copy $($_.Name)"
         }
     }
     if ($Mods -and (Test-Path $Mods)) {
@@ -246,7 +271,7 @@ if ($InstallOnPhone) {
         $skip = @('cache')
         if (-not $HdMovies) { $skip += 'movie_pack' }
         Get-ChildItem $Mods | Where-Object { $skip -notcontains $_.Name } | ForEach-Object {
-            Run $Adb @('push', $_.FullName, "$F/mods/") "copy mods\$($_.Name)"
+            Push $Adb $_.FullName "$F/mods/" "copy mods\$($_.Name)"
         }
     }
     Write-Host 'Installed. Start RE-Amped2 from the phone''s app list; a Bluetooth or USB gamepad plays it.'
