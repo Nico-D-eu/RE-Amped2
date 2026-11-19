@@ -28,7 +28,7 @@
     .\tools\android\build_android.ps1 -Work C:\Temp\a2android -AcceptAndroidLicenses -InstallOnPhone -Game .\game
 #>
 param(
-    [string]$Amped2 = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    [string]$Amped2 = '',               # project folder (default: two levels above this script)
     [string]$Toolkit = '',
     [Parameter(Mandatory = $true)] [string]$Work,
     [string]$Out = '',
@@ -40,6 +40,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty in parameter defaults
+# under -File, so the default is worked out here.
+if (-not $Amped2) { $Amped2 = Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
 if (-not $Toolkit) { $Toolkit = Join-Path (Split-Path -Parent $Amped2) 'xboxrecomp' }
 if (-not $Out) { $Out = $Work }
 New-Item -ItemType Directory -Force $Work, $Out | Out-Null
@@ -224,6 +227,11 @@ if ($InstallOnPhone) {
     $F = "/sdcard/Android/data/$Package/files"
     if ($Game) {
         Write-Host '  copying the game (a few minutes)'
+        # The game folder must exist first: "adb push Dir parent/" into a
+        # parent that is not there yet makes parent a copy of Dir, so the
+        # first folder (Animations) lost its own level and the game crashed
+        # loading a level without its animations (2026-11-19).
+        Run $Adb @('shell', 'mkdir', '-p', "$F/game") 'make the game folder'
         Get-ChildItem $Game | Where-Object { @('UDATA', 'TDATA', 'CACHE') -notcontains $_.Name } | ForEach-Object {
             Run $Adb @('push', $_.FullName, "$F/game/") "copy $($_.Name)"
         }
