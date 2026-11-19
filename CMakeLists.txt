@@ -97,7 +97,7 @@ if(ANDROID)
     set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME main)
     set_source_files_properties(src/main.c PROPERTIES COMPILE_DEFINITIONS main=SDL_main)
     find_package(SDL2 REQUIRED)
-    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 log android)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 log android mediandk)  # mediandk: movie_pack.c's MediaCodec
 else()
     add_executable(${PROJECT_NAME} WIN32
         ${GAME_SOURCES}

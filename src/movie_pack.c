@@ -17,7 +17,8 @@
  *
  * On by default when mods\movie_pack exists; AMPED2_MOVIE_PACK=0 (ini
  * [Game] MoviePack=0) turns it off. On Linux and other POSIX hosts the
- * system's FFmpeg decodes instead (see the POSIX half below).
+ * system's FFmpeg decodes instead (see the POSIX half below); on Android,
+ * which has no FFmpeg program, the platform's MediaCodec does.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -353,6 +354,51 @@ static uint64_t now_ms(void)
     return (uint64_t)t.tv_sec * 1000u + (uint64_t)t.tv_nsec / 1000000u;
 }
 
+/* The next free slot of the ring (w x h pixels allocated), or NULL when the
+ * decoder is to stop. The renderer frees slots as the title moves on. A
+ * movie skipped with Start never reports its end, so a ring nobody has
+ * drawn from for 10 s stops the decoder. */
+static Frame *wait_slot(uint32_t w, uint32_t h)
+{
+    Frame *f;
+
+    pthread_mutex_lock(&s_mx);
+    while (s_count == RING && !s_stop) {
+        struct timespec until;
+        clock_gettime(CLOCK_REALTIME, &until);
+        until.tv_nsec += 100000000L;
+        if (until.tv_nsec >= 1000000000L) {
+            until.tv_sec++;
+            until.tv_nsec -= 1000000000L;
+        }
+        pthread_cond_timedwait(&s_cv, &s_mx, &until);
+        if (s_count == RING && now_ms() - s_last_use > 10000) {
+            s_head = s_count = 0;
+            s_stop = 1;
+        }
+    }
+    f = &s_ring[(s_head + s_count) % RING];
+    pthread_mutex_unlock(&s_mx);
+    if (s_stop)
+        return NULL;
+    if (!f->px || f->w != w || f->h != h) {
+        free(f->px);
+        f->px = (uint8_t *)malloc((size_t)w * h * 4);
+        f->w = w;
+        f->h = h;
+    }
+    return f->px ? f : NULL;
+}
+
+/* The slot wait_slot handed out is filled: the renderer may take it. */
+static void slot_done(void)
+{
+    pthread_mutex_lock(&s_mx);
+    s_count++;
+    pthread_mutex_unlock(&s_mx);
+}
+
+#if !defined(__ANDROID__)
 /* The bundled tool if the install has one, else the name for PATH. */
 static const char *tool(const char *name, char *buf, size_t n)
 {
@@ -520,36 +566,8 @@ static void *decode_thread(void *unused)
     }
     s_pid = pid;
     while (!s_stop) {
-        Frame *f;
-        /* A free slot: the renderer frees them as the title moves on. A
-         * movie skipped with Start never reports its end, so a ring nobody
-         * has drawn from for 10 s ends the thread. */
-        pthread_mutex_lock(&s_mx);
-        while (s_count == RING && !s_stop) {
-            struct timespec until;
-            clock_gettime(CLOCK_REALTIME, &until);
-            until.tv_nsec += 100000000L;
-            if (until.tv_nsec >= 1000000000L) {
-                until.tv_sec++;
-                until.tv_nsec -= 1000000000L;
-            }
-            pthread_cond_timedwait(&s_cv, &s_mx, &until);
-            if (s_count == RING && now_ms() - s_last_use > 10000) {
-                s_head = s_count = 0;
-                s_stop = 1;
-            }
-        }
-        f = &s_ring[(s_head + s_count) % RING];
-        pthread_mutex_unlock(&s_mx);
-        if (s_stop)
-            break;
-        if (!f->px || f->w != w || f->h != h) {
-            free(f->px);
-            f->px = (uint8_t *)malloc((size_t)w * h * 4);
-            f->w = w;
-            f->h = h;
-        }
-        if (!f->px || !read_full(fd, f->px, (size_t)w * h * 4))
+        Frame *f = wait_slot(w, h);
+        if (!f || !read_full(fd, f->px, (size_t)w * h * 4))
             break;                          /* the end of the movie, or stopped */
         f->ms = frames < ntimes ? times[frames]
               : (ntimes ? times[ntimes - 1] : 0) + 33 * (long long)(frames + 1 - ntimes);
@@ -567,9 +585,7 @@ static void *decode_thread(void *unused)
             continue;
         }
         skipped = 0;
-        pthread_mutex_lock(&s_mx);
-        s_count++;
-        pthread_mutex_unlock(&s_mx);
+        slot_done();
         frames++;
     }
     fprintf(stderr, "  [MOVIES] %s: %u frames decoded\n", s_file, frames);
@@ -580,6 +596,221 @@ static void *decode_thread(void *unused)
     free(times);
     return NULL;
 }
+
+#else  /* Android: MediaCodec */
+
+/* The copy demuxed by AMediaExtractor and decoded by AMediaCodec into byte
+ * buffers (no Surface: the frames go through the CPU compositor anyway),
+ * then converted to BGRA. The output layout depends on the decoder: planar
+ * I420 (COLOR_FormatYUV420Planar, and the "flexible" format from Google's
+ * software decoders) or semi-planar NV12 (COLOR_FormatYUV420SemiPlanar and
+ * the vendors' variants, Qualcomm's with a 128-byte stride and 32-line
+ * planes), with "stride" and "slice-height" when the decoder reports them.
+ * BT.601 limited range, as the XMV pictures it replaces. */
+#include <media/NdkMediaCodec.h>
+#include <media/NdkMediaExtractor.h>
+#include <media/NdkMediaFormat.h>
+
+typedef struct {
+    int32_t fmt, w, h, stride, slice, cl, ct, cr, cb;
+    int nv12;
+} YuvLayout;
+
+static void layout_from(AMediaFormat *f, YuvLayout *l, int sw_decoder)
+{
+    int32_t v;
+    l->fmt = AMediaFormat_getInt32(f, AMEDIAFORMAT_KEY_COLOR_FORMAT, &v) ? v : 19;
+    if (AMediaFormat_getInt32(f, AMEDIAFORMAT_KEY_WIDTH, &v)) l->w = v;
+    if (AMediaFormat_getInt32(f, AMEDIAFORMAT_KEY_HEIGHT, &v)) l->h = v;
+    l->stride = AMediaFormat_getInt32(f, AMEDIAFORMAT_KEY_STRIDE, &v) && v >= l->w ? v : 0;
+    l->slice = AMediaFormat_getInt32(f, "slice-height", &v) && v >= l->h ? v : 0;
+    l->cl = AMediaFormat_getInt32(f, "crop-left", &v) ? v : 0;
+    l->ct = AMediaFormat_getInt32(f, "crop-top", &v) ? v : 0;
+    l->cr = AMediaFormat_getInt32(f, "crop-right", &v) ? v : l->w - 1;
+    l->cb = AMediaFormat_getInt32(f, "crop-bottom", &v) ? v : l->h - 1;
+    switch (l->fmt) {
+    case 19:                    /* COLOR_FormatYUV420Planar */
+        l->nv12 = 0;
+        break;
+    case 0x7F420888:            /* COLOR_FormatYUV420Flexible */
+        l->nv12 = !sw_decoder;
+        break;
+    case 0x7FA30C04:            /* Qualcomm NV12, 128-byte stride, 32-line planes */
+        l->nv12 = 1;
+        if (!l->stride) l->stride = (l->w + 127) & ~127;
+        if (!l->slice) l->slice = (l->h + 31) & ~31;
+        break;
+    default:                    /* 21 COLOR_FormatYUV420SemiPlanar and the rest */
+        l->nv12 = 1;
+        break;
+    }
+    if (!l->stride) l->stride = l->w;
+    if (!l->slice) l->slice = l->h;
+}
+
+static inline uint8_t clamp8(int v)
+{
+    return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
+/* The cropped picture into px (BGRA, ow x oh). Fixed point, 2x2 chroma. */
+static void yuv_to_bgra(const uint8_t *buf, size_t size, const YuvLayout *l,
+                        uint8_t *px, uint32_t ow, uint32_t oh)
+{
+    const size_t ysz = (size_t)l->stride * l->slice;
+    const size_t cstride = l->nv12 ? (size_t)l->stride : (size_t)l->stride / 2;
+    const uint8_t *yp = buf, *up = buf + ysz, *vp;
+    uint32_t x, y;
+
+    if (l->nv12)
+        vp = up + 1;
+    else
+        vp = up + (size_t)cstride * (l->slice / 2);
+    if (ysz + (l->nv12 ? ysz / 2 : 2 * cstride * (l->slice / 2)) > size + l->stride)
+        return;                 /* smaller than the layout says: leave the slot */
+    for (y = 0; y < oh; y++) {
+        const uint32_t sy = (uint32_t)l->ct + y;
+        const uint8_t *yr = yp + (size_t)sy * l->stride;
+        const uint8_t *ur = up + (size_t)(sy / 2) * cstride;
+        const uint8_t *vr = vp + (size_t)(sy / 2) * cstride;
+        uint8_t *out = px + (size_t)y * ow * 4;
+        for (x = 0; x < ow; x++) {
+            const uint32_t sx = (uint32_t)l->cl + x;
+            const size_t ci = l->nv12 ? (sx / 2) * 2 : sx / 2;
+            const int c = ((int)yr[sx] - 16) * 298;
+            const int d = (int)ur[ci] - 128, e = (int)vr[ci] - 128;
+            out[0] = clamp8((c + 516 * d + 128) >> 8);
+            out[1] = clamp8((c - 100 * d - 208 * e + 128) >> 8);
+            out[2] = clamp8((c + 409 * e + 128) >> 8);
+            out[3] = 0xFF;
+            out += 4;
+        }
+    }
+}
+
+static void *decode_thread(void *unused)
+{
+    AMediaExtractor *ex = NULL;
+    AMediaCodec *codec = NULL;
+    AMediaFormat *fmt = NULL;
+    const char *mime = NULL;
+    YuvLayout l;
+    unsigned frames = 0, skipped = 0;
+    int fd, in_eos = 0, sw_decoder = 0;
+    size_t i, ntracks;
+    struct stat sb;
+    char *name = NULL;
+
+    (void)unused;
+    memset(&l, 0, sizeof l);
+    fd = open(s_file, O_RDONLY);
+    if (fd < 0 || fstat(fd, &sb) != 0)
+        goto out;
+    ex = AMediaExtractor_new();
+    if (AMediaExtractor_setDataSourceFd(ex, fd, 0, sb.st_size) != AMEDIA_OK)
+        goto out;
+    ntracks = AMediaExtractor_getTrackCount(ex);
+    for (i = 0; i < ntracks; i++) {
+        AMediaFormat *tf = AMediaExtractor_getTrackFormat(ex, i);
+        const char *m = NULL;
+        if (AMediaFormat_getString(tf, AMEDIAFORMAT_KEY_MIME, &m) && !strncmp(m, "video/", 6)) {
+            AMediaExtractor_selectTrack(ex, i);
+            fmt = tf;
+            mime = m;
+            break;
+        }
+        AMediaFormat_delete(tf);
+    }
+    if (!fmt)
+        goto out;
+    AMediaFormat_getInt32(fmt, AMEDIAFORMAT_KEY_WIDTH, &l.w);
+    AMediaFormat_getInt32(fmt, AMEDIAFORMAT_KEY_HEIGHT, &l.h);
+    codec = AMediaCodec_createDecoderByType(mime);
+    if (!codec || AMediaCodec_configure(codec, fmt, NULL, NULL, 0) != AMEDIA_OK
+            || AMediaCodec_start(codec) != AMEDIA_OK) {
+        fprintf(stderr, "  [MOVIES] %s: no decoder for %s\n", s_file, mime);
+        goto out;
+    }
+    if (AMediaCodec_getName(codec, &name) == AMEDIA_OK && name) {
+        sw_decoder = !strncmp(name, "c2.android.", 11) || !strncmp(name, "OMX.google.", 11);
+        fprintf(stderr, "  [MOVIES] %s: %dx%d, %s\n", s_file, l.w, l.h, name);
+        AMediaCodec_releaseName(codec, name);
+    }
+    layout_from(fmt, &l, sw_decoder);
+    while (!s_stop) {
+        AMediaCodecBufferInfo info;
+        ssize_t oi;
+        if (!in_eos) {
+            ssize_t ii = AMediaCodec_dequeueInputBuffer(codec, 2000);
+            if (ii >= 0) {
+                size_t cap = 0;
+                uint8_t *ib = AMediaCodec_getInputBuffer(codec, (size_t)ii, &cap);
+                ssize_t n = ib ? AMediaExtractor_readSampleData(ex, ib, cap) : -1;
+                if (n < 0) {
+                    AMediaCodec_queueInputBuffer(codec, (size_t)ii, 0, 0, 0,
+                                                 AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
+                    in_eos = 1;
+                } else {
+                    AMediaCodec_queueInputBuffer(codec, (size_t)ii, 0, (size_t)n,
+                                                 (uint64_t)AMediaExtractor_getSampleTime(ex), 0);
+                    AMediaExtractor_advance(ex);
+                }
+            }
+        }
+        oi = AMediaCodec_dequeueOutputBuffer(codec, &info, 5000);
+        if (oi == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
+            AMediaFormat *of = AMediaCodec_getOutputFormat(codec);
+            layout_from(of, &l, sw_decoder);
+            AMediaFormat_delete(of);
+            fprintf(stderr, "  [MOVIES] decoder output: format 0x%X, %dx%d, stride %d, slice %d, crop %d,%d-%d,%d, %s\n",
+                    (unsigned)l.fmt, l.w, l.h, l.stride, l.slice, l.cl, l.ct, l.cr, l.cb,
+                    l.nv12 ? "NV12" : "I420");
+            continue;
+        }
+        if (oi < 0)
+            continue;
+        if (info.size > 0) {
+            long long ms = info.presentationTimeUs / 1000;
+            uint32_t ow = (uint32_t)(l.cr - l.cl + 1), oh = (uint32_t)(l.cb - l.ct + 1);
+            /* Late: drop it, at most two in a row (see the FFmpeg path). */
+            if (s_frame_ms >= 0 && ms + 50 < s_frame_ms && skipped < 2) {
+                skipped++;
+            } else if (ow && oh && ow <= 8192 && oh <= 8192) {
+                Frame *f = wait_slot(ow, oh);
+                size_t bsz = 0;
+                uint8_t *ob = AMediaCodec_getOutputBuffer(codec, (size_t)oi, &bsz);
+                skipped = 0;
+                if (!f) {
+                    AMediaCodec_releaseOutputBuffer(codec, (size_t)oi, false);
+                    break;
+                }
+                if (ob) {
+                    yuv_to_bgra(ob + info.offset, (size_t)info.size, &l, f->px, ow, oh);
+                    f->ms = ms;
+                    slot_done();
+                }
+            }
+            frames++;
+        }
+        AMediaCodec_releaseOutputBuffer(codec, (size_t)oi, false);
+        if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM)
+            break;
+    }
+    fprintf(stderr, "  [MOVIES] %s: %u frames decoded\n", s_file, frames);
+out:
+    if (codec) {
+        AMediaCodec_stop(codec);
+        AMediaCodec_delete(codec);
+    }
+    if (fmt)
+        AMediaFormat_delete(fmt);
+    if (ex)
+        AMediaExtractor_delete(ex);
+    if (fd >= 0)
+        close(fd);
+    return NULL;
+}
+#endif
 
 /* Stop the decoder and empty the ring. */
 static void stop_movie(void)

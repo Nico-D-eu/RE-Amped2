@@ -2184,12 +2184,6 @@ int main(int argc, char **argv)
             snprintf(ini, sizeof ini, "%s/amped2.ini", dir);
             setenv("AMPED2_INI", ini, 0);
         }
-        /* Movies off: the one-window GL mode (the only one Android has)
-         * does not draw the movie picture yet, so the boot movies were two
-         * minutes of black screen. android_env.txt can still turn them on
-         * (AMPED2_PLAY_MOVIES=1); amped2.ini cannot, as the environment
-         * wins over it. */
-        setenv("AMPED2_PLAY_MOVIES", "0", 0);
         /* android_env.txt beside amped2.ini: KEY=VALUE lines set before
          * anything starts, as a shell would on the other platforms (there
          * is no shell to start an app from on Android). */
