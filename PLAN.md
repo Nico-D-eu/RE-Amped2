@@ -2213,6 +2213,37 @@ Cannot be tested without a Mac; the qemu run covers the arm64 half.
    installed here) and a console for the spike.
 7. **PS5 (Phase 14):** unchanged; research only.
 
+### Phase 28: launchers (RecompLauncher, Quiver) — in 0.5.0
+
+**Goal:** a player can install, set up, configure and play RE-Amped2 from
+RecompLauncher without our wizard, with their saves backed up.
+
+Done (2026-11-19, for 0.5.0):
+- [x] `RE-Amped2-Setup.exe --prepare --game --dir [--menus] [--look]
+  [--accept-tools]`: the wizard's InstallJob without a window, progress
+  lines on stdout, exit codes 0-6 (installer/README.md).
+- [x] `installer/recomplauncher.json` (validated against RecompLauncher's
+  schema): disc check, prepare with licence and option ticks, start, saves,
+  ten amped2.ini settings, folders, actions, exit-code messages.
+- [x] `RE-Amped2-v<version>-Windows-x64.zip` from build.ps1 and the
+  Installer workflow (prepare.version = release version, so updates
+  rebuild).
+- [x] Game: borderless in Big Picture mode (`RECOMPLAUNCHER_MODE`), exit
+  code 10 when the game files are missing.
+- [x] Tested with the zip unpacked as the launcher does: the failure exit
+  codes, a full build (29.5 min) and a Big Picture start.
+
+Open:
+- [ ] Check the file in RecompLauncher's own Developer tools ("Add a build")
+  and a real install from the launcher once 0.5.0 is published, including
+  disc detection (the schema documents `xdvdfs` for Xbox 360 images) and
+  how it edits the commented-out keys in amped2.ini.
+- [ ] Linux through the launcher: `install.sh --prepare` (no prompts,
+  missing packages as a message) and a Linux-x64 asset with the file.
+- [ ] Quiver: no setup step or save locations in its public docs; ask its
+  author whether a prepare-like step is planned.
+- [ ] `game.dumps` from Redump (verified-disc badge), cosmetic.
+
 ## Risks
 
 | Risk | Impact | Mitigation |
