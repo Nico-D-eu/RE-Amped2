@@ -101,6 +101,52 @@ not ignored, so never `game\`, `mods\`, generated code or build output),
 `installer\dist\RE-Amped2-Setup.exe`. Uncommitted changes are included;
 `manifest.txt` in the payload (and `install-info.txt` after an install)
 records the commits with `+modified`. Commit both repos first for a release.
+`-Toolkit <path>` packs another xboxrecomp checkout (a worktree of a branch
+that isn't merged yet). The build ends with `pack-launcher-zip.ps1`, which
+writes `dist\RE-Amped2-v<version>-Windows-x64.zip` (below).
+
+## For launchers: `--prepare` and recomplauncher.json
+
+```
+RE-Amped2-Setup.exe --prepare --game <disc image> --dir <folder> [--menus] [--look] [--accept-tools]
+```
+
+runs the install with no window: the same `InstallJob` the wizard runs
+(`src\Headless.cs`), into `<folder>`. stdout carries only progress lines in
+RecompLauncher's form, `progress 0.420 Compiling the game: ...`; messages go
+to stderr and the full log to `<folder>\install.log`. No desktop shortcut, no
+HD movies, no Android app, and the wizard's registry entry is left alone.
+Build tools are installed only with `--accept-tools` (the player's tick in
+the launcher stands in for the consent dialog); without it a missing tool
+ends the run with exit code 3 and its name.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Installed; `RE-Amped2.exe` is in the folder |
+| 1 | Bad arguments, or the wizard is open |
+| 2 | Not the retail Amped 2 disc (USA or Europe) |
+| 3 | Build tools missing and not allowed, or not installable on this PC |
+| 4 | The build failed (`install.log`) |
+| 5 | Cancelled (Ctrl+C) |
+| 6 | A folder the game can't keep its saves in (Program Files, Windows, a drive's top) |
+
+The game itself exits with 10 when it can't find its game files.
+
+`recomplauncher.json` (this folder) describes RE-Amped2 to
+[RecompLauncher](https://recomplauncher.com): the disc it wants, the
+`prepare` step above with licence and option ticks, `RE-Amped2.exe` to
+start, the saves (`game\UDATA`, `game\TDATA`, `amped2.ini`,
+`devchallenges.json`), the `amped2.ini` settings it shows on the game's
+page, folders, buttons and messages for the exit codes. It validates against
+https://recomplauncher.com/schema/recomplauncher.json. `pack-launcher-zip.ps1`
+puts it beside `RE-Amped2-Setup.exe` in the release zip and sets
+`prepare.version` to the installer's version, so every update builds the
+game again (it is compiled from that release's sources). When `amped2.ini`
+keys change, change the `settings` here too. RecompLauncher's Developer
+tools (Settings › Developers, "Add a build" on an unzipped release) check
+the file. In Big Picture mode RecompLauncher sets
+`RECOMPLAUNCHER_MODE=bigpicture`, and the game then starts borderless unless
+`WindowMode` is set.
 
 ### Release builds on GitHub
 
@@ -117,7 +163,8 @@ workflow), so anyone can check where a release comes from:
   `-Unluac` to `build.ps1`).
 
 The installer comes out as a workflow artifact, with its SHA-256 in the run's
-summary. `.github/workflows/linux.yml` packs the Linux tarball
+summary, and the launcher zip as a second one (again with the signed
+installer once signing is on). `.github/workflows/linux.yml` packs the Linux tarball
 (`tools/linux/package.sh`, see DEVELOPING "Linux release") from the same two
 commits on the same triggers; the toolkit commit must include the Linux back
 end for that tarball to build. Signing through [SignPath Foundation](https://signpath.org/) is
