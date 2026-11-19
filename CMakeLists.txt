@@ -84,11 +84,27 @@ add_custom_target(amped2_version
     BYPRODUCTS ${AMPED2_VERSION_C}
     COMMENT "Build version")
 
-add_executable(${PROJECT_NAME} WIN32
-    ${GAME_SOURCES}
-    ${RECOMP_GEN_SOURCES}
-    ${AMPED2_VERSION_C}
-)
+if(ANDROID)
+    # Android: the game is libmain.so, the library SDL's Java activity loads
+    # and whose SDL_main it runs on its own thread. main.c's main() is that
+    # SDL_main (see the Android block at the top of main()). android/ holds
+    # the activity and the APK script.
+    add_library(${PROJECT_NAME} SHARED
+        ${GAME_SOURCES}
+        ${RECOMP_GEN_SOURCES}
+        ${AMPED2_VERSION_C}
+    )
+    set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME main)
+    set_source_files_properties(src/main.c PROPERTIES COMPILE_DEFINITIONS main=SDL_main)
+    find_package(SDL2 REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL2::SDL2 log android mediandk)  # mediandk: movie_pack.c's MediaCodec
+else()
+    add_executable(${PROJECT_NAME} WIN32
+        ${GAME_SOURCES}
+        ${RECOMP_GEN_SOURCES}
+        ${AMPED2_VERSION_C}
+    )
+endif()
 add_dependencies(${PROJECT_NAME} amped2_version)
 
 # Coverage markers in the generated code (RECOMP_REACHED in recomp_types.h):

@@ -37,6 +37,10 @@
  *   Kernel imports: 158
  */
 
+/* Exit code when the game files aren't found (installer/recomplauncher.json
+ * explains it to the player). */
+#define AMPED2_EXIT_NO_GAME 10
+
 #if !defined(_WIN32)
 #define _GNU_SOURCE     /* REG_RIP, dladdr, strsignal */
 #endif
@@ -48,7 +52,14 @@
 #include <dlfcn.h>
 #include <signal.h>
 #include <time.h>
+#include <unistd.h>          /* chdir (Android) */
+#include <sched.h>           /* sched_setaffinity (Android) */
+#include <errno.h>
+#if defined(__APPLE__)
+#include <sys/ucontext.h>   /* <ucontext.h> needs _XOPEN_SOURCE on macOS */
+#else
 #include <ucontext.h>
+#endif
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -957,18 +968,79 @@ static void crash_report(int sig, uintptr_t addr, void *rip)
     copy_log(dir);
 }
 
+#if defined(__aarch64__) && defined(__ANDROID__)
+static volatile unsigned long g_android_faults;
+static volatile uintptr_t g_android_fault_addr, g_android_fault_pc;
+static volatile int g_android_fault_sig;
+
+/* RECOMP_FAULT_REPORT: once a second, how many faults the handler took and
+ * the last one (address, guest address, pc as library offset). */
+static void *android_fault_reporter(void *unused)
+{
+    unsigned long last = 0;
+    (void)unused;
+    for (;;) {
+        unsigned long n = g_android_faults;
+        uintptr_t pc = g_android_fault_pc, a = g_android_fault_addr;
+        Dl_info di;
+        const char *sym = "?";
+        uintptr_t off = 0;
+        if (pc && dladdr((void *)pc, &di)) {
+            sym = di.dli_sname ? di.dli_sname : "?";
+            off = pc - (uintptr_t)(di.dli_saddr ? di.dli_saddr : di.dli_fbase);
+        }
+        fprintf(stderr, "[FAULTS] %lu (+%lu/s), last sig %d addr %p guest 0x%08X pc %p %s+0x%lx\n",
+                n, n - last, g_android_fault_sig, (void *)a,
+                (uint32_t)(a - (uintptr_t)g_xbox_mem_offset), (void *)pc, sym,
+                (unsigned long)off);
+        {   /* Once: the mappings around the faulting address. */
+            static int shown;
+            FILE *m;
+            char ln[512];
+            if (!shown && a && (m = fopen("/proc/self/maps", "r")) != NULL) {
+                shown = 1;
+                while (fgets(ln, sizeof ln, m)) {
+                    unsigned long lo, hi;
+                    if (sscanf(ln, "%lx-%lx", &lo, &hi) == 2
+                            && hi + (64ul << 20) > a && lo < a + (64ul << 20))
+                        fprintf(stderr, "[FAULTS] map %s%s", ln,
+                                (a >= lo && a < hi) ? "        ^ holds the address\n" : "");
+                }
+                fclose(m);
+            }
+        }
+        last = n;
+        sleep(1);
+    }
+    return NULL;
+}
+#endif
+
 static void fault_handler(int sig, siginfo_t *si, void *ucv)
 {
     extern XBOX_THREAD_LOCAL uint32_t g_xbox_current_dpc;
     uintptr_t addr = (uintptr_t)si->si_addr;
     void *rip = NULL;
 
+#if defined(__aarch64__) && defined(__ANDROID__)
+    /* Recorded only (no stdio, no reads through the context's pointers):
+     * android_fault_reporter prints them from a normal thread. */
+    __atomic_add_fetch(&g_android_faults, 1, __ATOMIC_RELAXED);
+    g_android_fault_addr = addr;
+    g_android_fault_pc = (uintptr_t)((ucontext_t *)ucv)->uc_mcontext.pc;
+    g_android_fault_sig = sig;
+#endif
     if (xbox_PosixMmioFault(ucv, addr))
         return;                     /* emulated register: resume after it */
 #if defined(__linux__) && defined(__x86_64__)
     rip = (void *)((ucontext_t *)ucv)->uc_mcontext.gregs[REG_RIP];
 #elif defined(__linux__) && defined(__aarch64__)
     rip = (void *)((ucontext_t *)ucv)->uc_mcontext.pc;
+#elif defined(__APPLE__) && defined(__aarch64__)
+    /* macOS keeps the thread state behind a pointer, with its own names. */
+    rip = (void *)(uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__pc;
+#elif defined(__APPLE__) && defined(__x86_64__)
+    rip = (void *)(uintptr_t)((ucontext_t *)ucv)->uc_mcontext->__ss.__rip;
 #endif
     fprintf(stderr, "[CRASH] %s at RIP=0x%llX, fault addr=0x%llX\n", strsignal(sig),
             (unsigned long long)(uintptr_t)rip, (unsigned long long)addr);
@@ -1536,6 +1608,17 @@ static void amped2_setup(void)
         host_putenv(b);
     }
     load_settings();
+    /* Started from RecompLauncher's Big Picture mode (a controller on the
+     * couch or a Steam Deck): full screen, unless amped2.ini or the
+     * environment already says how. RecompLauncher sets RECOMPLAUNCHER_MODE
+     * for every game it starts, from version 0.9.3. */
+    {
+        const char *mode = getenv("RECOMPLAUNCHER_MODE");
+        if (mode && !strcmp(mode, "bigpicture") && !getenv("RECOMP_WINDOW_MODE")) {
+            host_putenv("RECOMP_WINDOW_MODE=borderless");
+            fprintf(stderr, "[BOOT] started from RecompLauncher's Big Picture mode: full screen\n");
+        }
+    }
     /* The game's own HD mode: with 720p reported it renders 1280x720, 16:9,
      * with its HUD and menus laid out for it (see README, "Built-in HD and
      * widescreen modes"). VideoModes=none in amped2.ini gives 640x480 4:3. */
@@ -1673,7 +1756,9 @@ static int amped2_load(void)
                      searched);
             fprintf(stderr, "%s\n", msg);
             MessageBoxA(NULL, msg, "Recomp", MB_ICONERROR);
-            return 1;
+            /* Its own exit code, which launchers can explain to the player
+             * (exit_codes in installer/recomplauncher.json). */
+            return AMPED2_EXIT_NO_GAME;
         }
     }
     printf("XBE loaded: %zu bytes\n", s_xbe_size);
@@ -2092,6 +2177,75 @@ int main(int argc, char **argv)
 {
     (void)argc;
     (void)argv;
+#if defined(__ANDROID__)
+    /* SDL's activity runs this as SDL_main (CMakeLists: main=SDL_main).
+     * Everything is relative to the app's external files folder
+     * (Android/data/<package>/files), where the player puts game/ from
+     * their own disc; stderr has nowhere to go on Android, so it becomes
+     * amped2.log there. */
+    {
+        extern const char *SDL_AndroidGetExternalStoragePath(void);
+        const char *dir = SDL_AndroidGetExternalStoragePath();
+        if (dir && chdir(dir) == 0)
+            freopen("amped2.log", "w", stderr);
+        /* Hold the whole 4 GB guest window in one reservation. Without it
+         * the windows above guest RAM (contiguous memory at 0x80000000,
+         * the NV2A, MCPX, flash and tiled apertures) found their host
+         * ranges taken (seen under the emulator's arm64 translation) and
+         * the first contiguous allocation faulted. */
+        setenv("RECOMP_EXT_VMA", "1", 0);
+        /* Landscape only. With no orientation hint SDL asks Android for
+         * "full user" (requestedOrientation 13) over the manifest's
+         * sensorLandscape, so a phone with rotation locked to portrait
+         * showed the game as a strip across the middle. SDL reads its
+         * hints from the environment too. */
+        setenv("SDL_IOS_ORIENTATIONS", "LandscapeLeft LandscapeRight", 0);
+        /* amped2.ini lives here too: beside the program (ini_path's
+         * default) is the app's read-only native-library folder. */
+        if (dir) {
+            char ini[MAX_PATH];
+            snprintf(ini, sizeof ini, "%s/amped2.ini", dir);
+            setenv("AMPED2_INI", ini, 0);
+        }
+        /* android_env.txt beside amped2.ini: KEY=VALUE lines set before
+         * anything starts, as a shell would on the other platforms (there
+         * is no shell to start an app from on Android). */
+        {
+            FILE *ef = fopen("android_env.txt", "r");
+            char line[512];
+            while (ef && fgets(line, sizeof line, ef)) {
+                char *eq = strchr(line, '='), *end = line + strcspn(line, "\r\n");
+                *end = 0;
+                if (eq && line[0] != '#') {
+                    *eq = 0;
+                    setenv(line, eq + 1, 1);
+                    fprintf(stderr, "[BOOT] android_env.txt: %s=%s\n", line, eq + 1);
+                }
+            }
+            if (ef)
+                fclose(ef);
+        }
+        if (getenv("RECOMP_FAULT_REPORT")) {
+            pthread_t rt;
+            pthread_create(&rt, NULL, android_fault_reporter, NULL);
+        }
+        /* RECOMP_ANDROID_CPU=<n>: run on one core, set here before any
+         * thread starts so every later thread inherits it. The Xbox had
+         * one CPU, and x86 orders memory between cores (TSO) where Arm
+         * does not: on a phone, guest threads spread over cores can miss
+         * each other's writes. */
+        {
+            const char *oc = getenv("RECOMP_ANDROID_CPU");
+            if (oc && *oc) {
+                cpu_set_t set;
+                CPU_ZERO(&set);
+                CPU_SET(atoi(oc), &set);
+                fprintf(stderr, "[BOOT] one core (CPU %s): %s\n", oc,
+                        sched_setaffinity(0, sizeof set, &set) == 0 ? "pinned" : strerror(errno));
+            }
+        }
+    }
+#endif
     amped2_setup();
     if (amped2_load())
         return 1;

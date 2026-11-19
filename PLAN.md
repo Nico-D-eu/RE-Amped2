@@ -1278,11 +1278,7 @@ Not yet: Clang, the stall snapshot.
 7. **The suite on Linux.** `suite.ps1` and `diag.ps1` under PowerShell 7,
    with `-Samples` via `/proc`.
 
-**macOS and arm64 afterwards.**
-- **macOS:** a 64-bit process cannot map below 4 GB (`__PAGEZERO`), so the
-  guest memory offset has to work at a high base. Check what upstream does.
-- **arm64:** the generated code's SSE helpers need portable versions (check
-  upstream's), and Apple Silicon caps OpenGL at 4.1.
+**macOS and arm64 afterwards:** Phase 27.
 
 **Exit criteria**
 
@@ -2032,6 +2028,221 @@ deleted from storage; with the setting off, no network connection is made
 later; no frame-time change while uploading.
 
 ---
+
+### Phase 27: arm64 Linux and macOS (the road to Android and Switch)
+
+**Why now (user, 2026-11-18):** the next release's focus is the game, the
+Linux version and other platforms: PS5, Xbox Dev Mode, macOS, Switch and
+Android. Three of those (Apple Silicon macOS, Android, Switch) are arm64,
+so an arm64 build is the shared first step, and it can be built and run
+here without Arm hardware: cross-compiled in WSL, run through qemu-user.
+
+**Status (2026-11-18): the arm64 Linux build compiles, links and boots.**
+- `cmake/toolchains/aarch64-linux-gnu.cmake` cross-compiles on Ubuntu with
+  multiarch (arm64 SDL2, epoxy, GL, OpenSSL and ffmpeg from
+  `ports.ubuntu.com`). All of the generated code compiled for aarch64 on
+  the first try: the lifter's SSE helpers are lane-wise C, and the x86
+  intrinsics in `recomp_types.h` all have portable fallbacks.
+- One toolkit fix to link: this fork's APU file had lost upstream's arm64
+  APU register trap (`apu_hook_handle_mmio_posix`, the A64 decoder over
+  the signal's ucontext). Restored (xboxrecomp `arm64-port`).
+- Under qemu-user (software rasteriser, 150 s): no crash; the guest memory
+  is mapped at `0x400003631000`, far above 4 GB, which is what macOS
+  forces (`__PAGEZERO`), so the offset path works; the APU runs at about
+  1570 frames/s through the arm64 register traps; the game reads the
+  front end's archives (about the point x86 reaches in 20 s).
+- On x86 Linux the guest memory is also placed by the OS at a high
+  address (the POSIX span is reserved with no hint), so the macOS memory
+  situation is already exercised by every Linux run.
+
+**macOS.** Expected to need little beyond a build: upstream's toolkit
+already handles arm64 macOS (OS-chosen base when the low bases sit in
+`__PAGEZERO`, Apple's ucontext layout, QoS on the guest thread). Done:
+`nv2a_gl.c` asks for a forward-compatible core context on Apple, without
+which macOS gives no 3.3 context. The GL back end uses nothing above 4.1
+unconditionally (`glBufferStorage` is optional). Still to do, on a Mac:
+a native build (Homebrew SDL2, libepoxy, OpenSSL, ffmpeg), the
+`main.c` crash handler's Apple register names, and an `.app` bundle in
+the Linux tarball's style (the player builds it from their own disc).
+Cannot be tested without a Mac; the qemu run covers the arm64 half.
+
+- **The GL back end draws on arm64:** under qemu with Mesa's llvmpipe
+  (OpenGL 4.5 core), the title screen ("PRESS START TO BEGIN") is drawn
+  correctly, with no shader failures: 159 flips and 2945 draws in about
+  9 minutes (1.8 fps; the speed is qemu's, not the port's).
+- **Clang** (x86-64 Linux) builds the whole game with no errors. It
+  crashed at boot until the APU trap used the shared decoder: Clang turns
+  DirectSound's register poll into `test dword [mem], imm32`, which this
+  fork's private APU decoder lacked (xboxrecomp `75f674c`, checked on
+  Windows too: ML1 rides, APU at speed). With it, the title runs at 58 fps.
+- **Anisotropic filtering in GL** (`RECOMP_GPU_ANISO`, 16 by default), as in
+  D3D11.
+- **ML1 on Linux at 59 fps:** the Clang build riding ML1 through GL on the
+  RTX 2070 (WSLg, D3D12 driver, anisotropy 16) drew 2949 frames in the
+  50 s after the pad walk reached the slope; earlier measurements were
+  43-50. Meets Phase 21's frame-rate criterion (the run's audio was the
+  dummy driver, so not its sound half).
+- **arm64 + OpenGL ES together** (the Android combination) under qemu:
+  the title drawn correctly on ES 3.2, no shader failures.
+- `install.sh` on an arm64 machine: the bundled xdvdfs is x86-64, so the
+  installer now checks that it runs and otherwise takes one from the
+  PATH (`cargo install xdvdfs-cli`).
+
+**Next steps.**
+1. A real arm64 machine (a Raspberry Pi 5, an Asahi Mac, an Arm laptop):
+   the native build through `install.sh`, and the frame rate in ML1.
+2. Rendering differences on arm64: `rcpss`/`rsqrtss` become exact
+   division instead of x86's 12-bit approximations; check a frame against
+   x86.
+3. CI: an aarch64 cross-compile job beside the Linux one (compile and
+   link only).
+4. **Android:** the same arm64 code, SDL2's Android activity, AAudio
+   through SDL, and the game data in app storage; a Gradle wrapper around
+   the CMake build. **The renderer is ready:** `nv2a_gl.c` has an OpenGL
+   ES 3.2 mode (`RECOMP_GL_ES=1`, the default under `__ANDROID__`;
+   xboxrecomp `bc4df0e`). Checked on Mesa's ES 3.2 (llvmpipe, SDL on EGL):
+   the title with correct colours, and ML1 ridden with fog, shadows, the
+   rider and the HUD, no shader failures in 2 million draws. Differences
+   from desktop GL: RGBA uploads with a red/blue swizzle and a CPU swap of
+   the presented frame, visibility tests that only say "any sample
+   passed" (lens flares are all-or-nothing), no depth clamp without
+   `GL_EXT_depth_clamp`. Mobile GPUs have no S3TC: texture packs in DXT
+   fall back to the decoded game textures (the game's own textures are
+   decoded on the CPU anyway).
+   **APK built (2026-11-18):** with NDK 27.2 (API 29+) and SDL 2.30.10
+   built for arm64-v8a, the whole game links as `libmain.so` (102 MB) and
+   `android/build_apk.sh` packs a signed 28 MB APK with the SDK's own tools
+   (no Gradle). Runtime changes for bionic and GLES are in xboxrecomp
+   `619fb8c` (an `epoxy/gl.h` over the system GLES 3.2, no OpenSSL, no
+   thread pinning, memfd through the syscall). The game reads `game/`
+   from the app's external files folder (`Android/data/org.reamped2.app/
+   files/game`), and logs to `amped2.log` there. Still to do: run it (an
+   emulator with arm64 translation, then a phone), touch controls (a pad
+   is the target for now), audio through SDL's AAudio/OpenSL path, and an
+   installer step that builds the APK from the player's disc.
+   **Boots on Android (emulator, 2026-11-18):** an Android 11 x86_64
+   emulator image (KVM, run as root in WSL) runs the arm64 APK through its
+   arm64 translation. With `RECOMP_EXT_VMA` (set by main.c on Android)
+   every guest window maps; the APU runs at 1500 frames/s; SDL's window
+   (GLES2 renderer) and OpenSL ES audio (48 kHz) open; the game reads its
+   archives up to the front end and the first music track. The GL back
+   end does not start yet: it makes a hidden window of its own for its
+   context, and Android has only one window ("Android only supports one
+   window"), so the run fell back to the software rasteriser (2 frames in
+   70 s under translation; the screen stays black). The emulator's GPU
+   (SwiftShader) is GLES 3.0 anyway. **Done since:** the GL back end's
+   one-window mode (`RECOMP_GL_ONE_WINDOW`, default on Android; xboxrecomp
+   `d5067dc`): the presenter makes its window GL-capable with the back
+   end's attributes and no SDL renderer, and the back end makes its context
+   on it and presents each flip itself (blit, flip, letterbox, swap).
+   Checked under WSLg with `RECOMP_GL_WINSHOT` (the window's own pixels):
+   desktop GL at 57 fps, and OpenGL ES 3.2 through EGL on llvmpipe, the
+   Android path, both showing the title correctly. The movie overlay is not
+   drawn in this mode yet.
+   **In the installer (2026-11-19):** a tick box "Also build an Android
+   app (APK)" plus "Install it on a phone connected over USB"; the work is
+   `tools/android/build_android.ps1` (pinned OpenJDK 17, Google's
+   command-line tools and SDL 2.30.10; Android SDK/NDK through sdkmanager
+   after the player's consent; NDK build on Windows; APK with the launcher
+   icon from `branding/RE-Amped2.ico`, signed with a key made on the PC;
+   optional adb install and game copy). Checked end to end on this PC
+   (a 27 MB APK); not yet a whole install with the option. The
+   Windows-built APK is on the S25 since 2026-11-19 (amped2 `a8eec95`
+   fixed its game copy, which had dropped the Animations folder level,
+   and made Android read amped2.ini from the files folder and skip the
+   boot movies until one-window mode draws them); ML1 58.5 fps. Movies are
+   drawn in one-window mode since toolkit `a17c04e` (on again on Android),
+   HD movie copies decode with MediaCodec on Android (amped2 `ecd555e`),
+   and the phone install copies the mods, the HD movies on request
+   (`8d7b3a0`). Linux and macOS stay
+   their own install scripts, run on those machines.
+   **Playable on a phone (2026-11-19, Galaxy S25 + Xbox Series X
+   controller over Bluetooth):** ML1 holds 58.9 fps (GPU about 4.4 ms a
+   frame) and the user played it. Two fixes in xboxrecomp `ab0f907`: pads
+   that arrive after start-up are opened (on Android all do; only A got
+   through before, as a key), and the GLES streaming rings are persistent
+   through `GL_EXT_buffer_storage` (they mapped per upload: 1-2 fps).
+   Sound plays well. Rumble works too (xboxrecomp `0ad2d35`: SDL 2's
+   Android joystick rumble is unsupported, so the pad's SDL haptic device,
+   its Android vibrator, plays it). **Open:** touch controls; the movie overlay in
+   one-window mode; an installer path for the APK; a signed release key.
+   **The title screen on a phone (2026-11-19, Galaxy S25):** fixed. The
+   stall below was Android's 32 KB per-thread signal stack: ART chains every
+   handler through its own on that stack, and the AC'97 trap path needs
+   more, so it overflowed, faulted on its first push and looped (470,000
+   faults a second). xboxrecomp `1dbbe0f` gives trapping threads a 512 KB
+   alternate stack on Android. Now: the APU is started by the title (1500
+   frames/s), GL comes up on the Adreno 830 (ES 3.2, one-window mode) and
+   the title screen is drawn correctly at about 53 fps, no shader
+   failures. Found with `RECOMP_FAULT_REPORT` (amped2 `ee7afcf`).
+   **Next:** input on the phone (a Bluetooth or USB pad through SDL should
+   already reach the emulated pad; touch controls after), then the menus
+   and ML1 on the phone, the movie overlay in one-window mode, and an
+   installer path that builds the APK from the player's disc.
+   **First phone run (2026-11-18, Galaxy S25 SM-S931B, Android 17 / API
+   37, Snapdragon 8 Elite, Adreno 830 GLES 3.2, 4 KB pages):** adb from
+   Windows (`C:\Users\nicko\android-platform-tools`; WSL sees no USB).
+   On this phone adb may write the app's `Android/data` folder directly
+   (group `ext_data_rw`) once the app has run. The APK runs natively: the
+   memory layout maps (all 28 mirrors, `RECOMP_EXT_VMA`), the one-window
+   window opens, AAudio or OpenSL ES opens, and the game reads its
+   archives up to `characters\boarder\MedHiResCharacter.gfx`, then stalls.
+   No GL start, no draws; the APU's frame thread reports 0 frames/s from
+   the first status line (1500 on the emulator), whatever the audio
+   driver (OpenSL ES, AAudio, SDL's dummy). Pinning everything to one core
+   (`RECOMP_ANDROID_CPU=7`) changes nothing, so it is not cross-core
+   memory ordering. simpleperf (profileable APK) shows one guest thread
+   looping through the signal chain: `fault_handler` ->
+   `xbox_PosixMmioFault` -> `xbox_Ac97PosixFault`, again and again, so the
+   game keeps writing the trapped AC'97 page, presumably waiting for the
+   codec to report ready, which the stalled APU never does. The other hot
+   thread is `nv2a_ack_thread` (sched_yield). **Next:** find why
+   `mcpx_apu_frame_thread` makes no frames on the phone (throttle /
+   `qemu_cond_timedwait` with bionic, `pause_requested`, or the thread
+   never starting), e.g. by logging its loop; the fault log in main.c
+   printed nothing in that run, also to explain. Test aids: amped2
+   `d04e5f4` (`android_env.txt`, `RECOMP_ANDROID_CPU`, the fault log,
+   profileable). Data setup for tests:
+   `adb root`, push to `/sdcard/Android/data/org.reamped2.app/files/game`
+   after the app has run once, then `chown` to the app's user and
+   `restorecon` (SELinux label).
+5. **Switch (homebrew):** devkitA64 + libnx, Mesa GL through libnx's
+   EGL, the same arm64 code. Check the fixed 4 GB guest window against
+   the Switch's address-space limits first.
+6. **Xbox Dev Mode (Phase 13):** needs Visual Studio's UWP workload (not
+   installed here) and a console for the spike.
+7. **PS5 (Phase 14):** unchanged; research only.
+
+### Phase 28: launchers (RecompLauncher, Quiver) — in 0.5.0
+
+**Goal:** a player can install, set up, configure and play RE-Amped2 from
+RecompLauncher without our wizard, with their saves backed up.
+
+Done (2026-11-19, for 0.5.0):
+- [x] `RE-Amped2-Setup.exe --prepare --game --dir [--menus] [--look]
+  [--accept-tools]`: the wizard's InstallJob without a window, progress
+  lines on stdout, exit codes 0-6 (installer/README.md).
+- [x] `installer/recomplauncher.json` (validated against RecompLauncher's
+  schema): disc check, prepare with licence and option ticks, start, saves,
+  ten amped2.ini settings, folders, actions, exit-code messages.
+- [x] `RE-Amped2-v<version>-Windows-x64.zip` from build.ps1 and the
+  Installer workflow (prepare.version = release version, so updates
+  rebuild).
+- [x] Game: borderless in Big Picture mode (`RECOMPLAUNCHER_MODE`), exit
+  code 10 when the game files are missing.
+- [x] Tested with the zip unpacked as the launcher does: the failure exit
+  codes, a full build (29.5 min) and a Big Picture start.
+
+Open:
+- [ ] Check the file in RecompLauncher's own Developer tools ("Add a build")
+  and a real install from the launcher once 0.5.0 is published, including
+  disc detection (the schema documents `xdvdfs` for Xbox 360 images) and
+  how it edits the commented-out keys in amped2.ini.
+- [ ] Linux through the launcher: `install.sh --prepare` (no prompts,
+  missing packages as a message) and a Linux-x64 asset with the file.
+- [ ] Quiver: no setup step or save locations in its public docs; ask its
+  author whether a prepare-like step is planned.
+- [ ] `game.dumps` from Redump (verified-disc badge), cosmetic.
 
 ## Risks
 

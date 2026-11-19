@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RE-Amped2 for Android (PLAN Phase 27). SDL's own activity runs the game
+     (libmain.so, built by CMake with the NDK); android/build_apk.sh packs it.
+     The player builds the APK from their own disc, as on the other
+     platforms, and copies game/ into the app's files folder. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.reamped2.app"
+    android:versionCode="1"
+    android:versionName="0.5.0-dev">
+    <uses-feature android:glEsVersion="0x00030002" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <application android:label="RE-Amped2"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:hasCode="true"
+        android:extractNativeLibs="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:hardwareAccelerated="true">
+        <!-- simpleperf from adb can profile it (no debugger, no root). -->
+        <profileable android:shell="true" />
+        <activity android:name="org.libsdl.app.SDLActivity"
+            android:label="RE-Amped2"
+            android:screenOrientation="sensorLandscape"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

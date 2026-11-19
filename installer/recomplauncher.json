@@ -1,0 +1,395 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "RE-Amped2",
+  "game": {
+    "kind": "iso",
+    "label": "Your disc image (.iso or .xiso) of Amped 2 for the original Xbox, the USA or European release.",
+    "check": {
+      "xdvdfs": "default.xbe"
+    }
+  },
+  "prepare": {
+    "program": [
+      "RE-Amped2-Setup.exe"
+    ],
+    "args": [
+      "--prepare",
+      "--game",
+      "{game}",
+      "--dir",
+      "{install}"
+    ],
+    "label": "Building RE-Amped2 from your disc (10 to 35 minutes)",
+    "timeout": 7200,
+    "version": "0.5.0",
+    "done": [
+      "{install}/RE-Amped2.exe"
+    ],
+    "options": [
+      {
+        "id": "tools",
+        "label": "Install the free build tools this PC is missing",
+        "note": "Microsoft C++ Build Tools and Python, and Java for the menus (up to 7 GB on drive C:).",
+        "args": [
+          "--accept-tools"
+        ],
+        "os": [
+          "windows"
+        ],
+        "license": {
+          "name": "Microsoft Visual Studio Build Tools licence",
+          "url": "https://visualstudio.microsoft.com/license-terms/vs2022-ga-diagnosticbuildtools/"
+        }
+      },
+      {
+        "id": "menus",
+        "label": "The RE-Amped2 menus",
+        "note": "Window, resolution and mod settings in the game's menus, and the developer challenges. Needs Java.",
+        "args": [
+          "--menus"
+        ]
+      },
+      {
+        "id": "look",
+        "label": "The RE-Amped2 look",
+        "note": "The RE-Amped2 logo and loading screens, and sharper text.",
+        "args": [
+          "--look"
+        ]
+      }
+    ]
+  },
+  "start": {
+    "program": [
+      "RE-Amped2.exe"
+    ]
+  },
+  "saves": [
+    "{install}/game/UDATA",
+    "{install}/game/TDATA",
+    "{install}/amped2.ini",
+    "{install}/devchallenges.json"
+  ],
+  "config": [
+    {
+      "id": "main",
+      "format": "ini",
+      "file": [
+        {
+          "path": "{install}/amped2.ini"
+        }
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "id": "scale",
+      "label": "Resolution",
+      "help": "What the game draws at; the picture is then scaled to your window.",
+      "choices": [
+        {
+          "label": "720p (the Xbox's own)",
+          "set": {
+            "Display/RenderScale": "1"
+          }
+        },
+        {
+          "label": "1440p",
+          "set": {
+            "Display/RenderScale": "2"
+          }
+        },
+        {
+          "label": "4K",
+          "set": {
+            "Display/RenderScale": "3"
+          }
+        },
+        {
+          "label": "5K",
+          "set": {
+            "Display/RenderScale": "4"
+          }
+        }
+      ],
+      "defaults": {
+        "Display/RenderScale": "2"
+      }
+    },
+    {
+      "id": "window",
+      "label": "Window",
+      "help": "F11 switches between the two while playing.",
+      "choices": [
+        {
+          "label": "Window",
+          "set": {
+            "Display/WindowMode": "windowed"
+          }
+        },
+        {
+          "label": "Full screen",
+          "set": {
+            "Display/WindowMode": "borderless"
+          }
+        }
+      ],
+      "defaults": {
+        "Display/WindowMode": "windowed"
+      }
+    },
+    {
+      "id": "upscale",
+      "label": "Upscaling",
+      "help": "FSR keeps edges sharp when the window is bigger than the resolution.",
+      "choices": [
+        {
+          "label": "Standard",
+          "set": {
+            "Display/Upscale": "bilinear"
+          }
+        },
+        {
+          "label": "FSR",
+          "set": {
+            "Display/Upscale": "FSR"
+          }
+        }
+      ],
+      "defaults": {
+        "Display/Upscale": "bilinear"
+      }
+    },
+    {
+      "id": "sharpen",
+      "label": "Sharpening",
+      "help": "Crisper detail on the finished picture.",
+      "choices": [
+        {
+          "label": "Off",
+          "set": {
+            "Display/Sharpen": "0"
+          }
+        },
+        {
+          "label": "Low",
+          "set": {
+            "Display/Sharpen": "0.3"
+          }
+        },
+        {
+          "label": "Medium",
+          "set": {
+            "Display/Sharpen": "0.6"
+          }
+        },
+        {
+          "label": "High",
+          "set": {
+            "Display/Sharpen": "0.9"
+          }
+        }
+      ],
+      "defaults": {
+        "Display/Sharpen": "0"
+      }
+    },
+    {
+      "id": "aniso",
+      "label": "Texture filtering",
+      "help": "Sharper ground and walls in the distance.",
+      "choices": [
+        {
+          "label": "Off",
+          "set": {
+            "Display/Anisotropic": "1"
+          }
+        },
+        {
+          "label": "4x",
+          "set": {
+            "Display/Anisotropic": "4"
+          }
+        },
+        {
+          "label": "16x",
+          "set": {
+            "Display/Anisotropic": "16"
+          }
+        }
+      ],
+      "defaults": {
+        "Display/Anisotropic": "16"
+      }
+    },
+    {
+      "id": "fxaa",
+      "label": "Anti-aliasing (FXAA)",
+      "help": "Smooths edges; most useful at 720p.",
+      "choices": [
+        {
+          "label": "Off",
+          "set": {
+            "Display/FXAA": "0"
+          }
+        },
+        {
+          "label": "On",
+          "set": {
+            "Display/FXAA": "1"
+          }
+        }
+      ],
+      "defaults": {
+        "Display/FXAA": "0"
+      }
+    },
+    {
+      "id": "markers",
+      "label": "Snowmen and gaps",
+      "help": "How far away snowmen and gap sparkles show.",
+      "choices": [
+        {
+          "label": "Normal",
+          "set": {
+            "Game/MarkerDistance": "1"
+          }
+        },
+        {
+          "label": "Far",
+          "set": {
+            "Game/MarkerDistance": "2"
+          }
+        },
+        {
+          "label": "Very far",
+          "set": {
+            "Game/MarkerDistance": "4"
+          }
+        },
+        {
+          "label": "Always",
+          "set": {
+            "Game/MarkerDistance": "always"
+          }
+        }
+      ],
+      "defaults": {
+        "Game/MarkerDistance": "1"
+      }
+    },
+    {
+      "id": "movies",
+      "label": "Intro movies",
+      "choices": [
+        {
+          "label": "Play",
+          "set": {
+            "Game/PlayMovies": "1"
+          }
+        },
+        {
+          "label": "Skip",
+          "set": {
+            "Game/PlayMovies": "0"
+          }
+        }
+      ],
+      "defaults": {
+        "Game/PlayMovies": "1"
+      }
+    },
+    {
+      "id": "mods",
+      "label": "Mods and texture packs",
+      "help": "Off plays the original game data.",
+      "choices": [
+        {
+          "label": "On",
+          "set": {
+            "Game/ModPacks": "1"
+          }
+        },
+        {
+          "label": "Off",
+          "set": {
+            "Game/ModPacks": "0"
+          }
+        }
+      ],
+      "defaults": {
+        "Game/ModPacks": "1"
+      }
+    },
+    {
+      "id": "rumble",
+      "label": "Rumble",
+      "choices": [
+        {
+          "label": "On",
+          "set": {
+            "Input/Rumble": "1"
+          }
+        },
+        {
+          "label": "Off",
+          "set": {
+            "Input/Rumble": "0"
+          }
+        }
+      ],
+      "defaults": {
+        "Input/Rumble": "1"
+      }
+    }
+  ],
+  "folders": {
+    "saves": [
+      {
+        "path": "{install}/game/UDATA"
+      }
+    ],
+    "logs": [
+      {
+        "path": "{install}"
+      }
+    ],
+    "crash": [
+      {
+        "path": "{install}/crash"
+      }
+    ],
+    "mods": [
+      {
+        "path": "{install}/mods"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "open_saves",
+      "label": "Open the saves folder",
+      "open": "saves"
+    },
+    {
+      "id": "open_mods",
+      "label": "Open the mods folder",
+      "open": "mods"
+    },
+    {
+      "id": "clear_crash",
+      "label": "Clear old crash reports",
+      "help": "The crash folder fills up after a few crashes.",
+      "clear": "crash"
+    }
+  ],
+  "exit_codes": {
+    "1": "The RE-Amped2 installer is already open, or the setup was started wrongly. Close the installer and set up again.",
+    "2": "That disc image isn't the retail Amped 2 (USA or Europe). Pick your own copy again on the game's page.",
+    "3": "Build tools are missing. Set up again and tick \"Install the free build tools\", or install the ones named in the log.",
+    "4": "Building the game failed. install.log in the game's folder says why; please send it with a report.",
+    "6": "RE-Amped2 can't keep its saves in this folder (it's inside Program Files or Windows). Move the game to another library folder.",
+    "10": "The game files weren't found. Set up again from the game's page."
+  }
+}

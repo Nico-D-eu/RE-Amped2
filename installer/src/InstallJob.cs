@@ -19,6 +19,9 @@ namespace Amped2Installer
         public bool MenuMod;
         public bool Look;            // the RE-Amped2 texture pack (branding\pack)
         public bool HdMovies;        // fetch the movie tools and convert the movies afterwards (MovieTools)
+        public bool Android;         // also build the Android app (tools\android\build_android.ps1)
+        public bool AndroidToPhone;  // ... and install it on a phone connected over USB
+        public bool AndroidHdMovies; // ... with the HD movies (mods\movie_pack, about 4.3 GB on the phone)
         /// <summary>Build tools the player agreed to have installed (ConsentDialog); nothing else is.</summary>
         public HashSet<string> ApprovedTools = new HashSet<string>();
     }
@@ -33,6 +36,8 @@ namespace Amped2Installer
         public string MenuModNote;                       // why the menu improvements were skipped
         public bool HdMoviesReady, HdMoviesStarted;      // tools in place; conversion running
         public string HdMoviesNote;                      // why the HD movies were skipped
+        public string AndroidApk, AndroidNote;           // the APK built; why it wasn't, or what is left to do
+        public bool AndroidOnPhone;
         public List<string> Warnings = new List<string>();
     }
 
@@ -65,10 +70,12 @@ namespace Amped2Installer
             "Adding the RE-Amped2 menus",
             "Getting the HD movie tools",
             "Finishing up",
+            "Building the Android app",
         };
 
         // Where each stage starts on the overall bar; compiling is the long one.
-        static readonly double[] StageStart = { 0, 3, 12, 17, 40, 94, 96, 98, 100 };
+        // The Android app, when chosen, gets the end of the bar.
+        static readonly double[] StageStart = { 0, 3, 12, 17, 40, 94, 96, 97, 98, 100 };
 
         public volatile int Stage = -1;
         public volatile string Detail = "";
@@ -134,6 +141,7 @@ namespace Amped2Installer
                 StageMovieTools(r);
                 StageFinish(r);
                 InstallLook(r);
+                StageAndroid(r);
                 r.Success = true;
                 Log("Installation finished.");
                 StartMovies(r);
@@ -509,6 +517,72 @@ namespace Amped2Installer
                 r.HdMoviesNote = "The HD movie tools couldn't be downloaded (the install log has the details), " +
                                  "so the game keeps its original movies.";
             }
+        }
+
+        /// <summary>
+        /// The Android app, when chosen: tools\android\build_android.ps1 builds
+        /// it from the code just generated (with its own Java, Android SDK and
+        /// NDK, downloaded into the install folder's android\ folder and kept
+        /// for a rebuild), leaves RE-Amped2.apk in the install folder, and with
+        /// a phone connected installs it and copies the game over. A failure
+        /// only skips the Android app; the PC game is installed already.
+        /// </summary>
+        void StageAndroid(InstallResult r)
+        {
+            if (!_o.Android)
+                return;
+            Begin(8, "Getting the Android tools (about 3 GB)");
+            if (!_o.ApprovedTools.Contains(AndroidTools.Name))
+            {
+                r.AndroidNote = "The Android tools weren't approved, so no Android app was built.";
+                return;
+            }
+            var script = Path.Combine(Amped2, @"tools\android\build_android.ps1");
+            var work = Path.Combine(Dest, "android");
+            var args = $"-NoProfile -ExecutionPolicy Bypass -File {ProcessRunner.Quote(script)}" +
+                       $" -Amped2 {ProcessRunner.Quote(Amped2)} -Toolkit {ProcessRunner.Quote(Path.Combine(Src, "xboxrecomp"))}" +
+                       $" -Work {ProcessRunner.Quote(work)} -Out {ProcessRunner.Quote(Dest)} -AcceptAndroidLicenses";
+            string hdNote = null;
+            if (_o.AndroidToPhone)
+            {
+                args += $" -InstallOnPhone -Game {ProcessRunner.Quote(GameDir)} -Mods {ProcessRunner.Quote(Path.Combine(Dest, "mods"))}";
+                // The HD movies convert after the install, in the background,
+                // so on a first install they aren't there yet to copy.
+                if (_o.AndroidHdMovies && Directory.Exists(Path.Combine(Dest, @"mods\movie_pack")))
+                    args += " -HdMovies";
+                else if (_o.AndroidHdMovies)
+                    hdNote = "The HD movies weren't ready to copy to the phone (they convert after the install). When " +
+                             "they're done, copy the install folder's mods\\movie_pack folder to " +
+                             "Android/data/org.reamped2.app/files/mods on the phone.";
+            }
+            double frac = 0;
+            string last = "";
+            int code = ProcessRunner.Run(PowerShellExe, args, Amped2, line =>
+            {
+                Log(line);
+                if (line.StartsWith("== "))
+                {
+                    Detail = line.Trim('=', ' ');
+                    frac = line.Contains("RE-Amped2 for Android") ? 0.3 : line.Contains("APK") ? 0.9
+                         : line.Contains("Phone") ? 0.95 : frac + 0.05;
+                }
+                if (line.Trim().Length > 0)
+                    last = line.Trim();
+                frac += (0.99 - frac) * 0.0005;
+                SetFraction(frac);
+            }, Ct);
+            var apk = Path.Combine(Dest, "RE-Amped2.apk");
+            if (File.Exists(apk))
+            {
+                r.AndroidApk = apk;
+                r.AndroidOnPhone = code == 0 && _o.AndroidToPhone;
+            }
+            if (code == 0 && hdNote != null)
+                r.AndroidNote = hdNote;
+            if (code != 0)
+                r.AndroidNote = File.Exists(apk)
+                    ? "The Android app was built (RE-Amped2.apk in the install folder), but it couldn't be put on the phone: " + last
+                    : "The Android app couldn't be built (the install log has the details): " + last;
         }
 
         void StartMovies(InstallResult r)

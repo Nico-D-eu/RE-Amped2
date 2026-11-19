@@ -7,7 +7,9 @@
 # - xdvdfs and unluac, downloaded by installer/fetch-tools.ps1 and checked
 #   against fixed SHA-256 hashes.
 #
-# The result is a workflow artifact; publishing a release stays manual.
+# The results are workflow artifacts: the installer, and the launcher zip
+# (RE-Amped2-v<version>-Windows-x64.zip: the installer plus
+# recomplauncher.json, for RecompLauncher). Publishing a release stays manual.
 # Signing through SignPath Foundation turns on once the repository variable
 # SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN are set.
 
@@ -66,6 +68,13 @@ jobs:
           path: amped2/installer/dist/RE-Amped2-Setup.exe
           if-no-files-found: error
 
+      - name: Upload the launcher zip (unsigned installer inside)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RE-Amped2-Windows-x64-zip-unsigned
+          path: amped2/installer/dist/RE-Amped2-v*-Windows-x64.zip
+          if-no-files-found: error
+
       - name: Sign with SignPath
         if: vars.SIGNPATH_ORGANIZATION_ID != ''
         uses: signpath/github-action-submit-signing-request@v1
@@ -84,6 +93,8 @@ jobs:
         run: |
           $hash = (Get-FileHash signed\RE-Amped2-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *RE-Amped2-Setup.exe" | Set-Content -Encoding ascii signed\SHA256SUMS.txt
+          # The launcher zip again, with the signed installer in it.
+          amped2\installer\pack-launcher-zip.ps1 -Exe signed\RE-Amped2-Setup.exe -Out signed
           "Signed installer, SHA-256 ``$hash`` (this one goes on the release page)" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload the signed installer

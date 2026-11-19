@@ -1,11 +1,12 @@
 # RE-Amped2
 
-**Amped 2 for Windows, rebuilt from your own disc.**
+**Amped 2 for Windows and Android, rebuilt from your own disc.**
 
 [![Latest release](https://img.shields.io/github/v/release/Nico-D-eu/RE-Amped2?include_prereleases&label=download)](../../releases)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 ![Windows 10 and 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 [![Linux: preview](https://img.shields.io/badge/Linux-preview-FCC624?logo=linux&logoColor=black)](#on-linux-preview)
+[![Android: new](https://img.shields.io/badge/Android-new%20in%200.5.0-3DDC84?logo=android&logoColor=white)](#on-android-new-in-050)
 [![Discord](https://img.shields.io/discord/1567622487565541478?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/e2SfPrMK)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-optional-FFDD00?logo=buymeacoffee&logoColor=black)](#support-the-project)
 
@@ -21,7 +22,9 @@ RE-Amped2 brings **Amped 2** (Microsoft Game Studios / Indie Built, 2003, for
 the original Xbox) to Windows as a native PC game. It isn't an emulator. The
 game's own code is translated to C and compiled into a Windows program, on
 your PC, from your own disc. It runs at a steady 60 fps, in widescreen, at
-up to 4K and beyond, with controller and keyboard support.
+up to 4K and beyond, with controller and keyboard support. The same
+installer can also build it for your Android phone, and there is a Linux
+preview.
 
 > **Early access.** RE-Amped2 is a work in progress. The whole game is
 > playable, but expect bugs and rough edges. Reports help a lot; see
@@ -37,6 +40,10 @@ owned copy of Amped 2.
    [Releases page](../../releases), and give it the disc image.
 3. Wait while it builds the game on your PC (10 to 35 minutes), then play
    from the desktop shortcut.
+
+Or install it from [RecompLauncher](#in-recomplauncher-new-in-050): it
+builds the game on its setup screen, puts the settings on the game's page
+and backs up your saves.
 
 The details, and what the installer asks before it installs anything, are in
 [Getting started](#getting-started). Something not working? See
@@ -93,7 +100,7 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | | HD texture pack out of the box | ⬜ planned |
 | **Sound and video** | Sound effects, the soundtrack, rumble | ✅ |
 | | Intro and in-game movies | ✅ (at their original resolution) |
-| | Sharper movies | 🟡 optional HD copies, made on your PC by the installer (Windows; Linux with `--hd-movies`) |
+| | Sharper movies | 🟡 optional HD copies, made on your PC by the installer (Windows; Linux with `--hd-movies`; on Android they play too, copied to the phone if you tick it) |
 | **Controls** | Xbox-style controllers | ✅ |
 | | Keyboard: two layouts, fully remappable | ✅ |
 | **Comfort** | Window or borderless full screen (F11), window size and resolution in the menus, Quit Game in the main menu | ✅ |
@@ -101,7 +108,9 @@ RE-Amped2 is also listed in RecompLauncher, Decomp Buddy and PlayPorted:
 | | New characters and remixed levels | ⬜ planned |
 | **Platforms** | Windows 10 and 11 (64-bit) | ✅ |
 | | Linux | 🟡 preview: an install script that builds the game from your disc. Tested only under WSL2 (Ubuntu 24.04) so far, not yet on a real Linux PC |
-| | Steam Deck, macOS | ⬜ planned, after Linux |
+| | Android phones and tablets (with a gamepad) | ✅ new in 0.5.0: the Windows installer builds the app from your disc and can put it on a phone over USB. Galaxy S25: 58 fps; a 2017 phone (Mate 10 Pro): about 19 fps |
+| | Steam Deck, macOS | ⬜ planned, after Linux (macOS builds, untested) |
+| **Launchers** | RecompLauncher: one-click install, settings on the game's page and in Big Picture mode, save backups and cloud saves | ✅ new in 0.5.0 (Windows) |
 | | Xbox Series X\|S (Dev Mode) | ⬜ planned |
 | | PlayStation 5 (homebrew) | ⬜ being explored |
 
@@ -131,8 +140,9 @@ The roadmap, including the console plans, is in [PLAN.md](PLAN.md).
    Then choose **More info → Run anyway**.
 3. **Disc:** pick your disc image, or drag it onto the window.
 4. **Location:** choose a folder you own (for example `C:\Games\RE-Amped2`)
-   and the options: a desktop shortcut, the RE-Amped2 menus, and the
-   RE-Amped2 look.
+   and the options: a desktop shortcut, the RE-Amped2 menus, the
+   RE-Amped2 look, HD movies (below) and an Android app
+   ([On Android](#on-android-new-in-050)).
 5. **Build tools:** the game is compiled on your PC, which takes Microsoft's
    free C++ Build Tools and Python (plus Java, only for the RE-Amped2 menus).
    If any are missing, the installer lists each one with its licence terms
@@ -176,6 +186,54 @@ and please report how it goes.
 
 You need OpenGL 3.3 or newer, and 4.2 for the RE-Amped2 look. Java is only
 needed for the RE-Amped2 menus; without it they are left out.
+
+### In RecompLauncher (new in 0.5.0)
+
+[RecompLauncher](https://recomplauncher.com/game/re-amped2) can install
+RE-Amped2 for you on Windows:
+
+1. Press **Install** on RE-Amped2's page. The launcher downloads the
+   release's `RE-Amped2-v<version>-Windows-x64.zip`.
+2. On the setup screen, give it your disc image (it may already have found
+   it in your game folders) and tick what you want: the free build tools if
+   your PC is missing them (their licence is linked there), the RE-Amped2
+   menus and the RE-Amped2 look.
+3. The setup screen builds the game from your disc, the same build the
+   installer does (10 to 35 minutes), then shows **Play**.
+
+Resolution, window or full screen, upscaling, sharpening, texture filtering,
+anti-aliasing, snowmen and gaps, movies, mods and rumble are on the game's
+page and in Big Picture mode, where Play starts the game full screen. The
+launcher backs up your saves after every session, and can keep them in your
+RecompLauncher account for another PC. Each update builds the game again,
+since it is compiled from that release's code; your saves and settings stay.
+
+### On Android (new in 0.5.0)
+
+RE-Amped2 runs on Android phones and tablets with a gamepad. There is no app
+to download: like the PC game, it is built from your own disc, by the
+Windows installer.
+
+1. Run the installer as usual and tick **Also build an Android app (APK)**.
+   It downloads Java and Google's Android tools (about 3 GB, kept in the
+   install folder's `android` folder) after asking you, and adds about an
+   hour to the install.
+2. To put it on your phone straight away, switch on USB debugging
+   (Settings › About phone › tap *Build number* seven times, then
+   Developer options › USB debugging), connect the phone, allow the PC, and
+   tick **Install it on a phone connected over USB**. The installer copies
+   the game (about 4.3 GB) and the mods to it. **Copy the HD movies to the
+   phone too** adds about 4.3 GB more. Keep the phone unlocked while it
+   copies.
+3. Without a phone connected, the app is `RE-Amped2.apk` in the install
+   folder. Install it on the phone (allow installs from that source), start
+   it once, then copy the install folder's `game` folder to
+   `Android/data/org.reamped2.app/files/game` on the phone (and `mods` to
+   `.../files/mods` for the RE-Amped2 menus and looks).
+4. Pair a Bluetooth or USB gamepad and start **RE-Amped2** from the app
+   list. Settings go in `Android/data/org.reamped2.app/files/amped2.ini`.
+
+You need Android 10 or newer with OpenGL ES 3.2 (most phones since 2017).
 
 ---
 
@@ -274,7 +332,7 @@ and about 6.5 GB. The conversion runs in a minimised window. If you close it,
 
 ## Known issues
 
-In the current release (0.4.0):
+In the current release (0.5.0):
 
 - **Linux is a preview.** It has only been tested under WSL2 (Ubuntu 24.04
   on Windows): install, menus and riding a level. It has not been run on a
@@ -288,6 +346,14 @@ In the current release (0.4.0):
   next track starts. Sound effects keep working. Your `amped2.log` from such
   a session helps.
 - **An occasional 1–2 second hitch** in a level, about once an hour.
+- **Android needs a gamepad.** There are no touch controls yet. Older
+  phones are slower: a 2017 Mate 10 Pro runs levels at about 19 fps.
+- **RecompLauncher installs the Windows version only** for now. On Linux,
+  use the install script.
+- **Android: reinstalling from another PC** (a new install folder makes a
+  new signing key) needs the old app uninstalled first, which deletes its
+  saves. Copy `Android/data/org.reamped2.app/files/game/UDATA` off the phone
+  first and back afterwards.
 - **Not checked yet:** the Legend challenges. If you get that far, we'd
   like to hear how it went, good or bad.
 
@@ -328,7 +394,8 @@ questions, share clips and screenshots, tell us how it runs on your PC
 ## FAQ
 
 **Is this an emulator?** No. The game's code is translated into C once and
-compiled into a normal Windows program, which is why it runs so well.
+compiled into a normal Windows (or Android, or Linux) program, which is why
+it runs so well.
 
 **Why does the installer compile the game?** So that none of the game is
 ever distributed. The translation happens on your PC, from your own disc,
@@ -344,6 +411,13 @@ Pre-release and dev-kit builds of the game don't: the installer says so.
 **Linux?** A preview since 0.3.0: see [On Linux (preview)](#on-linux-preview).
 So far it has only been tested under WSL2 on Windows, not on a real Linux
 PC. Steam Deck and macOS come after it.
+
+**Android?** New in 0.5.0, with a gamepad: see
+[On Android](#on-android-new-in-050). There's no app to download; the
+Windows installer builds yours from your disc.
+
+**Can I install it with RecompLauncher?** Yes, on Windows: see
+[In RecompLauncher](#in-recomplauncher-new-in-050).
 
 **Xbox, PlayStation?** Planned or being explored; see [PLAN.md](PLAN.md),
 Parts C and D.
@@ -361,7 +435,10 @@ tool that rips original Xbox discs to `.iso` or `.xiso` works.
 
 - **What you download:** `RE-Amped2-Setup.exe` (Windows) and
   `RE-Amped2-<version>-linux.tar.gz` (Linux), from the
-  [Releases page](../../releases) only. Neither is code-signed. The game
+  [Releases page](../../releases) only. Neither is code-signed.
+  `RE-Amped2-v<version>-Windows-x64.zip` is the same installer with
+  [installer/recomplauncher.json](installer/recomplauncher.json), for
+  RecompLauncher. The game
   itself, `RE-Amped2.exe`, is compiled on your PC during the install, so it
   is never downloaded.
 - **How it is built:** by the
@@ -395,15 +472,24 @@ operating it.
     the RE-Amped2 menus) from the Python Package Index;
   - only if you tick *Convert the movies to HD*: FFmpeg and Real-ESRGAN, at
     fixed versions checked by SHA-256, from GitHub releases (BtbN's FFmpeg
-    builds, and Real-ESRGAN's own).
+    builds, and Real-ESRGAN's own);
+  - only if you tick *Also build an Android app*: Microsoft's build of
+    OpenJDK, Google's Android command-line tools (which then fetch the
+    Android SDK and NDK from Google) and SDL's source, at fixed versions
+    checked by SHA-256. With *Install it on a phone*, the app and the game
+    go to your phone over USB and nowhere else.
 
   On Linux, `install.sh` uses your distro's package manager for the build
   tools you agree to, and pip for the recompiler's Python packages.
 
   These downloads fall under the
   [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement),
-  the [PyPI Privacy Notice](https://policies.python.org/pypi.org/Privacy-Notice/)
-  and the privacy policies of each tool's publisher.
+  the [PyPI Privacy Notice](https://policies.python.org/pypi.org/Privacy-Notice/),
+  [Google's Privacy Policy](https://policies.google.com/privacy) (the Android
+  tools) and the privacy policies of each tool's publisher. Installing
+  through RecompLauncher, its own
+  [privacy policy](https://recomplauncher.com/privacy) covers what the launcher
+  does, such as cloud saves if you turn them on.
 - **The game** makes no network connections.
 - **Logs and crash reports** (`amped2.log`, `crash\`) stay on your PC unless
   you attach them to a report yourself.

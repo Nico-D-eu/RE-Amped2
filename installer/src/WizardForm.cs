@@ -63,7 +63,7 @@ namespace Amped2Installer
         // ── Page 2: location ─────────────────────────────────────────
         TextBox _dirBox;
         Label _spaceLabel, _existingLabel, _toolsNote, _timeNote;
-        CheckBox _shortcutBox, _menuBox, _lookBox, _hdBox;
+        CheckBox _shortcutBox, _menuBox, _lookBox, _hdBox, _androidBox, _phoneBox, _phoneHdBox;
         TableLayoutPanel _toolsList;
         LinkLabel _recheck;
         Toolchain _tools;
@@ -348,6 +348,44 @@ namespace Amped2Installer
                               "Downloads two free tools, FFmpeg and Real-ESRGAN (120 MB).", Muted, _small);
             hdNote.Margin = new Padding(18, 0, 0, 12);
             Add(page, hdNote);
+            _androidBox = new CheckBox
+            {
+                Text = "Also build an Android app (APK) for a phone or tablet with a gamepad",
+                Checked = false,
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 0),
+            };
+            _phoneBox = new CheckBox
+            {
+                Text = "Install it on a phone connected over USB (USB debugging on) and copy the game to it",
+                Checked = false,
+                Enabled = false,
+                AutoSize = true,
+                Margin = new Padding(18, 0, 0, 0),
+            };
+            _phoneHdBox = new CheckBox
+            {
+                Text = "Copy the HD movies to the phone too (about 4.3 GB on the phone)",
+                Checked = false,
+                Enabled = false,
+                AutoSize = true,
+                Margin = new Padding(36, 0, 0, 0),
+            };
+            _androidBox.CheckedChanged += (s, e) =>
+            {
+                _phoneBox.Enabled = _androidBox.Checked;
+                _phoneHdBox.Enabled = _androidBox.Checked && _phoneBox.Checked;
+                UpdateSpace();
+            };
+            _phoneBox.CheckedChanged += (s, e) => _phoneHdBox.Enabled = _androidBox.Checked && _phoneBox.Checked;
+            Add(page, _androidBox);
+            Add(page, _phoneBox);
+            Add(page, _phoneHdBox);
+            var androidNote = Para("Runs after the PC install: about an hour more. Downloads Java and Google's Android " +
+                                   "tools (about 3 GB, kept in the install folder's android folder). Needs Android 10 or " +
+                                   "later with OpenGL ES 3.2 (most phones since 2017).", Muted, _small);
+            androidNote.Margin = new Padding(18, 0, 0, 12);
+            Add(page, androidNote);
             _menuBox.Margin = new Padding(0, 2, 0, 2);
 
             var toolsHead = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Right, Margin = new Padding(0, 4, 0, 4) };
@@ -419,7 +457,8 @@ namespace Amped2Installer
             // The HD movies: 4.3 GB of copies, the tools, and up to 2 GB of
             // work files while a movie converts.
             return (_disc?.GameBytes ?? 4300000000L) + 2L * 1024 * 1024 * 1024 +
-                   (_hdBox != null && _hdBox.Checked ? 6500L * 1024 * 1024 : 0);
+                   (_hdBox != null && _hdBox.Checked ? 6500L * 1024 * 1024 : 0) +
+                   (_androidBox != null && _androidBox.Checked ? 8000L * 1024 * 1024 : 0);
         }
 
         void UpdateSpace()
@@ -668,10 +707,12 @@ namespace Amped2Installer
         {
             approved = new HashSet<string>();
             var missing = _tools.Describe(_menuBox.Checked).Where(t => !t.Found && t.CanInstall).ToList();
-            if (missing.Count == 0 && !_hdBox.Checked)
+            if (missing.Count == 0 && !_hdBox.Checked && !_androidBox.Checked)
                 return true;
-            if (!ConsentDialog.Ask(this, missing, _menuBox.Checked || _lookBox.Checked, _hdBox.Checked))
+            if (!ConsentDialog.Ask(this, missing, _menuBox.Checked || _lookBox.Checked, _hdBox.Checked, _androidBox.Checked))
                 return false;
+            if (_androidBox.Checked)
+                approved.Add(AndroidTools.Name);
             foreach (var t in missing)
                 approved.Add(t.Name);
             if (_hdBox.Checked)
@@ -704,6 +745,9 @@ namespace Amped2Installer
                 MenuMod = _menuBox.Checked,
                 Look = _lookBox.Checked,
                 HdMovies = _hdBox.Checked,
+                Android = _androidBox.Checked,
+                AndroidToPhone = _androidBox.Checked && _phoneBox.Checked,
+                AndroidHdMovies = _androidBox.Checked && _phoneBox.Checked && _phoneHdBox.Checked,
                 ApprovedTools = approvedTools,
             };
             _installIntro.Text = "Sit back: the installer is building RE-Amped2 from your disc image, right here on your PC. " +
@@ -724,6 +768,7 @@ namespace Amped2Installer
             {
                 if (i == 5 && !options.MenuMod) continue;
                 if (i == 6 && !options.HdMovies) continue;
+                if (i == 8 && !options.Android) continue;
                 int row = _stageTable.RowCount++;
                 _stageTable.RowStyles.Add(new RowStyle(SizeType.AutoSize));
                 var mark = new Label { Text = "\u25CB", ForeColor = Muted, AutoSize = true, Margin = new Padding(0, 3, 0, 3) };
@@ -885,6 +930,14 @@ namespace Amped2Installer
                              "\"Convert HD movies.cmd\" in the install folder carries on where it stopped.");
                 if (r.HdMoviesNote != null)
                     tips.Add(r.HdMoviesNote);
+                if (r.AndroidOnPhone)
+                    tips.Add("RE-Amped2 is on your phone too: start it from the app list and play with a Bluetooth or USB gamepad.");
+                else if (r.AndroidApk != null && r.AndroidNote == null)
+                    tips.Add("The Android app is RE-Amped2.apk in the install folder. Copy it to the phone and open it (allow " +
+                             "installing apps from that source), then copy the game folder to " +
+                             "Android/data/org.reamped2.app/files/game on the phone.");
+                if (r.AndroidNote != null)
+                    tips.Add(r.AndroidNote);
                 tips.AddRange(r.Warnings);
                 foreach (var tip in tips)
                     Add(page, Bullet(tip));
